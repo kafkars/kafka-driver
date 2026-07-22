@@ -19,6 +19,10 @@ pub enum ConnectionInput {
         effect_id: EffectId,
         /// Identity reserved for the transport resource.
         transport_id: TransportId,
+        /// Timer identity reserved for transport establishment.
+        deadline_timer: TimerId,
+        /// Absolute driver-relative transport establishment deadline.
+        deadline: Moment,
     },
     /// Reports that the requested transport opened successfully.
     TransportOpened {

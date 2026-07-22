@@ -19,13 +19,17 @@ impl ConnectionMachine {
         match &self.state {
             StateData::Opening {
                 transport_id: expected,
+                deadline_timer,
                 ..
             } if *expected == transport_id => {
+                let deadline_timer = *deadline_timer;
                 self.state = StateData::Closed {
                     epoch,
                     reason: CloseReason::TransportLost(failure),
                 };
-                Decision::applied(Vec::new())
+                Decision::applied(vec![ConnectionEffect::CancelDeadline {
+                    timer_id: deadline_timer,
+                }])
             }
             StateData::Negotiating {
                 transport_id: expected,

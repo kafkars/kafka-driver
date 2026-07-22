@@ -7,6 +7,7 @@ use kafka_driver_core::{EffectId, TimerId, TransportId};
 pub(in crate::reactor) struct OpenIds {
     pub(in crate::reactor) effect_id: EffectId,
     pub(in crate::reactor) transport_id: TransportId,
+    pub(in crate::reactor) deadline_timer: TimerId,
 }
 
 /// Identities reserved atomically for one initial negotiation exchange.
@@ -44,14 +45,18 @@ impl BrokerIds {
     }
 
     pub(in crate::reactor) fn reserve_open(&mut self) -> Option<OpenIds> {
-        let (Some(effect), Some(transport)) = (self.effect, self.transport) else {
+        let (Some(effect), Some(timer), Some(transport)) =
+            (self.effect, self.timer, self.transport)
+        else {
             return None;
         };
         self.effect = effect.checked_add(1);
+        self.timer = timer.checked_add(1);
         self.transport = transport.checked_add(1);
         Some(OpenIds {
             effect_id: EffectId::from_raw(effect),
             transport_id: TransportId::from_raw(transport),
+            deadline_timer: TimerId::from_raw(timer),
         })
     }
 

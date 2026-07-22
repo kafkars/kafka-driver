@@ -49,6 +49,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) read_budget: ReadBudget,
     pub(super) write_budget: WriteBudget,
     pub(super) outbound_frame: OutboundFrameLimits,
+    pub(super) connect_timeout: std::time::Duration,
     pub(super) negotiation_exchange: Option<NegotiationExchange>,
     pub(super) negotiation_limits: NegotiationLimits,
     pub(super) negotiation_timeout: std::time::Duration,
@@ -152,7 +153,13 @@ impl SingleBroker {
                 transport_id,
                 failure,
             })?;
-        expect_no_effects(&transition.into_effects())
+        let effects = transition.into_effects();
+        let [kafka_driver_core::ConnectionEffect::CancelDeadline { timer_id }] = effects.as_slice()
+        else {
+            return expect_no_effects(&effects);
+        };
+        self.timers.cancel(*timer_id);
+        Ok(())
     }
 
     pub(super) fn close_resource(

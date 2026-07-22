@@ -84,6 +84,20 @@ impl SingleBroker {
             now,
         })?;
         let effects = transition.into_effects();
+        if deadline.subject() == DeadlineSubject::Opening
+            && let [
+                ConnectionEffect::ScheduleOpenDeadline {
+                    epoch,
+                    timer_id,
+                    at,
+                },
+            ] = effects.as_slice()
+        {
+            return self
+                .timers
+                .schedule(DeadlineTimer::for_open(*timer_id, *epoch, *at))
+                .map_err(Into::into);
+        }
         if matches!(deadline.subject(), DeadlineSubject::Call(_))
             && let [
                 ConnectionEffect::ScheduleDeadline {

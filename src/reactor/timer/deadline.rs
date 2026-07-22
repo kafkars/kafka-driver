@@ -5,6 +5,8 @@ use kafka_driver_core::{CallId, ConnectionEpoch, Moment, TimerId};
 /// Machine work whose deadline is represented by one timer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) enum DeadlineSubject {
+    /// Transport establishment for one connection epoch.
+    Opening,
     /// One public RPC call.
     Call(CallId),
     /// Initial API version negotiation.
@@ -25,6 +27,19 @@ pub(in crate::reactor) struct DeadlineTimer {
 }
 
 impl DeadlineTimer {
+    pub(in crate::reactor) const fn for_open(
+        timer_id: TimerId,
+        epoch: ConnectionEpoch,
+        at: Moment,
+    ) -> Self {
+        Self {
+            timer_id,
+            epoch,
+            subject: DeadlineSubject::Opening,
+            at,
+        }
+    }
+
     pub(in crate::reactor) const fn for_call(
         timer_id: TimerId,
         epoch: ConnectionEpoch,

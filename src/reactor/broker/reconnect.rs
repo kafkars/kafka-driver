@@ -17,7 +17,7 @@ impl SingleBroker {
     ) -> Result<(), BrokerError> {
         let transition = self.broker.apply(BrokerInput::Start);
         require_applied(transition.disposition())?;
-        self.interpret_broker_effects(poller, transition.into_effects())?;
+        self.interpret_broker_effects(poller, transition.into_effects(), now)?;
         self.reconcile_connection(poller, now)
     }
 
@@ -42,7 +42,7 @@ impl SingleBroker {
             timer_id,
             now,
         });
-        self.interpret_broker_effects(poller, transition.into_effects())
+        self.interpret_broker_effects(poller, transition.into_effects(), now)
     }
 
     pub(super) fn reconcile_connection(
@@ -78,7 +78,7 @@ impl SingleBroker {
             };
             let transition = self.broker.apply(input);
             require_applied(transition.disposition())?;
-            self.interpret_broker_effects(poller, transition.into_effects())?;
+            self.interpret_broker_effects(poller, transition.into_effects(), now)?;
         }
         Ok(())
     }
@@ -87,11 +87,12 @@ impl SingleBroker {
         &mut self,
         poller: &Poller,
         effects: Vec<BrokerEffect>,
+        now: Moment,
     ) -> Result<(), BrokerError> {
         for effect in effects {
             match effect {
                 BrokerEffect::OpenConnection { epoch } => {
-                    self.open_connection(poller, epoch)?;
+                    self.open_connection(poller, epoch, now)?;
                 }
                 BrokerEffect::ScheduleReconnect {
                     failed_epoch,
@@ -121,6 +122,7 @@ impl SingleBroker {
         &mut self,
         poller: &Poller,
         epoch: ConnectionEpoch,
+        now: Moment,
     ) -> Result<(), BrokerError> {
         if self.resource_token.is_some() {
             return Err(BrokerError::MissingEffect);
@@ -139,15 +141,25 @@ impl SingleBroker {
         self.retry_read = false;
         self.retry_write = false;
 
+        let Some(deadline) = now.checked_add(self.connect_timeout) else {
+            return Err(BrokerError::DeadlineOverflow);
+        };
         let Some(open) = self.ids.reserve_open() else {
             return Err(BrokerError::IdentityExhausted);
         };
         let transition = self.connection.apply(ConnectionInput::Start {
             effect_id: open.effect_id,
             transport_id: open.transport_id,
+            deadline_timer: open.deadline_timer,
+            deadline,
         })?;
         let effects = transition.into_effects();
         let [
+            ConnectionEffect::ScheduleOpenDeadline {
+                epoch: deadline_epoch,
+                timer_id,
+                at,
+            },
             ConnectionEffect::OpenTransport {
                 epoch: opened_epoch,
                 effect_id,
@@ -157,11 +169,27 @@ impl SingleBroker {
         else {
             return Err(unexpected_connection_effect(&effects));
         };
-        if *opened_epoch != epoch
+        if *deadline_epoch != epoch
+            || *opened_epoch != epoch
             || *effect_id != open.effect_id
             || *transport_id != open.transport_id
+            || *timer_id != open.deadline_timer
+            || *at != deadline
         {
             return Err(BrokerError::MissingEffect);
+        }
+        if self
+            .timers
+            .schedule(DeadlineTimer::for_open(*timer_id, epoch, *at))
+            .is_err()
+        {
+            self.apply_open_failed(
+                epoch,
+                *effect_id,
+                *transport_id,
+                kafka_driver_core::TransportFailure::Other,
+            )?;
+            return Ok(());
         }
         let identity = ResourceIdentity::new(*transport_id, epoch);
         match self.resources.open(poller, identity, self.address) {

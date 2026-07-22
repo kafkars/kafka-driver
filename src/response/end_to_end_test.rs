@@ -27,6 +27,7 @@ use super::registry::ResponseRegistry;
 const EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(1);
 const TRANSPORT: TransportId = TransportId::from_raw(2);
 const OPEN_EFFECT: EffectId = EffectId::from_raw(3);
+const OPEN_TIMER: TimerId = TimerId::from_raw(8);
 const CALL: CallId = CallId::from_raw(4);
 const WRITE_EFFECT: EffectId = EffectId::from_raw(5);
 const TIMER: TimerId = TimerId::from_raw(6);
@@ -122,6 +123,8 @@ fn ready_machine() -> ConnectionMachine {
         ConnectionInput::Start {
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: Moment::from_nanos(50),
         },
     );
     apply(

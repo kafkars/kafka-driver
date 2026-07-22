@@ -1,81 +1,12 @@
-//! Open, drain, external-close, and terminal lifecycle transitions.
+//! Drain initiation and terminal lifecycle transitions.
 
-use crate::{AuthenticationEffect, ConnectionEpoch, EffectId, TransportId};
+use crate::AuthenticationEffect;
 
 use super::{
-    ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, Decision,
-    NegotiationAttempt, StateData, TransportFailure,
+    ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, Decision, StateData,
 };
 
 impl ConnectionMachine {
-    pub(super) fn start(&mut self, effect_id: EffectId, transport_id: TransportId) -> Decision {
-        let StateData::Dormant { epoch } = self.state else {
-            return Decision::ignored();
-        };
-        self.state = StateData::Opening {
-            epoch,
-            effect_id,
-            transport_id,
-        };
-        Decision::applied(vec![ConnectionEffect::OpenTransport {
-            epoch,
-            effect_id,
-            transport_id,
-        }])
-    }
-
-    pub(super) fn transport_opened(
-        &mut self,
-        epoch: ConnectionEpoch,
-        effect_id: EffectId,
-        transport_id: TransportId,
-        negotiation: NegotiationAttempt,
-    ) -> Decision {
-        let StateData::Opening {
-            epoch: expected_epoch,
-            effect_id: expected_effect,
-            transport_id: expected_transport,
-        } = self.state
-        else {
-            return Decision::stale();
-        };
-        if epoch != expected_epoch
-            || effect_id != expected_effect
-            || transport_id != expected_transport
-        {
-            return Decision::stale();
-        }
-        self.begin_negotiation(epoch, transport_id, negotiation)
-    }
-
-    pub(super) fn transport_open_failed(
-        &mut self,
-        epoch: ConnectionEpoch,
-        effect_id: EffectId,
-        transport_id: TransportId,
-        failure: TransportFailure,
-    ) -> Decision {
-        let StateData::Opening {
-            epoch: expected_epoch,
-            effect_id: expected_effect,
-            transport_id: expected_transport,
-        } = self.state
-        else {
-            return Decision::stale();
-        };
-        if epoch != expected_epoch
-            || effect_id != expected_effect
-            || transport_id != expected_transport
-        {
-            return Decision::stale();
-        }
-        self.state = StateData::Closed {
-            epoch,
-            reason: CloseReason::OpenFailed(failure),
-        };
-        Decision::applied(Vec::new())
-    }
-
     pub(super) fn begin_drain(&mut self) -> Decision {
         match &mut self.state {
             StateData::Dormant { epoch } => {
@@ -88,22 +19,10 @@ impl ConnectionMachine {
             StateData::Opening {
                 epoch,
                 transport_id,
+                deadline_timer,
                 ..
-            } => {
-                let epoch = *epoch;
-                let transport_id = *transport_id;
-                self.state = StateData::Closing {
-                    epoch,
-                    transport_id,
-                    reason: CloseReason::Requested,
-                };
-                Decision::applied(vec![ConnectionEffect::CloseTransport {
-                    epoch,
-                    transport_id,
-                    reason: CloseReason::Requested,
-                }])
             }
-            StateData::Negotiating {
+            | StateData::Negotiating {
                 epoch,
                 transport_id,
                 deadline_timer,

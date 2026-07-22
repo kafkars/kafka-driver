@@ -2,7 +2,10 @@
 
 use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
 
-use kafka_driver_core::{BrokerPhase, CallFailure, CallId, ConnectionPhase, Delivery, Moment};
+use kafka_driver_core::{
+    BrokerPhase, CallFailure, CallId, CloseReason, ConnectionPhase, ConnectionState, Delivery,
+    Moment, TransportFailure,
+};
 use kafka_wire::ApiVersionsRequest;
 
 use crate::{
@@ -12,6 +15,40 @@ use crate::{
 };
 
 use super::{owner::SingleBroker, scenario_support_test::complete_negotiation};
+
+#[test]
+fn given_a_pending_connect_when_its_virtual_deadline_fires_then_the_epoch_enters_backoff() {
+    // Given
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read loopback broker address: {error}"));
+    let poller = Poller::new(NonZeroUsize::MIN)
+        .unwrap_or_else(|error| panic!("create broker poller: {error}"));
+    let timeout = Duration::from_nanos(10);
+    let limits = BrokerLimits::default().with_connect_timeout(timeout);
+    let mut broker = SingleBroker::new(address, limits);
+    broker
+        .start(&poller, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("start broker connection: {error}"));
+
+    // When
+    let progress = broker
+        .fire_due(&poller, Moment::from_nanos(10))
+        .unwrap_or_else(|error| panic!("deliver connect deadline: {error}"));
+
+    // Then
+    assert!(progress.made_progress());
+    assert!(matches!(
+        broker.state(),
+        ConnectionState::Closed {
+            reason: CloseReason::OpenFailed(TransportFailure::TimedOut),
+            ..
+        }
+    ));
+    assert_eq!(broker.broker_state().phase(), BrokerPhase::Backoff);
+}
 
 #[test]
 fn given_an_in_flight_call_when_virtual_deadline_fires_then_the_epoch_closes() {

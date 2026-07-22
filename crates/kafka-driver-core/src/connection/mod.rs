@@ -12,6 +12,7 @@ mod lifecycle;
 mod limits;
 mod machine;
 mod negotiation;
+mod opening;
 mod pending;
 mod response;
 mod state;

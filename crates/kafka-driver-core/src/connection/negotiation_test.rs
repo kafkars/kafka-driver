@@ -7,8 +7,8 @@ use kafka_wire_core::{ApiKey, ApiVersion};
 use crate::{NegotiatedApi, NegotiatedCapabilities};
 
 use super::scenario_support_test::{
-    EPOCH, NEGOTIATION_EFFECT, NEGOTIATION_TIMER, OPEN_EFFECT, STALE_EPOCH, TRANSPORT, apply,
-    capabilities, transport_opened,
+    EPOCH, NEGOTIATION_EFFECT, NEGOTIATION_TIMER, OPEN_DEADLINE, OPEN_EFFECT, OPEN_TIMER,
+    STALE_EPOCH, TRANSPORT, apply, capabilities, transport_opened,
 };
 use super::{
     CloseReason, ConnectionEffect, ConnectionInput, ConnectionLimits, ConnectionMachine,
@@ -30,6 +30,9 @@ fn matching_open_starts_a_deadline_owned_api_versions_exchange() {
     assert_eq!(
         transition.effects(),
         &[
+            ConnectionEffect::CancelDeadline {
+                timer_id: OPEN_TIMER,
+            },
             ConnectionEffect::ScheduleNegotiationDeadline {
                 epoch: EPOCH,
                 timer_id: NEGOTIATION_TIMER,
@@ -237,6 +240,8 @@ fn opening_machine(limits: ConnectionLimits) -> ConnectionMachine {
         ConnectionInput::Start {
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
         },
     );
     machine

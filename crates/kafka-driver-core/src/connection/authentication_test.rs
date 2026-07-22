@@ -11,7 +11,8 @@ use crate::{
 };
 
 use super::scenario_support_test::{
-    EPOCH, NEGOTIATION_EFFECT, NEGOTIATION_TIMER, OPEN_EFFECT, TRANSPORT, apply, transport_opened,
+    EPOCH, NEGOTIATION_EFFECT, NEGOTIATION_TIMER, OPEN_DEADLINE, OPEN_EFFECT, OPEN_TIMER,
+    TRANSPORT, apply, transport_opened,
 };
 use super::{
     CloseReason, ConnectionEffect, ConnectionInput, ConnectionLimits, ConnectionMachine,
@@ -214,6 +215,8 @@ fn negotiating_authenticated_machine() -> ConnectionMachine {
         ConnectionInput::Start {
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
         },
     );
     apply(

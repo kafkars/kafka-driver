@@ -9,6 +9,15 @@ use super::{CallFailure, CloseReason, CorrelationId};
 /// One external action or owner-visible outcome requested by a transition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectionEffect {
+    /// Registers the deadline for establishing the transport resource.
+    ScheduleOpenDeadline {
+        /// Connection epoch owning the opening attempt.
+        epoch: ConnectionEpoch,
+        /// Timer identity to echo when firing.
+        timer_id: TimerId,
+        /// Absolute driver-relative opening deadline.
+        at: Moment,
+    },
     /// Opens the transport resource reserved for this epoch.
     OpenTransport {
         /// Connection epoch requesting the resource.

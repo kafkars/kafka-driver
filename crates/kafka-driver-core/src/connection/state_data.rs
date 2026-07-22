@@ -15,6 +15,8 @@ pub(super) enum StateData {
         epoch: ConnectionEpoch,
         effect_id: EffectId,
         transport_id: TransportId,
+        deadline_timer: TimerId,
+        deadline: Moment,
     },
     Negotiating {
         epoch: ConnectionEpoch,
@@ -83,10 +85,14 @@ impl StateData {
                 epoch,
                 effect_id,
                 transport_id,
+                deadline_timer,
+                deadline,
             } => ConnectionState::Opening {
                 epoch: *epoch,
                 effect_id: *effect_id,
                 transport_id: *transport_id,
+                deadline_timer: *deadline_timer,
+                deadline: *deadline,
             },
             Self::Negotiating {
                 epoch,

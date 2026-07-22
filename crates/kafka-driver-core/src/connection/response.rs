@@ -99,6 +99,36 @@ impl ConnectionMachine {
         timer_id: TimerId,
         now: Moment,
     ) -> Decision {
+        if let StateData::Opening {
+            epoch: expected_epoch,
+            transport_id,
+            deadline_timer,
+            deadline,
+            ..
+        } = self.state
+        {
+            if epoch != expected_epoch || timer_id != deadline_timer {
+                return Decision::stale();
+            }
+            if now < deadline {
+                return Decision::applied(vec![ConnectionEffect::ScheduleOpenDeadline {
+                    epoch,
+                    timer_id,
+                    at: deadline,
+                }]);
+            }
+            let reason = CloseReason::OpenFailed(super::TransportFailure::TimedOut);
+            self.state = StateData::Closing {
+                epoch,
+                transport_id,
+                reason,
+            };
+            return Decision::applied(vec![ConnectionEffect::CloseTransport {
+                epoch,
+                transport_id,
+                reason,
+            }]);
+        }
         if matches!(&self.state, StateData::Authenticating { .. }) {
             return self.authentication_input(AuthenticationInput::DeadlineElapsed {
                 epoch,

@@ -79,6 +79,7 @@ impl SingleBroker {
             read_budget: limits.read_budget(),
             write_budget: limits.write_budget(),
             outbound_frame: limits.outbound_frame(),
+            connect_timeout: limits.connect_timeout(),
             negotiation_exchange: None,
             negotiation_limits: limits.negotiation(),
             negotiation_timeout: limits.negotiation_timeout(),

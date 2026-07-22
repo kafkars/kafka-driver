@@ -14,6 +14,8 @@ const EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(1);
 const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(0);
 const TRANSPORT: TransportId = TransportId::from_raw(2);
 const OPEN_EFFECT: EffectId = EffectId::from_raw(3);
+const OPEN_TIMER: TimerId = TimerId::from_raw(9);
+const OPEN_DEADLINE: Moment = Moment::from_nanos(50);
 const NEGOTIATION_EFFECT: EffectId = EffectId::from_raw(7);
 const NEGOTIATION_TIMER: TimerId = TimerId::from_raw(8);
 const CALL: CallId = CallId::from_raw(4);
@@ -30,6 +32,8 @@ fn virtual_deadline_closes_a_possibly_delivered_call() {
         ConnectionInput::Start {
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
         },
     );
     schedule(&mut simulator, 1, transport_opened(EPOCH));
@@ -111,6 +115,8 @@ fn delayed_old_epoch_result_is_ordinary_stale_data() {
         ConnectionInput::Start {
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
         },
     );
     schedule(&mut simulator, 1, transport_opened(STALE_EPOCH));

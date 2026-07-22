@@ -121,7 +121,9 @@ impl ConnectionMachine {
             ConnectionInput::Start {
                 effect_id,
                 transport_id,
-            } => Ok(self.start(effect_id, transport_id)),
+                deadline_timer,
+                deadline,
+            } => Ok(self.start(effect_id, transport_id, deadline_timer, deadline)),
             ConnectionInput::TransportOpened {
                 epoch,
                 effect_id,

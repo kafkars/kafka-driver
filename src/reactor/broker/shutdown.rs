@@ -13,7 +13,7 @@ impl SingleBroker {
         now: Moment,
     ) -> Result<(), BrokerError> {
         let transition = self.broker.apply(BrokerInput::BeginDrain);
-        self.interpret_broker_effects(poller, transition.into_effects())?;
+        self.interpret_broker_effects(poller, transition.into_effects(), now)?;
         self.reconcile_connection(poller, now)
     }
 

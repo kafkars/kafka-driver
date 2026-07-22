@@ -14,6 +14,8 @@ pub enum TransportFailure {
     Reset,
     /// Transport security setup or processing failed.
     Security,
+    /// Transport establishment exceeded its configured deadline.
+    TimedOut,
     /// Another sanitized transport failure occurred.
     Other,
 }

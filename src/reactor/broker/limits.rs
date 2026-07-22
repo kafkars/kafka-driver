@@ -14,6 +14,7 @@ const TIMER_BUDGET: NonZeroUsize = nonzero(256);
 const READ_BYTES: NonZeroUsize = nonzero(1024 * 1024);
 const READ_FRAMES: NonZeroUsize = nonzero(64);
 const WRITE_BYTES: NonZeroUsize = nonzero(1024 * 1024);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(10);
 const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -28,6 +29,7 @@ pub(in crate::reactor) struct BrokerLimits {
     transport: TransportLimits,
     read_budget: ReadBudget,
     write_budget: WriteBudget,
+    connect_timeout: Duration,
     negotiation: NegotiationLimits,
     negotiation_timeout: Duration,
     authentication: AuthenticationLimits,
@@ -72,6 +74,10 @@ impl BrokerLimits {
         self.write_budget
     }
 
+    pub(in crate::reactor) const fn connect_timeout(self) -> Duration {
+        self.connect_timeout
+    }
+
     pub(in crate::reactor) const fn negotiation(self) -> NegotiationLimits {
         self.negotiation
     }
@@ -97,6 +103,12 @@ impl BrokerLimits {
         self.transport = transport;
         self
     }
+
+    #[cfg(test)]
+    pub(in crate::reactor) const fn with_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = timeout;
+        self
+    }
 }
 
 impl Default for BrokerLimits {
@@ -111,6 +123,7 @@ impl Default for BrokerLimits {
             transport: TransportLimits::default(),
             read_budget: ReadBudget::new(READ_BYTES, READ_FRAMES),
             write_budget: WriteBudget::new(WRITE_BYTES),
+            connect_timeout: CONNECT_TIMEOUT,
             negotiation: NegotiationLimits::default(),
             negotiation_timeout: NEGOTIATION_TIMEOUT,
             authentication: AuthenticationLimits::default(),

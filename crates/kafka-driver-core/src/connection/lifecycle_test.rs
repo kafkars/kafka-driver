@@ -1,9 +1,10 @@
 //! Scenarios proving opening, draining, and terminal lifecycle ownership.
 
-use crate::{ConnectionEpoch, EffectId, TransportId};
+use crate::{ConnectionEpoch, EffectId, Moment, TransportId};
 
 use super::scenario_support_test::{
-    EPOCH, OPEN_EFFECT, STALE_EPOCH, TRANSPORT, apply, ready_machine, transport_opened,
+    EPOCH, OPEN_DEADLINE, OPEN_EFFECT, OPEN_TIMER, STALE_EPOCH, TRANSPORT, apply, ready_machine,
+    transport_opened,
 };
 use super::{
     CloseReason, ConnectionEffect, ConnectionInput, ConnectionLimits, ConnectionMachine,
@@ -19,16 +20,25 @@ fn start_reserves_one_transport_and_enters_opening() {
         ConnectionInput::Start {
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
         },
     );
 
     assert_eq!(
         transition.effects(),
-        &[ConnectionEffect::OpenTransport {
-            epoch: EPOCH,
-            effect_id: OPEN_EFFECT,
-            transport_id: TRANSPORT,
-        }]
+        &[
+            ConnectionEffect::ScheduleOpenDeadline {
+                epoch: EPOCH,
+                timer_id: OPEN_TIMER,
+                at: OPEN_DEADLINE,
+            },
+            ConnectionEffect::OpenTransport {
+                epoch: EPOCH,
+                effect_id: OPEN_EFFECT,
+                transport_id: TRANSPORT,
+            },
+        ]
     );
     assert_eq!(transition.record().from(), ConnectionPhase::Dormant);
     assert_eq!(transition.record().to(), ConnectionPhase::Opening);
@@ -38,6 +48,8 @@ fn start_reserves_one_transport_and_enters_opening() {
             epoch: EPOCH,
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
         }
     );
 }
@@ -50,6 +62,8 @@ fn stale_open_result_cannot_claim_the_reserved_transport() {
         ConnectionInput::Start {
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
         },
     );
 
@@ -74,6 +88,8 @@ fn matching_open_failure_is_terminal_and_sanitized() {
         ConnectionInput::Start {
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
         },
     );
 
@@ -87,7 +103,12 @@ fn matching_open_failure_is_terminal_and_sanitized() {
         },
     );
 
-    assert!(transition.effects().is_empty());
+    assert_eq!(
+        transition.effects(),
+        &[ConnectionEffect::CancelDeadline {
+            timer_id: OPEN_TIMER,
+        }]
+    );
     assert_eq!(
         machine.state(),
         ConnectionState::Closed {
@@ -155,6 +176,8 @@ fn mismatched_open_identities_are_stale() {
         ConnectionInput::Start {
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
         },
     );
 
@@ -168,4 +191,78 @@ fn mismatched_open_identities_are_stale() {
         TransitionDisposition::IgnoredStale
     );
     assert_eq!(machine.state().phase(), ConnectionPhase::Opening);
+}
+
+#[test]
+fn early_open_deadline_is_rescheduled_without_closing_the_transport() {
+    let mut machine = ConnectionMachine::new(EPOCH, ConnectionLimits::default());
+    apply(
+        &mut machine,
+        ConnectionInput::Start {
+            effect_id: OPEN_EFFECT,
+            transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
+        },
+    );
+
+    let transition = apply(
+        &mut machine,
+        ConnectionInput::DeadlineElapsed {
+            epoch: EPOCH,
+            timer_id: OPEN_TIMER,
+            now: Moment::from_nanos(49),
+        },
+    );
+
+    assert_eq!(
+        transition.effects(),
+        &[ConnectionEffect::ScheduleOpenDeadline {
+            epoch: EPOCH,
+            timer_id: OPEN_TIMER,
+            at: OPEN_DEADLINE,
+        }]
+    );
+    assert_eq!(machine.state().phase(), ConnectionPhase::Opening);
+}
+
+#[test]
+fn elapsed_open_deadline_closes_only_the_matching_epoch() {
+    let mut machine = ConnectionMachine::new(EPOCH, ConnectionLimits::default());
+    apply(
+        &mut machine,
+        ConnectionInput::Start {
+            effect_id: OPEN_EFFECT,
+            transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
+        },
+    );
+
+    let transition = apply(
+        &mut machine,
+        ConnectionInput::DeadlineElapsed {
+            epoch: EPOCH,
+            timer_id: OPEN_TIMER,
+            now: OPEN_DEADLINE,
+        },
+    );
+    let reason = CloseReason::OpenFailed(TransportFailure::TimedOut);
+
+    assert_eq!(
+        transition.effects(),
+        &[ConnectionEffect::CloseTransport {
+            epoch: EPOCH,
+            transport_id: TRANSPORT,
+            reason,
+        }]
+    );
+    assert_eq!(
+        machine.state(),
+        ConnectionState::Closing {
+            epoch: EPOCH,
+            transport_id: TRANSPORT,
+            reason,
+        }
+    );
 }

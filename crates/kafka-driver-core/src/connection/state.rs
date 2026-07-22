@@ -41,6 +41,10 @@ pub enum ConnectionState {
         effect_id: EffectId,
         /// Reserved transport resource.
         transport_id: TransportId,
+        /// Transport establishment deadline timer.
+        deadline_timer: TimerId,
+        /// Absolute driver-relative transport establishment deadline.
+        deadline: Moment,
     },
     /// The transport is open and initial API negotiation is outstanding.
     Negotiating {

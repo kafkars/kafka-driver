@@ -18,6 +18,8 @@ pub(super) const EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(7);
 pub(super) const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(6);
 pub(super) const TRANSPORT: TransportId = TransportId::from_raw(11);
 pub(super) const OPEN_EFFECT: EffectId = EffectId::from_raw(13);
+pub(super) const OPEN_TIMER: TimerId = TimerId::from_raw(12);
+pub(super) const OPEN_DEADLINE: Moment = Moment::from_nanos(50);
 pub(super) const NEGOTIATION_EFFECT: EffectId = EffectId::from_raw(14);
 pub(super) const NEGOTIATION_TIMER: TimerId = TimerId::from_raw(15);
 
@@ -32,6 +34,8 @@ pub(super) fn ready_machine_with(limits: ConnectionLimits) -> ConnectionMachine 
         ConnectionInput::Start {
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            deadline_timer: OPEN_TIMER,
+            deadline: OPEN_DEADLINE,
         },
     );
     apply(

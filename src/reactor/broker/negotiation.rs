@@ -37,6 +37,9 @@ impl SingleBroker {
         })?;
         let effects = transition.into_effects();
         let [
+            ConnectionEffect::CancelDeadline {
+                timer_id: open_timer,
+            },
             ConnectionEffect::ScheduleNegotiationDeadline {
                 epoch,
                 timer_id,
@@ -60,6 +63,7 @@ impl SingleBroker {
         {
             return Err(BrokerError::MissingEffect);
         }
+        self.timers.cancel(*open_timer);
         if self
             .timers
             .schedule(DeadlineTimer::for_negotiation(*timer_id, *epoch, *at))

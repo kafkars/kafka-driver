@@ -15,6 +15,7 @@ fn given_default_limits_then_every_pending_call_has_response_and_timer_capacity(
     assert_eq!(limits.timer_capacity(), limits.connection().max_in_flight());
     assert_eq!(limits.resource_capacity().get(), 1);
     assert_eq!(limits.timer_budget().get(), 256);
+    assert_eq!(limits.connect_timeout(), std::time::Duration::from_secs(10));
     assert_eq!(limits.negotiation().max_advertised_apis(), 256);
     assert_eq!(limits.negotiation().max_negotiated_apis().get(), 128);
     assert_eq!(
