@@ -49,6 +49,9 @@ dependencies = [
 [[package]]
 name = "kafka-driver-core"
 version = "0.1.0"
+dependencies = [
+ "kafka-wire-core",
+]
 
 [[package]]
 name = "kafka-driver-sim"

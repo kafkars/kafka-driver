@@ -9,6 +9,7 @@ description = "Deterministic state-machine core for kafka-driver"
 publish = false
 
 [dependencies]
+kafka-wire-core.workspace = true
 
 [lints]
 workspace = true

@@ -3,6 +3,7 @@
 //! This crate owns Kafka policy but has no operating-system, synchronization,
 //! reactor, or transport capabilities.
 
+mod capability;
 mod connection;
 mod delivery;
 mod identity;
@@ -13,6 +14,7 @@ mod delivery_test;
 #[cfg(test)]
 mod time_test;
 
+pub use capability::{CapabilityError, NegotiatedApi, NegotiatedCapabilities};
 pub use connection::{
     CallFailure, CloseReason, ConnectionEffect, ConnectionInput, ConnectionInputKind,
     ConnectionLimits, ConnectionMachine, ConnectionMachineError, ConnectionPhase, ConnectionState,
