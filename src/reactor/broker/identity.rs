@@ -16,6 +16,13 @@ pub(in crate::reactor) struct NegotiationIds {
     pub(in crate::reactor) deadline_timer: TimerId,
 }
 
+/// Identities reserved atomically for one complete authentication attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::reactor) struct AuthenticationIds {
+    pub(in crate::reactor) effect_id: EffectId,
+    pub(in crate::reactor) deadline_timer: TimerId,
+}
+
 /// Identities reserved atomically for one call admission attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) struct SubmissionIds {
@@ -67,6 +74,18 @@ impl BrokerIds {
         self.effect = effect.checked_add(1);
         self.timer = timer.checked_add(1);
         Some(NegotiationIds {
+            effect_id: EffectId::from_raw(effect),
+            deadline_timer: TimerId::from_raw(timer),
+        })
+    }
+
+    pub(in crate::reactor) fn reserve_authentication(&mut self) -> Option<AuthenticationIds> {
+        let (Some(effect), Some(timer)) = (self.effect, self.timer) else {
+            return None;
+        };
+        self.effect = effect.checked_add(1);
+        self.timer = timer.checked_add(1);
+        Some(AuthenticationIds {
             effect_id: EffectId::from_raw(effect),
             deadline_timer: TimerId::from_raw(timer),
         })

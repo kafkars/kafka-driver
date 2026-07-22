@@ -16,13 +16,14 @@ impl SingleBroker {
         poller: &Poller,
         token: ResourceToken,
         readiness: Readiness,
+        now: kafka_driver_core::Moment,
     ) -> Result<bool, BrokerError> {
         let Some((identity, _)) = self.resources.get_mut(token) else {
             return Ok(false);
         };
         let mut progress = false;
         if readiness.is_readable() {
-            progress |= self.drive_read(poller, token, identity)?;
+            progress |= self.drive_read(poller, token, identity, now)?;
         }
         if self.resource_token == Some(token) && readiness.is_writable() {
             progress |= self.drive_write(poller, token, identity)?;
@@ -41,12 +42,16 @@ impl SingleBroker {
         poller: &Poller,
         now: kafka_driver_core::Moment,
     ) -> Result<bool, BrokerError> {
-        let progress = self.continue_connection_io(poller)?;
+        let progress = self.continue_connection_io(poller, now)?;
         self.reconcile_connection(poller, now)?;
         Ok(progress)
     }
 
-    fn continue_connection_io(&mut self, poller: &Poller) -> Result<bool, BrokerError> {
+    fn continue_connection_io(
+        &mut self,
+        poller: &Poller,
+        now: kafka_driver_core::Moment,
+    ) -> Result<bool, BrokerError> {
         let Some(token) = self.resource_token else {
             self.retry_read = false;
             self.retry_write = false;
@@ -59,7 +64,7 @@ impl SingleBroker {
         };
         let mut progress = false;
         if read {
-            progress |= self.drive_read(poller, token, identity)?;
+            progress |= self.drive_read(poller, token, identity, now)?;
         }
         if self.resource_token == Some(token) && write {
             progress |= self.drive_write(poller, token, identity)?;
@@ -76,6 +81,7 @@ impl SingleBroker {
         poller: &Poller,
         token: ResourceToken,
         identity: ResourceIdentity,
+        now: kafka_driver_core::Moment,
     ) -> Result<bool, BrokerError> {
         let result = {
             let Some((observed, connection)) = self.resources.get_mut(token) else {
@@ -93,7 +99,7 @@ impl SingleBroker {
                 return Ok(true);
             }
         };
-        let processed = self.process_frames(poller, identity)?;
+        let processed = self.process_frames(poller, identity, now)?;
         self.retry_read = matches!(
             progress.state(),
             ReadState::BudgetExhausted | ReadState::Interrupted

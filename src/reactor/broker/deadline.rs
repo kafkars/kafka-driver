@@ -102,6 +102,23 @@ impl SingleBroker {
                 .schedule(DeadlineTimer::for_negotiation(*timer_id, *epoch, *at))
                 .map_err(Into::into);
         }
+        if deadline.subject() == DeadlineSubject::Authentication
+            && let [
+                ConnectionEffect::Authentication {
+                    effect:
+                        kafka_driver_core::AuthenticationEffect::ScheduleDeadline {
+                            epoch,
+                            timer_id,
+                            at,
+                        },
+                },
+            ] = effects.as_slice()
+        {
+            return self
+                .timers
+                .schedule(DeadlineTimer::for_authentication(*timer_id, *epoch, *at))
+                .map_err(Into::into);
+        }
         self.interpret_close(poller, effects, None)
     }
 }

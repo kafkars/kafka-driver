@@ -1,5 +1,6 @@
 //! Single-broker ownership above deterministic policy and below the host.
 
+mod authentication;
 mod deadline;
 mod entropy;
 mod error;
@@ -15,6 +16,8 @@ mod shutdown;
 mod submission;
 mod terminal;
 
+#[cfg(test)]
+mod authentication_test;
 #[cfg(test)]
 mod deadline_test;
 #[cfg(test)]

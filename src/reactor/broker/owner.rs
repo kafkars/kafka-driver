@@ -3,14 +3,13 @@
 use std::{net::SocketAddr, num::NonZeroUsize};
 
 use kafka_driver_core::{
-    BrokerMachine, ConnectionEffect, ConnectionEpoch, ConnectionInput, ConnectionMachine,
-    ConnectionPhase, ConnectionState,
+    AuthenticationLimits, BrokerMachine, ConnectionEffect, ConnectionEpoch, ConnectionInput,
+    ConnectionMachine, ConnectionPhase, ConnectionState,
 };
 use kafka_driver_transport::FrameBody;
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::DecodeLimits;
 
-use crate::config::BrokerConfig;
 use crate::negotiation::{NegotiationExchange, NegotiationLimits};
 use crate::reactor::{
     PollEvent, Poller,
@@ -20,6 +19,11 @@ use crate::reactor::{
     transport::{CompletedWrite, ReadBudget, WriteBudget},
 };
 use crate::response::ResponseRegistry;
+use crate::{
+    SaslConfig,
+    authentication::{AuthenticationExchange, AuthenticationSession},
+    config::BrokerConfig,
+};
 
 use super::{
     BrokerError, BrokerIds, entropy::BackoffEntropy, failure::transport_failure,
@@ -33,6 +37,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) broker: BrokerMachine,
     pub(super) connection: ConnectionMachine,
     pub(super) connection_limits: kafka_driver_core::ConnectionLimits,
+    pub(super) authentication_limits: AuthenticationLimits,
     pub(super) ids: BrokerIds,
     pub(super) entropy: BackoffEntropy,
     pub(super) resources: TransportResources,
@@ -47,6 +52,10 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) negotiation_exchange: Option<NegotiationExchange>,
     pub(super) negotiation_limits: NegotiationLimits,
     pub(super) negotiation_timeout: std::time::Duration,
+    pub(super) authentication_timeout: std::time::Duration,
+    pub(super) sasl: Option<SaslConfig>,
+    pub(super) authentication_session: Option<AuthenticationSession>,
+    pub(super) authentication_exchange: Option<AuthenticationExchange>,
     pub(super) frames: Vec<FrameBody>,
     pub(super) completed_writes: Vec<CompletedWrite>,
     pub(super) retry_read: bool,
@@ -60,14 +69,21 @@ impl SingleBroker {
     }
 
     pub(in crate::reactor) fn new_configured(config: BrokerConfig, limits: BrokerLimits) -> Self {
-        let (address, security) = config.into_parts();
+        let (address, security, sasl) = config.into_parts();
         let resources =
             TransportResources::new(limits.resource_capacity(), limits.transport(), security);
+        let connection = Self::connection_machine(
+            ConnectionEpoch::from_raw(1),
+            limits.connection(),
+            sasl.as_ref(),
+            limits.authentication(),
+        );
         Self {
             address,
             broker: BrokerMachine::new(ConnectionEpoch::from_raw(1), limits.backoff()),
-            connection: ConnectionMachine::new(ConnectionEpoch::from_raw(1), limits.connection()),
+            connection,
             connection_limits: limits.connection(),
+            authentication_limits: limits.authentication(),
             ids: BrokerIds::new(),
             entropy: BackoffEntropy::for_broker(address),
             resources,
@@ -82,6 +98,10 @@ impl SingleBroker {
             negotiation_exchange: None,
             negotiation_limits: limits.negotiation(),
             negotiation_timeout: limits.negotiation_timeout(),
+            authentication_timeout: limits.authentication_timeout(),
+            sasl,
+            authentication_session: None,
+            authentication_exchange: None,
             frames: Vec::new(),
             completed_writes: Vec::new(),
             retry_read: false,
@@ -114,9 +134,12 @@ impl SingleBroker {
         }
         if matches!(
             self.connection.state().phase(),
-            ConnectionPhase::Negotiating | ConnectionPhase::Ready | ConnectionPhase::Draining
+            ConnectionPhase::Negotiating
+                | ConnectionPhase::Authenticating
+                | ConnectionPhase::Ready
+                | ConnectionPhase::Draining
         ) {
-            return self.drive_io(poller, token, readiness);
+            return self.drive_io(poller, token, readiness, now);
         }
         let Some((identity, connection)) = self.resources.get_mut(token) else {
             return Ok(false);

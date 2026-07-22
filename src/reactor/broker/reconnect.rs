@@ -2,7 +2,7 @@
 
 use kafka_driver_core::{
     BrokerDisposition, BrokerEffect, BrokerInput, BrokerPhase, ConnectionEffect, ConnectionEpoch,
-    ConnectionInput, ConnectionMachine, ConnectionPhase, Moment, ReconnectSchedule, TimerId,
+    ConnectionInput, ConnectionPhase, ConnectionState, Moment, ReconnectSchedule, TimerId,
 };
 
 use crate::reactor::{Poller, resource::ResourceIdentity, timer::DeadlineTimer};
@@ -52,8 +52,15 @@ impl SingleBroker {
     ) -> Result<(), BrokerError> {
         while self.connection.state().phase() == ConnectionPhase::Closed {
             let epoch = self.connection.epoch();
-            let input = match self.broker.state().phase() {
-                BrokerPhase::Connecting | BrokerPhase::Available => {
+            let input = match (self.broker.state().phase(), self.connection.state()) {
+                (
+                    BrokerPhase::Connecting,
+                    ConnectionState::Closed {
+                        reason: kafka_driver_core::CloseReason::AuthenticationFailed(failure),
+                        ..
+                    },
+                ) => BrokerInput::ConnectionRejected { epoch, failure },
+                (BrokerPhase::Connecting | BrokerPhase::Available, _) => {
                     let Some(timer_id) = self.ids.reserve_reconnect_timer() else {
                         return Err(BrokerError::IdentityExhausted);
                     };
@@ -66,8 +73,8 @@ impl SingleBroker {
                         ),
                     }
                 }
-                BrokerPhase::Draining => BrokerInput::ConnectionDrained { epoch },
-                BrokerPhase::Dormant | BrokerPhase::Backoff | BrokerPhase::Closed => break,
+                (BrokerPhase::Draining, _) => BrokerInput::ConnectionDrained { epoch },
+                (BrokerPhase::Dormant | BrokerPhase::Backoff | BrokerPhase::Closed, _) => break,
             };
             let transition = self.broker.apply(input);
             require_applied(transition.disposition())?;
@@ -118,8 +125,15 @@ impl SingleBroker {
         if self.resource_token.is_some() {
             return Err(BrokerError::MissingEffect);
         }
-        self.connection = ConnectionMachine::new(epoch, self.connection_limits);
+        self.connection = Self::connection_machine(
+            epoch,
+            self.connection_limits,
+            self.sasl.as_ref(),
+            self.authentication_limits,
+        );
         self.negotiation_exchange = None;
+        self.authentication_session = None;
+        self.authentication_exchange = None;
         self.frames.clear();
         self.completed_writes.clear();
         self.retry_read = false;

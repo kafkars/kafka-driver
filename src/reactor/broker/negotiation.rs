@@ -124,6 +124,7 @@ impl SingleBroker {
         poller: &Poller,
         identity: ResourceIdentity,
         frame: FrameBody,
+        now: Moment,
     ) -> Result<(), BrokerError> {
         let Some(exchange) = self.negotiation_exchange.take() else {
             return Err(BrokerError::MissingEffect);
@@ -141,6 +142,9 @@ impl SingleBroker {
                 return self.fail_negotiation(poller, identity, effect_id, error.failure());
             }
         };
+        if self.sasl.is_some() {
+            return self.begin_authentication(poller, identity, effect_id, capabilities, now);
+        }
         let transition = self
             .connection
             .apply(ConnectionInput::ApiVersionsNegotiated {

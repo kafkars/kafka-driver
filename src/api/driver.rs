@@ -61,6 +61,7 @@ impl Driver {
 pub struct DriverBuilder {
     limits: DriverLimits,
     broker: Option<BrokerConfig>,
+    sasl: Option<crate::SaslConfig>,
 }
 
 impl DriverBuilder {
@@ -86,10 +87,18 @@ impl DriverBuilder {
         self
     }
 
+    /// Requires the configured broker endpoint to complete SASL authentication.
+    #[must_use]
+    pub fn sasl(mut self, sasl: crate::SaslConfig) -> Self {
+        self.sasl = Some(sasl);
+        self
+    }
+
     /// Builds a driver handle and an embedded, caller-driven reactor.
     pub fn build_reactor(self) -> Result<(Driver, Reactor), DriverBuildError> {
+        let broker = self.broker.map(|broker| broker.with_sasl(self.sasl));
         let (commands, reactor) =
-            Reactor::new(self.limits, self.broker).map_err(DriverBuildError::new)?;
+            Reactor::new(self.limits, broker).map_err(DriverBuildError::new)?;
         Ok((
             Driver {
                 commands,

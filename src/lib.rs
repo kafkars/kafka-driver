@@ -4,6 +4,7 @@
 //! runtime-neutral execution boundaries are built in verified milestones.
 
 mod api;
+mod authentication;
 mod completion;
 mod config;
 mod negotiation;
@@ -15,9 +16,9 @@ pub use api::{
     Call, CancellationRequest, CompletionError, Delivery, Driver, DriverBuildError, DriverBuilder,
     RequestError, RequestResponsePair, ResponseCloseReason, SubmitError, TrafficClass,
 };
-pub use config::DriverLimits;
 #[cfg(feature = "tls-rustls")]
 pub use config::TlsClientConfig;
+pub use config::{DriverLimits, SaslConfig, SaslConfigError};
 pub use kafka_driver_core::{CallId, Moment};
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use reactor::{Reactor, ReactorError, TurnOutcome, WakeHandle};

@@ -17,6 +17,8 @@ impl SingleBroker {
         failure: TransportFailure,
     ) -> Result<(), BrokerError> {
         self.negotiation_exchange = None;
+        self.authentication_exchange = None;
+        self.authentication_session = None;
         self.close_resource(poller, identity)?;
         let transition = self.connection.apply(ConnectionInput::TransportClosed {
             epoch: identity.epoch(),
@@ -40,6 +42,8 @@ impl SingleBroker {
                     ..
                 } => {
                     self.negotiation_exchange = None;
+                    self.authentication_exchange = None;
+                    self.authentication_session = None;
                     let identity = ResourceIdentity::new(transport_id, epoch);
                     self.close_resource(poller, identity)?;
                     let transition = self.connection.apply(ConnectionInput::TransportClosed {
@@ -49,7 +53,10 @@ impl SingleBroker {
                     })?;
                     expect_no_effects(&transition.into_effects())?;
                 }
-                ConnectionEffect::CancelDeadline { timer_id } => {
+                ConnectionEffect::CancelDeadline { timer_id }
+                | ConnectionEffect::Authentication {
+                    effect: kafka_driver_core::AuthenticationEffect::CancelDeadline { timer_id },
+                } => {
                     self.timers.cancel(timer_id);
                 }
                 ConnectionEffect::FailCall { call_id, .. } if settled_call == Some(call_id) => {}

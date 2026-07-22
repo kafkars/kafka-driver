@@ -2,7 +2,7 @@
 
 use std::{num::NonZeroUsize, time::Duration};
 
-use kafka_driver_core::{BackoffPolicy, ConnectionLimits};
+use kafka_driver_core::{AuthenticationLimits, BackoffPolicy, ConnectionLimits};
 use kafka_wire::OutboundFrameLimits;
 
 use crate::negotiation::NegotiationLimits;
@@ -15,6 +15,7 @@ const READ_BYTES: NonZeroUsize = nonzero(1024 * 1024);
 const READ_FRAMES: NonZeroUsize = nonzero(64);
 const WRITE_BYTES: NonZeroUsize = nonzero(1024 * 1024);
 const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(10);
+const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Coherent limits shared by machine, response, timer, and transport ownership.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,6 +30,8 @@ pub(in crate::reactor) struct BrokerLimits {
     write_budget: WriteBudget,
     negotiation: NegotiationLimits,
     negotiation_timeout: Duration,
+    authentication: AuthenticationLimits,
+    authentication_timeout: Duration,
     backoff: BackoffPolicy,
 }
 
@@ -77,6 +80,14 @@ impl BrokerLimits {
         self.negotiation_timeout
     }
 
+    pub(in crate::reactor) const fn authentication(self) -> AuthenticationLimits {
+        self.authentication
+    }
+
+    pub(in crate::reactor) const fn authentication_timeout(self) -> Duration {
+        self.authentication_timeout
+    }
+
     pub(in crate::reactor) const fn backoff(self) -> BackoffPolicy {
         self.backoff
     }
@@ -96,6 +107,8 @@ impl Default for BrokerLimits {
             write_budget: WriteBudget::new(WRITE_BYTES),
             negotiation: NegotiationLimits::default(),
             negotiation_timeout: NEGOTIATION_TIMEOUT,
+            authentication: AuthenticationLimits::default(),
+            authentication_timeout: AUTHENTICATION_TIMEOUT,
             backoff: BackoffPolicy::default(),
         }
     }

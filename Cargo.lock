@@ -78,6 +78,7 @@ dependencies = [
  "serde",
  "syn 2.0.119",
  "toml",
+ "zeroize",
 ]
 
 [[package]]

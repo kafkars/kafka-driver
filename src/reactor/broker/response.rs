@@ -15,6 +15,7 @@ impl SingleBroker {
         &mut self,
         poller: &Poller,
         identity: ResourceIdentity,
+        now: kafka_driver_core::Moment,
     ) -> Result<bool, BrokerError> {
         let frames = std::mem::take(&mut self.frames);
         let mut processed = false;
@@ -23,7 +24,7 @@ impl SingleBroker {
                 break;
             }
             processed = true;
-            self.process_frame(poller, identity, frame)?;
+            self.process_frame(poller, identity, frame, now)?;
         }
         self.frames = frames;
         self.frames.clear();
@@ -35,9 +36,13 @@ impl SingleBroker {
         poller: &Poller,
         identity: ResourceIdentity,
         frame: FrameBody,
+        now: kafka_driver_core::Moment,
     ) -> Result<(), BrokerError> {
         if self.connection.state().phase() == kafka_driver_core::ConnectionPhase::Negotiating {
-            return self.process_negotiation_frame(poller, identity, frame);
+            return self.process_negotiation_frame(poller, identity, frame, now);
+        }
+        if self.connection.state().phase() == kafka_driver_core::ConnectionPhase::Authenticating {
+            return self.process_authentication_frame(poller, identity, frame);
         }
         let envelope = match self.responses.inspect_front(frame) {
             Ok(envelope) => envelope,

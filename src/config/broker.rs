@@ -5,11 +5,14 @@ use std::net::SocketAddr;
 #[cfg(feature = "tls-rustls")]
 use super::TlsClientConfig;
 
+use super::SaslConfig;
+
 /// Fully selected connection mechanics for one configured broker.
 #[derive(Clone, Debug)]
 pub(crate) struct BrokerConfig {
     address: SocketAddr,
     security: BrokerSecurity,
+    sasl: Option<SaslConfig>,
 }
 
 impl BrokerConfig {
@@ -17,6 +20,7 @@ impl BrokerConfig {
         Self {
             address,
             security: BrokerSecurity::Plaintext,
+            sasl: None,
         }
     }
 
@@ -25,11 +29,17 @@ impl BrokerConfig {
         Self {
             address,
             security: BrokerSecurity::Rustls(tls),
+            sasl: None,
         }
     }
 
-    pub(crate) fn into_parts(self) -> (SocketAddr, BrokerSecurity) {
-        (self.address, self.security)
+    pub(crate) fn with_sasl(mut self, sasl: Option<SaslConfig>) -> Self {
+        self.sasl = sasl;
+        self
+    }
+
+    pub(crate) fn into_parts(self) -> (SocketAddr, BrokerSecurity, Option<SaslConfig>) {
+        (self.address, self.security, self.sasl)
     }
 }
 
