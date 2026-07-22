@@ -9,7 +9,8 @@ use crate::{
 };
 
 use super::{
-    authentication, encryption, measurement, readiness, reconnect, routes, secure_authentication,
+    authentication, authentication_rejection, encryption, measurement, readiness, reconnect,
+    routes, secure_authentication,
 };
 
 pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
@@ -34,14 +35,17 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
         Arguments::Authenticate {
             mechanism,
             bootstrap,
-        } => {
-            let endpoints = endpoint::bootstrap(&bootstrap)
-                .map_err(|source| ProbeError::stage("validate bootstrap endpoint", source))?;
-            (
-                security::sasl_session(endpoints, mechanism)?,
-                Scenario::Authentication { mechanism },
-            )
-        }
+        } => (
+            spawn_sasl(&bootstrap, mechanism)?,
+            Scenario::Authentication { mechanism },
+        ),
+        Arguments::RejectAuthentication {
+            mechanism,
+            bootstrap,
+        } => (
+            spawn_sasl(&bootstrap, mechanism)?,
+            Scenario::AuthenticationRejection { mechanism },
+        ),
         Arguments::Tls {
             address,
             certificate,
@@ -78,6 +82,9 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
         Scenario::Reconnect => reconnect::run(&session),
         Scenario::Rolling { coordination } => reconnect::run_rolling(&session, &coordination),
         Scenario::Authentication { mechanism } => authentication::run(&session, mechanism),
+        Scenario::AuthenticationRejection { mechanism } => {
+            authentication_rejection::run(&session, mechanism)
+        }
         Scenario::Tls => encryption::run(&session),
         Scenario::TlsAuthentication { mechanism } => {
             secure_authentication::run(&session, mechanism)
@@ -94,12 +101,19 @@ fn spawn_plaintext(bootstrap: &str) -> Result<ProbeSession, ProbeError> {
     ProbeSession::spawn(endpoints)
 }
 
+fn spawn_sasl(bootstrap: &str, mechanism: SaslSelection) -> Result<ProbeSession, ProbeError> {
+    let endpoints = endpoint::bootstrap(bootstrap)
+        .map_err(|source| ProbeError::stage("validate bootstrap endpoint", source))?;
+    security::sasl_session(endpoints, mechanism)
+}
+
 enum Scenario {
     Readiness,
     Routes { topic: String, group: String },
     Reconnect,
     Rolling { coordination: String },
     Authentication { mechanism: SaslSelection },
+    AuthenticationRejection { mechanism: SaslSelection },
     Tls,
     TlsAuthentication { mechanism: SaslSelection },
     Measure { samples: std::num::NonZeroUsize },

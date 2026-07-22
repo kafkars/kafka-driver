@@ -23,6 +23,7 @@ pub(crate) enum ProbeError {
     Credential {
         name: &'static str,
     },
+    AuthenticationAccepted,
     ReleaseRequired,
 }
 
@@ -60,6 +61,9 @@ impl fmt::Display for ProbeError {
                     "credential environment variable {name} is missing or invalid"
                 )
             }
+            Self::AuthenticationAccepted => {
+                formatter.write_str("invalid credentials were unexpectedly accepted")
+            }
             Self::ReleaseRequired => {
                 formatter.write_str("performance measurement requires a release build")
             }
@@ -75,6 +79,7 @@ impl Error for ProbeError {
             | Self::MissingApiVersions { .. }
             | Self::ReadinessAttempts { .. }
             | Self::Credential { .. }
+            | Self::AuthenticationAccepted
             | Self::ReleaseRequired => None,
         }
     }

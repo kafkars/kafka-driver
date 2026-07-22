@@ -32,6 +32,12 @@ pub(crate) enum Arguments {
         bootstrap: String,
     },
 
+    /// Proves one exact SASL mechanism rejects invalid credentials terminally.
+    RejectAuthentication {
+        mechanism: SaslSelection,
+        bootstrap: String,
+    },
+
     /// Proves a direct broker RPC over certificate-verified rustls.
     Tls {
         address: String,
@@ -75,6 +81,12 @@ impl Arguments {
             }),
             [command, mechanism, bootstrap] if command == "authenticate" => {
                 Ok(Self::Authenticate {
+                    mechanism: SaslSelection::parse(mechanism)?,
+                    bootstrap: bootstrap.clone(),
+                })
+            }
+            [command, mechanism, bootstrap] if command == "reject-authentication" => {
+                Ok(Self::RejectAuthentication {
                     mechanism: SaslSelection::parse(mechanism)?,
                     bootstrap: bootstrap.clone(),
                 })
@@ -123,7 +135,7 @@ impl fmt::Display for ArgumentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Shape => formatter.write_str(
-                "usage: kafka-driver-probe readiness <bootstrap-set> | routes <bootstrap-set> <topic> <group> | reconnect <bootstrap-set> | rolling <bootstrap-set> <coordination-directory> | authenticate <mechanism> <bootstrap-set> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <bootstrap-set> <samples>",
+                "usage: kafka-driver-probe readiness <bootstrap-set> | routes <bootstrap-set> <topic> <group> | reconnect <bootstrap-set> | rolling <bootstrap-set> <coordination-directory> | authenticate <mechanism> <bootstrap-set> | reject-authentication <mechanism> <bootstrap-set> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <bootstrap-set> <samples>",
             ),
             Self::Samples => write!(
                 formatter,

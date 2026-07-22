@@ -84,6 +84,25 @@ fn authentication_accepts_each_supported_sasl_mechanism() {
 }
 
 #[test]
+fn authentication_rejection_accepts_each_supported_sasl_mechanism() {
+    for (name, mechanism) in [
+        ("plain", SaslSelection::Plain),
+        ("scram-sha-256", SaslSelection::ScramSha256),
+        ("scram-sha-512", SaslSelection::ScramSha512),
+    ] {
+        let parsed = Arguments::parse(strings(["reject-authentication", name, "broker.test:9092"]));
+
+        assert_eq!(
+            parsed,
+            Ok(Arguments::RejectAuthentication {
+                mechanism,
+                bootstrap: "broker.test:9092".to_owned(),
+            })
+        );
+    }
+}
+
+#[test]
 fn authentication_rejects_an_unsupported_sasl_mechanism() {
     assert_eq!(
         Arguments::parse(strings(["authenticate", "oauthbearer", "one:1"])),
@@ -155,6 +174,10 @@ fn partial_or_expanded_commands_are_rejected() {
     );
     assert_eq!(
         Arguments::parse(strings(["rolling", "one:1", "gates", "extra"])),
+        Err(ArgumentError::Shape)
+    );
+    assert_eq!(
+        Arguments::parse(strings(["reject-authentication", "plain"])),
         Err(ArgumentError::Shape)
     );
     assert_eq!(
