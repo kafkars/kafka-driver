@@ -130,7 +130,7 @@ fn metadata_response(correlation_id: i32, port: u16) -> Vec<u8> {
     response.brokers.push(broker);
     response.controller_id = 1;
 
-    let version = ApiVersion::new(0);
+    let version = ApiVersion::new(1);
     let Ok(header_version) = response_header_version_for::<MetadataRequest>(version) else {
         panic!("Metadata v0 must have response header policy");
     };

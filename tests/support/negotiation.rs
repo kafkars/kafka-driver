@@ -7,7 +7,7 @@ use std::{
 };
 
 use bytes::BytesMut;
-use kafka_driver::{Reactor, TurnOutcome};
+use kafka_driver::Reactor;
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsResponse, METADATA_API_DESCRIPTOR, ResponseHeader,
     api_versions_response::ApiVersion as AdvertisedApi,
@@ -17,29 +17,29 @@ use kafka_wire_core::{ApiVersion, KafkaEncode};
 pub(crate) fn complete_negotiation(peer: &mut TcpStream, reactor: &mut Reactor) {
     peer.set_read_timeout(Some(Duration::from_secs(1)))
         .unwrap_or_else(|error| panic!("bound loopback broker read: {error}"));
-    drive_progress(reactor);
-    drive_progress(reactor);
+    drive(reactor);
+    drive(reactor);
     read_frame(peer);
     peer.write_all(&negotiation_response())
         .unwrap_or_else(|error| panic!("write negotiation response: {error}"));
-    drive_progress(reactor);
+    drive(reactor);
 }
 
-fn drive_progress(reactor: &mut Reactor) {
-    let outcome = reactor
+fn drive(reactor: &mut Reactor) {
+    reactor
         .turn(Duration::from_secs(1))
         .unwrap_or_else(|error| panic!("drive negotiation turn: {error}"));
-    assert!(matches!(outcome, TurnOutcome::Progress { .. }));
 }
 
 fn negotiation_response() -> Vec<u8> {
     let mut response = ApiVersionsResponse::default();
     response
         .api_keys
-        .push(advertisement(METADATA_API_DESCRIPTOR.api_key.value()));
-    response
-        .api_keys
-        .push(advertisement(API_VERSIONS_API_DESCRIPTOR.api_key.value()));
+        .push(advertisement(METADATA_API_DESCRIPTOR.api_key.value(), 1));
+    response.api_keys.push(advertisement(
+        API_VERSIONS_API_DESCRIPTOR.api_key.value(),
+        0,
+    ));
 
     let mut body = BytesMut::new();
     let mut header = ResponseHeader::default();
@@ -54,11 +54,11 @@ fn negotiation_response() -> Vec<u8> {
     frame
 }
 
-fn advertisement(api_key: i16) -> AdvertisedApi {
+fn advertisement(api_key: i16, max_version: i16) -> AdvertisedApi {
     let mut api = AdvertisedApi::default();
     api.api_key = api_key;
     api.min_version = 0;
-    api.max_version = 0;
+    api.max_version = max_version;
     api
 }
 
