@@ -41,4 +41,9 @@ impl CorrelationAllocator {
         }
         None
     }
+
+    #[cfg(test)]
+    pub(super) const fn starting_at(next: i32) -> Self {
+        Self { next }
+    }
 }

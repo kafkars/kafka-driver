@@ -15,6 +15,21 @@ mod state;
 mod trace;
 mod transition;
 
+#[cfg(test)]
+mod admission_test;
+#[cfg(test)]
+mod correlation_test;
+#[cfg(test)]
+mod deadline_test;
+#[cfg(test)]
+mod lifecycle_test;
+#[cfg(test)]
+mod response_test;
+#[cfg(test)]
+mod scenario_support_test;
+#[cfg(test)]
+mod shutdown_test;
+
 pub use correlation::CorrelationId;
 pub use effect::ConnectionEffect;
 pub use failure::{
