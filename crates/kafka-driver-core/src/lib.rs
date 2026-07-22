@@ -37,4 +37,5 @@ pub use connection::{
 };
 pub use delivery::Delivery;
 pub use identity::{CallId, ConnectionEpoch, EffectId, OperationId, TimerId, TransportId};
+pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use time::Moment;
