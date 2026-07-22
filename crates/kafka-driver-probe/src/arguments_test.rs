@@ -36,6 +36,18 @@ fn routes_retain_the_exact_endpoint_topic_and_group() {
 }
 
 #[test]
+fn reconnect_retains_one_exact_bootstrap_endpoint() {
+    let parsed = Arguments::parse(strings(["reconnect", "broker.test:9092"]));
+
+    assert_eq!(
+        parsed,
+        Ok(Arguments::Reconnect {
+            bootstrap: "broker.test:9092".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn partial_or_expanded_commands_are_rejected() {
     assert_eq!(
         Arguments::parse(strings(["readiness"])),
@@ -47,6 +59,10 @@ fn partial_or_expanded_commands_are_rejected() {
     );
     assert_eq!(
         Arguments::parse(strings(["routes", "one:1", "topic"])),
+        Err(ArgumentError::Shape)
+    );
+    assert_eq!(
+        Arguments::parse(strings(["reconnect", "one:1", "two:2"])),
         Err(ArgumentError::Shape)
     );
 }

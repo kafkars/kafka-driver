@@ -2,7 +2,7 @@
 
 use crate::{arguments::Arguments, endpoint, error::ProbeError, session::ProbeSession};
 
-use super::{measurement, readiness, routes};
+use super::{measurement, readiness, reconnect, routes};
 
 pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
     let (bootstrap, scenario) = match arguments {
@@ -12,6 +12,7 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
             topic,
             group,
         } => (bootstrap, Scenario::Routes { topic, group }),
+        Arguments::Reconnect { bootstrap } => (bootstrap, Scenario::Reconnect),
         Arguments::Measure { bootstrap, samples } => (bootstrap, Scenario::Measure { samples }),
     };
     let endpoints = endpoint::bootstrap(&bootstrap)
@@ -20,6 +21,7 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
     let outcome = match scenario {
         Scenario::Readiness => readiness::run(&session),
         Scenario::Routes { topic, group } => routes::run(&session, topic, group),
+        Scenario::Reconnect => reconnect::run(&session),
         Scenario::Measure { samples } => measurement::run(&session, samples),
     };
     let close = session.close();
@@ -29,5 +31,6 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
 enum Scenario {
     Readiness,
     Routes { topic: String, group: String },
+    Reconnect,
     Measure { samples: std::num::NonZeroUsize },
 }

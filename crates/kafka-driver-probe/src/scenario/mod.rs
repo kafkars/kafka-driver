@@ -2,6 +2,9 @@
 
 mod measurement;
 mod readiness;
+mod reconnect;
+#[cfg(test)]
+mod reconnect_test;
 mod routes;
 mod runner;
 

@@ -9,7 +9,8 @@
   "scripts": {
     "measure:real-kafka": "smoque run smoke/ --tag real-kafka-performance --ci",
     "smoke:list": "smoque list smoke/",
-    "smoke:real-kafka": "smoque run smoke/ --tag real-kafka --ci"
+    "smoke:real-kafka": "smoque run smoke/ --tag real-kafka --ci",
+    "smoke:real-kafka-reconnect": "smoque run smoke/ --tag real-kafka-reconnect --ci"
   },
   "devDependencies": {
     "smoque": "0.1.0"

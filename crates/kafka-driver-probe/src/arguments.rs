@@ -17,6 +17,9 @@ pub(crate) enum Arguments {
         group: String,
     },
 
+    /// Proves one driver survives an externally orchestrated broker restart.
+    Reconnect { bootstrap: String },
+
     /// Measures bounded generated-RPC progress through one real broker.
     Measure {
         bootstrap: String,
@@ -35,6 +38,9 @@ impl Arguments {
                 bootstrap: bootstrap.clone(),
                 topic: topic.clone(),
                 group: group.clone(),
+            }),
+            [command, bootstrap] if command == "reconnect" => Ok(Self::Reconnect {
+                bootstrap: bootstrap.clone(),
             }),
             [command, bootstrap, samples] if command == "measure" => {
                 let samples = samples
@@ -64,7 +70,7 @@ impl fmt::Display for ArgumentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Shape => formatter.write_str(
-                "usage: kafka-driver-probe readiness <host:port> | routes <host:port> <topic> <group> | measure <host:port> <samples>",
+                "usage: kafka-driver-probe readiness <host:port> | routes <host:port> <topic> <group> | reconnect <host:port> | measure <host:port> <samples>",
             ),
             Self::Samples => write!(
                 formatter,

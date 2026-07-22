@@ -20,6 +20,11 @@ pub(crate) struct ProbeSession {
 
 pub(crate) type ApiVersionsCall = Call<Result<ApiVersionsResponse, RequestError>>;
 
+pub(crate) enum SeedObservation {
+    Ready,
+    Failed(RequestError),
+}
+
 impl ProbeSession {
     pub(crate) fn spawn(bootstrap: kafka_driver::BootstrapSet) -> Result<Self, ProbeError> {
         let (driver, host) = Driver::builder()
@@ -65,6 +70,17 @@ impl ProbeSession {
             .map_err(|source| ProbeError::stage("admit measured generated request", source))
     }
 
+    pub(crate) fn observe_seed(&self, timeout: Duration) -> Result<SeedObservation, ProbeError> {
+        match self.request_once(TrafficClass::Interactive, Route::AnyBroker, timeout) {
+            Ok(response) => {
+                validate(&response, "reconnect seed")?;
+                Ok(SeedObservation::Ready)
+            }
+            Err(RequestAttempt::Request(error)) => Ok(SeedObservation::Failed(error)),
+            Err(error) => Err(error.into_probe()),
+        }
+    }
+
     pub(crate) fn complete_api_versions(
         call: ApiVersionsCall,
         label: &'static str,
@@ -84,7 +100,7 @@ impl ProbeSession {
         readiness: Readiness,
     ) -> Result<(), ProbeError> {
         for _ in 0..READINESS_ATTEMPTS {
-            match self.request_once(traffic_class, route.clone()) {
+            match self.request_once(traffic_class, route.clone(), CALL_TIMEOUT) {
                 Ok(response) => return validate(&response, label),
                 Err(RequestAttempt::Request(error)) if readiness.accepts(&error) => {
                     thread::sleep(READINESS_INTERVAL);
@@ -102,10 +118,11 @@ impl ProbeSession {
         &self,
         traffic_class: TrafficClass,
         route: Route,
+        timeout: Duration,
     ) -> Result<ApiVersionsResponse, RequestAttempt> {
         let call = self
             .driver
-            .request_in(traffic_class, route, api_versions_request(), CALL_TIMEOUT)
+            .request_in(traffic_class, route, api_versions_request(), timeout)
             .map_err(RequestAttempt::Submit)?;
         call.wait()
             .map_err(RequestAttempt::Completion)?
