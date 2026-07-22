@@ -1,25 +1,19 @@
-//! One public dedicated-host session with exact generated-RPC and shutdown ownership.
+//! Exact generated `ApiVersions` admission, readiness, and response validation.
 
 use std::{thread, time::Duration};
 
-use kafka_driver::{
-    Call, CallFailure, Delivery, Driver, DriverHost, RequestError, Route, SaslConfig,
-    TlsClientConfig, TrafficClass,
-};
+use kafka_driver::{Call, CallFailure, Delivery, RequestError, Route, TrafficClass};
 use kafka_wire::{API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse};
 
 use crate::error::ProbeError;
+
+use super::ProbeSession;
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const READINESS_ATTEMPTS: usize = 200;
 const READINESS_INTERVAL: Duration = Duration::from_millis(25);
 
-pub(crate) struct ProbeSession {
-    driver: Driver,
-    host: DriverHost,
-}
-
-pub(crate) type ApiVersionsCall = Call<Result<ApiVersionsResponse, RequestError>>;
+pub(super) type ApiVersionsCall = Call<Result<ApiVersionsResponse, RequestError>>;
 
 pub(crate) enum SeedObservation {
     Ready,
@@ -27,39 +21,6 @@ pub(crate) enum SeedObservation {
 }
 
 impl ProbeSession {
-    pub(crate) fn spawn(bootstrap: kafka_driver::BootstrapSet) -> Result<Self, ProbeError> {
-        Self::spawn_builder(Driver::builder().bootstrap(bootstrap))
-    }
-
-    pub(crate) fn spawn_sasl(
-        bootstrap: kafka_driver::BootstrapSet,
-        sasl: SaslConfig,
-    ) -> Result<Self, ProbeError> {
-        Self::spawn_builder(Driver::builder().bootstrap(bootstrap).sasl(sasl))
-    }
-
-    pub(crate) fn spawn_tls(
-        address: std::net::SocketAddr,
-        tls: TlsClientConfig,
-    ) -> Result<Self, ProbeError> {
-        Self::spawn_builder(Driver::builder().rustls_broker(address, tls))
-    }
-
-    pub(crate) fn spawn_tls_sasl(
-        address: std::net::SocketAddr,
-        tls: TlsClientConfig,
-        sasl: SaslConfig,
-    ) -> Result<Self, ProbeError> {
-        Self::spawn_builder(Driver::builder().rustls_broker(address, tls).sasl(sasl))
-    }
-
-    fn spawn_builder(builder: kafka_driver::DriverBuilder) -> Result<Self, ProbeError> {
-        let (driver, host) = builder
-            .spawn()
-            .map_err(|source| ProbeError::stage("start dedicated driver", source))?;
-        Ok(Self { driver, host })
-    }
-
     pub(crate) fn await_seed(&self) -> Result<(), ProbeError> {
         self.request_api_versions(
             TrafficClass::Interactive,
@@ -153,22 +114,6 @@ impl ProbeSession {
         call.wait()
             .map_err(RequestAttempt::Completion)?
             .map_err(RequestAttempt::Request)
-    }
-
-    pub(crate) fn close(self) -> Result<(), ProbeError> {
-        let Self { driver, host } = self;
-        let shutdown = driver
-            .shutdown()
-            .map_err(|source| ProbeError::stage("admit graceful shutdown", source));
-        let shutdown = shutdown.and_then(|call| {
-            call.wait()
-                .map_err(|source| ProbeError::stage("wait for graceful shutdown", source))
-        });
-        drop(driver);
-        let joined = host
-            .join()
-            .map_err(|source| ProbeError::stage("join dedicated driver", source));
-        shutdown.and(joined)
     }
 }
 
