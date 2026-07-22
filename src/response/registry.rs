@@ -11,9 +11,9 @@ use crate::completion::CompletionSender;
 use crate::{api::Call, completion::completion_pair};
 
 use super::{
-    CompletionDisposition, FailedResponses, ResponseAdmissionError, ResponseCloseReason,
-    ResponseDispatch, ResponseDispatchError, ResponseEnvelope, ResponseFailure,
-    ResponseInspectError,
+    CompletionDisposition, FailedResponses, RequestError, ResponseAdmissionError,
+    ResponseCloseReason, ResponseDispatch, ResponseDispatchError, ResponseEnvelope,
+    ResponseFailError, ResponseFailure, ResponseInspectError,
     slot::{PendingResponse, TypedSlot},
 };
 
@@ -136,12 +136,36 @@ impl ResponseRegistry {
         }
     }
 
+    /// Fails the FIFO front only when the machine names that exact call.
+    pub(crate) fn fail_verified(
+        &mut self,
+        call_id: CallId,
+        failure: RequestError,
+    ) -> Result<CompletionDisposition, ResponseFailError> {
+        let Some(front) = self.slots.front() else {
+            return Err(ResponseFailError::NoPendingResponse { call_id, failure });
+        };
+        if front.call_id() != call_id {
+            return Err(ResponseFailError::VerificationMismatch {
+                expected_call: front.call_id(),
+                failed_call: call_id,
+                failure,
+            });
+        }
+        let Some(slot) = self.slots.pop_front() else {
+            return Err(ResponseFailError::NoPendingResponse { call_id, failure });
+        };
+        Ok(slot.fail(failure))
+    }
+
     /// Fails and removes every remaining slot when its connection epoch ends.
     pub(crate) fn fail_all(&mut self, reason: ResponseCloseReason) -> FailedResponses {
         let mut failed = FailedResponses::default();
         while let Some(slot) = self.slots.pop_front() {
             failed.total += 1;
-            if slot.fail(reason) == CompletionDisposition::ReceiverAbandoned {
+            if slot.fail(RequestError::ConnectionClosed(reason))
+                == CompletionDisposition::ReceiverAbandoned
+            {
                 failed.abandoned += 1;
             }
         }

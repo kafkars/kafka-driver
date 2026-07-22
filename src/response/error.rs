@@ -6,7 +6,7 @@ use kafka_driver_core::{CallId, CorrelationId};
 use kafka_driver_transport::FrameBody;
 use kafka_wire_core::{ApiVersion, DecodeError};
 
-use super::{CompletionDisposition, ResponseEnvelope};
+use super::{CompletionDisposition, RequestError, ResponseEnvelope};
 
 /// Why a typed response slot could not enter the bounded FIFO registry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -126,3 +126,34 @@ impl Error for ResponseDispatchError {
         }
     }
 }
+
+/// Why a machine-approved call failure could not settle the FIFO front.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ResponseFailError {
+    /// No typed response slot remains for the named call.
+    NoPendingResponse {
+        call_id: CallId,
+        failure: RequestError,
+    },
+    /// The machine failure did not name the registry FIFO front.
+    VerificationMismatch {
+        expected_call: CallId,
+        failed_call: CallId,
+        failure: RequestError,
+    },
+}
+
+impl fmt::Display for ResponseFailError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoPendingResponse { .. } => {
+                formatter.write_str("machine failed a call with no pending typed slot")
+            }
+            Self::VerificationMismatch { .. } => {
+                formatter.write_str("machine-failed call does not match typed registry front")
+            }
+        }
+    }
+}
+
+impl Error for ResponseFailError {}

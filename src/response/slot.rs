@@ -5,7 +5,7 @@ use kafka_wire_core::{ApiVersion, Bytes, DecodeError, DecodeLimits, Decoder, Kaf
 
 use crate::completion::CompletionSender;
 
-use super::{CompletionDisposition, ResponseCloseReason, ResponseFailure};
+use super::{CompletionDisposition, RequestError, ResponseFailure};
 
 pub(super) trait PendingResponse {
     fn call_id(&self) -> CallId;
@@ -16,7 +16,7 @@ pub(super) trait PendingResponse {
         body: Bytes,
         limits: DecodeLimits,
     ) -> Result<CompletionDisposition, SlotDecodeError>;
-    fn fail(self: Box<Self>, reason: ResponseCloseReason) -> CompletionDisposition;
+    fn fail(self: Box<Self>, failure: RequestError) -> CompletionDisposition;
 }
 
 pub(super) struct TypedSlot<T> {
@@ -84,12 +84,8 @@ where
         }
     }
 
-    fn fail(self: Box<Self>, reason: ResponseCloseReason) -> CompletionDisposition {
-        disposition(
-            self.completion
-                .complete(Err(ResponseFailure::ConnectionClosed(reason)))
-                .is_ok(),
-        )
+    fn fail(self: Box<Self>, failure: RequestError) -> CompletionDisposition {
+        disposition(self.completion.complete(Err(failure)).is_ok())
     }
 }
 

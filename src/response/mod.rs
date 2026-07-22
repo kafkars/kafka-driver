@@ -14,7 +14,9 @@ mod dispatch_test;
 mod end_to_end_test;
 
 pub(crate) use envelope::ResponseEnvelope;
-pub(crate) use error::{ResponseAdmissionError, ResponseDispatchError, ResponseInspectError};
+pub(crate) use error::{
+    ResponseAdmissionError, ResponseDispatchError, ResponseFailError, ResponseInspectError,
+};
 pub(crate) use outcome::{
     CompletionDisposition, FailedResponses, ResponseDispatch, ResponseFailure,
 };

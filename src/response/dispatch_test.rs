@@ -3,7 +3,7 @@
 use std::num::NonZeroUsize;
 
 use bytes::BytesMut;
-use kafka_driver_core::{CallId, CorrelationId};
+use kafka_driver_core::{CallFailure, CallId, CorrelationId, Delivery};
 use kafka_driver_transport::{FrameBody, FrameDecoder, FrameLimits};
 use kafka_wire::{
     ApiVersionsRequest, ApiVersionsResponse, RequestResponsePair, ResponseHeader,
@@ -11,7 +11,10 @@ use kafka_wire::{
 };
 use kafka_wire_core::{ApiVersion, DecodeLimits, KafkaEncode};
 
-use super::{CompletionDisposition, ResponseDispatchError, ResponseFailure, ResponseInspectError};
+use super::{
+    CompletionDisposition, RequestError, ResponseDispatchError, ResponseFailError, ResponseFailure,
+    ResponseInspectError,
+};
 use crate::response::registry::ResponseRegistry;
 
 #[test]
@@ -133,6 +136,55 @@ fn successful_decode_reports_an_abandoned_receiver() {
         dispatched.completion,
         CompletionDisposition::ReceiverAbandoned
     );
+}
+
+#[test]
+fn machine_failure_settles_only_the_named_fifo_front() {
+    let mut registry = registry();
+    let Ok(first) = registry.register::<ApiVersionsRequest>(call_id(), correlation(), version())
+    else {
+        panic!("typed response must be registered");
+    };
+    let failure = RequestError::Rejected {
+        failure: CallFailure::DeadlineExceeded,
+        delivery: Delivery::PossiblySent,
+    };
+
+    let completion = registry.fail_verified(call_id(), failure.clone());
+
+    assert_eq!(completion, Ok(CompletionDisposition::Delivered));
+    assert_eq!(first.wait(), Ok(Err(failure)));
+    assert_eq!(registry.pending(), 0);
+}
+
+#[test]
+fn machine_failure_mismatch_preserves_the_fifo_front_and_failure() {
+    let mut registry = registry();
+    let Ok(first) = registry.register::<ApiVersionsRequest>(call_id(), correlation(), version())
+    else {
+        panic!("typed response must be registered");
+    };
+    let failed_call = CallId::from_raw(99);
+    let failure = RequestError::IdentityConflict;
+
+    let result = registry.fail_verified(failed_call, failure.clone());
+
+    assert!(matches!(
+        result,
+        Err(ResponseFailError::VerificationMismatch {
+            expected_call,
+            failed_call: observed_call,
+            failure: observed_failure,
+        }) if expected_call == call_id()
+            && observed_call == failed_call
+            && observed_failure == failure
+    ));
+    assert_eq!(registry.pending(), 1);
+    assert_eq!(
+        registry.fail_verified(call_id(), RequestError::IdentityConflict),
+        Ok(CompletionDisposition::Delivered)
+    );
+    assert_eq!(first.wait(), Ok(Err(RequestError::IdentityConflict)));
 }
 
 fn encoded_response<R>(response: &R::Response, correlation_id: CorrelationId) -> FrameBody
