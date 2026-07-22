@@ -9,6 +9,7 @@ use crate::{RequestError, config::DriverLimits};
 use super::{
     Command, MailboxSender, PollEvent, Poller, ReactorError, WakeHandle,
     broker::{BrokerLimits, SingleBroker},
+    clock::ReactorClock,
     mailbox,
     mailbox::{DrainStatus, MailboxReceiver},
 };
@@ -40,6 +41,7 @@ pub struct Reactor {
     poller: Poller,
     poll_events: Vec<PollEvent>,
     broker: Option<SingleBroker>,
+    clock: ReactorClock,
     shutdown: bool,
 }
 
@@ -63,6 +65,7 @@ impl Reactor {
             limits,
             poller,
             broker,
+            clock: ReactorClock::new(),
             shutdown: false,
         };
         Ok((sender, reactor))
@@ -105,10 +108,19 @@ impl Reactor {
         for command in self.command_batch.drain(..) {
             processed += 1;
             match command {
-                Command::Submit { request } => request.fail(RequestError::Rejected {
-                    failure: CallFailure::NotReady,
-                    delivery: Delivery::NotSent,
-                }),
+                Command::Submit { request } => {
+                    if let Some(broker) = &mut self.broker {
+                        let now = self.clock.now().map_err(ReactorError::clock)?;
+                        broker
+                            .submit(&self.poller, request, now)
+                            .map_err(ReactorError::broker)?;
+                    } else {
+                        request.fail(RequestError::Rejected {
+                            failure: CallFailure::NotReady,
+                            delivery: Delivery::NotSent,
+                        });
+                    }
+                }
                 Command::Shutdown { completion } => {
                     let _ = completion.complete(());
                     self.shutdown = true;

@@ -1,6 +1,15 @@
 //! Public scenarios for bounded shutdown, wake, and terminal reactor ownership.
 
-use std::{num::NonZeroUsize, thread, time::Duration};
+use std::{
+    future::Future,
+    net::TcpListener,
+    num::NonZeroUsize,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll, Wake, Waker},
+    thread,
+    time::Duration,
+};
 
 use kafka_driver::{
     ApiVersion, Delivery, Driver, DriverLimits, Reactor, RequestError, SubmitError, TurnOutcome,
@@ -118,9 +127,65 @@ fn generated_call_before_broker_configuration_is_not_sent_or_left_pending() {
     );
 }
 
+#[test]
+fn generated_call_reaches_a_ready_configured_broker_owner() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read loopback broker address: {error}"));
+    let Ok((driver, mut reactor)) = Driver::builder().broker(address).build_reactor() else {
+        panic!("host must create a configured broker reactor");
+    };
+    let (_peer, _) = listener
+        .accept()
+        .unwrap_or_else(|error| panic!("accept broker connection: {error}"));
+    let Ok(opened) = reactor.turn(Duration::from_secs(1)) else {
+        panic!("reactor must observe broker readiness");
+    };
+    assert_eq!(
+        opened,
+        TurnOutcome::Progress {
+            commands: 0,
+            more_work: false,
+        }
+    );
+    let Ok(mut call) = driver.call(
+        ApiVersionsRequest::default(),
+        ApiVersion::new(0),
+        Duration::from_secs(1),
+    ) else {
+        panic!("generated call must enter the configured mailbox");
+    };
+
+    let Ok(admitted) = reactor.turn(Duration::ZERO) else {
+        panic!("reactor must admit the generated call");
+    };
+
+    assert_eq!(
+        admitted,
+        TurnOutcome::Progress {
+            commands: 1,
+            more_work: false,
+        }
+    );
+    let waker = Waker::from(Arc::new(NoopWake));
+    let mut context = Context::from_waker(&waker);
+    assert!(matches!(
+        Future::poll(Pin::new(&mut call), &mut context),
+        Poll::Pending
+    ));
+}
+
 fn build_reactor(limits: DriverLimits) -> (Driver, Reactor) {
     let Ok(pair) = Driver::builder().limits(limits).build_reactor() else {
         panic!("host must provide a Mio selector");
     };
     pair
+}
+
+struct NoopWake;
+
+impl Wake for NoopWake {
+    fn wake(self: Arc<Self>) {}
 }

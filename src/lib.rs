@@ -7,14 +7,10 @@ mod api;
 mod completion;
 mod config;
 mod reactor;
-#[allow(
-    dead_code,
-    reason = "M4 typed request preparation is consumed by mailbox submission next"
-)]
 mod request;
 #[allow(
     dead_code,
-    reason = "M3 locks typed response dispatch before the M4 reactor adapter consumes it"
+    reason = "M4 response inspection and dispatch are consumed by the read-drive slice"
 )]
 mod response;
 

@@ -2,7 +2,7 @@
 
 use std::{fmt, io};
 
-use super::broker::BrokerError;
+use super::{broker::BrokerError, clock::ClockOverflow};
 
 /// Why one reactor turn could not observe external readiness.
 #[derive(Debug)]
@@ -25,6 +25,13 @@ impl ReactorError {
             operation: ReactorOperation::Broker,
         }
     }
+
+    pub(super) fn clock(source: ClockOverflow) -> Self {
+        Self {
+            source: io::Error::other(source),
+            operation: ReactorOperation::Clock,
+        }
+    }
 }
 
 impl fmt::Display for ReactorError {
@@ -32,6 +39,7 @@ impl fmt::Display for ReactorError {
         match self.operation {
             ReactorOperation::Poll => formatter.write_str("the driver I/O selector failed"),
             ReactorOperation::Broker => formatter.write_str("the broker reactor failed"),
+            ReactorOperation::Clock => formatter.write_str("the driver clock failed"),
         }
     }
 }
@@ -40,6 +48,7 @@ impl fmt::Display for ReactorError {
 enum ReactorOperation {
     Poll,
     Broker,
+    Clock,
 }
 
 impl std::error::Error for ReactorError {
