@@ -1,5 +1,7 @@
 //! Scenarios for exact qualification command admission.
 
+use std::num::NonZeroUsize;
+
 use super::arguments::{ArgumentError, Arguments};
 
 #[test]
@@ -35,14 +37,36 @@ fn routes_retain_the_exact_endpoint_topic_and_group() {
 
 #[test]
 fn partial_or_expanded_commands_are_rejected() {
-    assert_eq!(Arguments::parse(strings(["readiness"])), Err(ArgumentError));
+    assert_eq!(
+        Arguments::parse(strings(["readiness"])),
+        Err(ArgumentError::Shape)
+    );
     assert_eq!(
         Arguments::parse(strings(["readiness", "one:1", "two:2"])),
-        Err(ArgumentError)
+        Err(ArgumentError::Shape)
     );
     assert_eq!(
         Arguments::parse(strings(["routes", "one:1", "topic"])),
-        Err(ArgumentError)
+        Err(ArgumentError::Shape)
+    );
+}
+
+#[test]
+fn measurement_samples_are_nonzero_and_explicitly_bounded() {
+    assert_eq!(
+        Arguments::parse(strings(["measure", "one:1", "500"])),
+        Ok(Arguments::Measure {
+            bootstrap: "one:1".to_owned(),
+            samples: NonZeroUsize::new(500).unwrap_or(NonZeroUsize::MIN),
+        })
+    );
+    assert_eq!(
+        Arguments::parse(strings(["measure", "one:1", "0"])),
+        Err(ArgumentError::Samples)
+    );
+    assert_eq!(
+        Arguments::parse(strings(["measure", "one:1", "10001"])),
+        Err(ArgumentError::Samples)
     );
 }
 

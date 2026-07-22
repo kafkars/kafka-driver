@@ -2,7 +2,9 @@
 
 use std::{thread, time::Duration};
 
-use kafka_driver::{CallFailure, Delivery, Driver, DriverHost, RequestError, Route};
+use kafka_driver::{
+    Call, CallFailure, Delivery, Driver, DriverHost, RequestError, Route, TrafficClass,
+};
 use kafka_wire::{API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse};
 
 use crate::error::ProbeError;
@@ -16,6 +18,8 @@ pub(crate) struct ProbeSession {
     host: DriverHost,
 }
 
+pub(crate) type ApiVersionsCall = Call<Result<ApiVersionsResponse, RequestError>>;
+
 impl ProbeSession {
     pub(crate) fn spawn(bootstrap: kafka_driver::BootstrapSet) -> Result<Self, ProbeError> {
         let (driver, host) = Driver::builder()
@@ -26,7 +30,12 @@ impl ProbeSession {
     }
 
     pub(crate) fn await_seed(&self) -> Result<(), ProbeError> {
-        self.request_api_versions(&Route::AnyBroker, "any-broker route", Readiness::Seed)
+        self.request_api_versions(
+            TrafficClass::Interactive,
+            &Route::AnyBroker,
+            "any-broker route",
+            Readiness::Seed,
+        )
     }
 
     pub(crate) fn await_controller(&self) -> Result<(), ProbeError> {
@@ -34,17 +43,48 @@ impl ProbeSession {
     }
 
     pub(crate) fn await_route(&self, route: &Route, label: &'static str) -> Result<(), ProbeError> {
-        self.request_api_versions(route, label, Readiness::SemanticRoute)
+        self.await_route_in(TrafficClass::Interactive, route, label)
+    }
+
+    pub(crate) fn await_route_in(
+        &self,
+        traffic_class: TrafficClass,
+        route: &Route,
+        label: &'static str,
+    ) -> Result<(), ProbeError> {
+        self.request_api_versions(traffic_class, route, label, Readiness::SemanticRoute)
+    }
+
+    pub(crate) fn submit_api_versions(
+        &self,
+        traffic_class: TrafficClass,
+        route: Route,
+    ) -> Result<ApiVersionsCall, ProbeError> {
+        self.driver
+            .request_in(traffic_class, route, api_versions_request(), CALL_TIMEOUT)
+            .map_err(|source| ProbeError::stage("admit measured generated request", source))
+    }
+
+    pub(crate) fn complete_api_versions(
+        call: ApiVersionsCall,
+        label: &'static str,
+    ) -> Result<(), ProbeError> {
+        let response = call
+            .wait()
+            .map_err(|source| ProbeError::stage("wait for measured generated response", source))?
+            .map_err(|source| ProbeError::stage("complete measured generated response", source))?;
+        validate(&response, label)
     }
 
     fn request_api_versions(
         &self,
+        traffic_class: TrafficClass,
         route: &Route,
         label: &'static str,
         readiness: Readiness,
     ) -> Result<(), ProbeError> {
         for _ in 0..READINESS_ATTEMPTS {
-            match self.request_once(route.clone()) {
+            match self.request_once(traffic_class, route.clone()) {
                 Ok(response) => return validate(&response, label),
                 Err(RequestAttempt::Request(error)) if readiness.accepts(&error) => {
                     thread::sleep(READINESS_INTERVAL);
@@ -58,13 +98,14 @@ impl ProbeSession {
         })
     }
 
-    fn request_once(&self, route: Route) -> Result<ApiVersionsResponse, RequestAttempt> {
-        let mut request = ApiVersionsRequest::default();
-        request.client_software_name = "kafka-driver-probe".into();
-        request.client_software_version = env!("CARGO_PKG_VERSION").into();
+    fn request_once(
+        &self,
+        traffic_class: TrafficClass,
+        route: Route,
+    ) -> Result<ApiVersionsResponse, RequestAttempt> {
         let call = self
             .driver
-            .request(route, request, CALL_TIMEOUT)
+            .request_in(traffic_class, route, api_versions_request(), CALL_TIMEOUT)
             .map_err(RequestAttempt::Submit)?;
         call.wait()
             .map_err(RequestAttempt::Completion)?
@@ -88,6 +129,13 @@ impl ProbeSession {
     }
 }
 
+fn api_versions_request() -> ApiVersionsRequest {
+    let mut request = ApiVersionsRequest::default();
+    request.client_software_name = "kafka-driver-probe".into();
+    request.client_software_version = env!("CARGO_PKG_VERSION").into();
+    request
+}
+
 #[derive(Clone, Copy)]
 enum Readiness {
     Seed,
@@ -100,7 +148,7 @@ impl Readiness {
             (
                 Self::Seed | Self::SemanticRoute,
                 RequestError::Rejected {
-                    failure: CallFailure::NotReady,
+                    failure: CallFailure::NotReady | CallFailure::Closed,
                     delivery: Delivery::NotSent,
                 },
             )

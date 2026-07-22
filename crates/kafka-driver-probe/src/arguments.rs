@@ -1,6 +1,8 @@
 //! Strict command vocabulary for bounded qualification scenarios.
 
-use std::{error::Error, fmt};
+use std::{error::Error, fmt, num::NonZeroUsize};
+
+const MAX_MEASUREMENT_SAMPLES: usize = 10_000;
 
 /// One explicitly selected real-broker qualification scenario.
 #[derive(Debug, Eq, PartialEq)]
@@ -13,6 +15,12 @@ pub(crate) enum Arguments {
         bootstrap: String,
         topic: String,
         group: String,
+    },
+
+    /// Measures bounded generated-RPC progress through one real broker.
+    Measure {
+        bootstrap: String,
+        samples: NonZeroUsize,
     },
 }
 
@@ -28,20 +36,41 @@ impl Arguments {
                 topic: topic.clone(),
                 group: group.clone(),
             }),
-            _ => Err(ArgumentError),
+            [command, bootstrap, samples] if command == "measure" => {
+                let samples = samples
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(NonZeroUsize::new)
+                    .filter(|samples| samples.get() <= MAX_MEASUREMENT_SAMPLES)
+                    .ok_or(ArgumentError::Samples)?;
+                Ok(Self::Measure {
+                    bootstrap: bootstrap.clone(),
+                    samples,
+                })
+            }
+            _ => Err(ArgumentError::Shape),
         }
     }
 }
 
 /// The probe command did not match one complete scenario shape.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ArgumentError;
+pub(crate) enum ArgumentError {
+    Shape,
+    Samples,
+}
 
 impl fmt::Display for ArgumentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(
-            "usage: kafka-driver-probe readiness <host:port> | routes <host:port> <topic> <group>",
-        )
+        match self {
+            Self::Shape => formatter.write_str(
+                "usage: kafka-driver-probe readiness <host:port> | routes <host:port> <topic> <group> | measure <host:port> <samples>",
+            ),
+            Self::Samples => write!(
+                formatter,
+                "measurement samples must be between 1 and {MAX_MEASUREMENT_SAMPLES}"
+            ),
+        }
     }
 }
 
