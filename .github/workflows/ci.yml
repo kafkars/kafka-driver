@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: kafka-driver
+    steps:
+      # The two repositories are siblings because kafka-wire is deliberately
+      # unpublished and remains a path dependency during joint development.
+      - name: Check out kafka-driver
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: kafka-driver
+
+      - name: Check out kafka-wire protocol source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: kafkars/kafka-wire
+          ref: 857d58a84094e79ae15dfffc2e4773313bcd4c31
+          path: kafka-protocol
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.88.0
+
+      - name: Check formatting
+        run: >-
+          cargo fmt
+          --package kafka-driver
+          --package kafka-driver-core
+          --package kafka-driver-sim
+          -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run executable architecture guards
+        run: cargo test --test guardrails
+
+      - name: Run all tests
+        run: cargo test --workspace --all-features
+
+      - name: Build documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --all-features --no-deps
+
+      - name: Reject whitespace errors
+        run: git diff --check
