@@ -1,6 +1,6 @@
 //! Same-session broker-loss observation followed by bounded recovery proof.
 
-use std::{io, io::Write, thread, time::Duration};
+use std::{io, io::Write, path::Path, thread, time::Duration};
 
 use kafka_driver::{CallFailure, RequestError};
 
@@ -15,6 +15,10 @@ const OUTAGE_INTERVAL: Duration = Duration::from_millis(25);
 const RECOVERY_ATTEMPTS: usize = 90;
 const RECOVERY_CALL_TIMEOUT: Duration = Duration::from_secs(1);
 const RECOVERY_INTERVAL: Duration = Duration::from_millis(100);
+const COORDINATION_ATTEMPTS: usize = 600;
+const COORDINATION_INTERVAL: Duration = Duration::from_millis(50);
+const FIRST_STOP: &str = "broker-1-stopped";
+const SECOND_STOP: &str = "broker-2-stopped";
 
 pub(super) fn run(session: &ProbeSession) -> Result<(), ProbeError> {
     session.await_seed()?;
@@ -26,6 +30,35 @@ pub(super) fn run(session: &ProbeSession) -> Result<(), ProbeError> {
     await_recovery(session)?;
     println!("PASS existing driver reconnected");
     Ok(())
+}
+
+pub(super) fn run_rolling(session: &ProbeSession, coordination: &str) -> Result<(), ProbeError> {
+    session.await_seed()?;
+    announce("READY initial multi-broker connection")?;
+
+    await_gate(coordination, FIRST_STOP, "first rolling stop signal")?;
+    await_recovery(session)?;
+    announce("RECOVERED rolling broker failover 1")?;
+
+    await_gate(coordination, SECOND_STOP, "second rolling stop signal")?;
+    await_recovery(session)?;
+    println!("PASS rolling broker failover 2");
+    Ok(())
+}
+
+fn await_gate(coordination: &str, name: &str, label: &'static str) -> Result<(), ProbeError> {
+    let gate = Path::new(coordination).join(name);
+    for _ in 0..COORDINATION_ATTEMPTS {
+        match gate.try_exists() {
+            Ok(true) => return Ok(()),
+            Ok(false) => thread::sleep(COORDINATION_INTERVAL),
+            Err(source) => return Err(ProbeError::stage("observe rolling coordination", source)),
+        }
+    }
+    Err(ProbeError::ReadinessAttempts {
+        route: label,
+        attempts: COORDINATION_ATTEMPTS,
+    })
 }
 
 fn await_outage(session: &ProbeSession) -> Result<(), ProbeError> {

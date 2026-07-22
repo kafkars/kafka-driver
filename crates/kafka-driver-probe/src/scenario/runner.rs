@@ -24,6 +24,13 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
             Scenario::Routes { topic, group },
         ),
         Arguments::Reconnect { bootstrap } => (spawn_plaintext(&bootstrap)?, Scenario::Reconnect),
+        Arguments::Rolling {
+            bootstrap,
+            coordination,
+        } => (
+            spawn_plaintext(&bootstrap)?,
+            Scenario::Rolling { coordination },
+        ),
         Arguments::Authenticate {
             mechanism,
             bootstrap,
@@ -69,6 +76,7 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
         Scenario::Readiness => readiness::run(&session),
         Scenario::Routes { topic, group } => routes::run(&session, topic, group),
         Scenario::Reconnect => reconnect::run(&session),
+        Scenario::Rolling { coordination } => reconnect::run_rolling(&session, &coordination),
         Scenario::Authentication { mechanism } => authentication::run(&session, mechanism),
         Scenario::Tls => encryption::run(&session),
         Scenario::TlsAuthentication { mechanism } => {
@@ -90,6 +98,7 @@ enum Scenario {
     Readiness,
     Routes { topic: String, group: String },
     Reconnect,
+    Rolling { coordination: String },
     Authentication { mechanism: SaslSelection },
     Tls,
     TlsAuthentication { mechanism: SaslSelection },

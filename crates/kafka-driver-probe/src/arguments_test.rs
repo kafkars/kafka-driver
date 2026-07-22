@@ -48,6 +48,23 @@ fn reconnect_retains_one_exact_bootstrap_endpoint() {
 }
 
 #[test]
+fn rolling_retains_one_bounded_bootstrap_set_argument() {
+    let parsed = Arguments::parse(strings([
+        "rolling",
+        "127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094",
+        "/tmp/rolling-gates",
+    ]));
+
+    assert_eq!(
+        parsed,
+        Ok(Arguments::Rolling {
+            bootstrap: "127.0.0.1:9092,127.0.0.1:9093,127.0.0.1:9094".to_owned(),
+            coordination: "/tmp/rolling-gates".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn authentication_accepts_each_supported_sasl_mechanism() {
     for (name, mechanism) in [
         ("plain", SaslSelection::Plain),
@@ -130,6 +147,14 @@ fn partial_or_expanded_commands_are_rejected() {
     );
     assert_eq!(
         Arguments::parse(strings(["reconnect", "one:1", "two:2"])),
+        Err(ArgumentError::Shape)
+    );
+    assert_eq!(
+        Arguments::parse(strings(["rolling", "one:1"])),
+        Err(ArgumentError::Shape)
+    );
+    assert_eq!(
+        Arguments::parse(strings(["rolling", "one:1", "gates", "extra"])),
         Err(ArgumentError::Shape)
     );
     assert_eq!(

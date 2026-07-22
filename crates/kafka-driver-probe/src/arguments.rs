@@ -20,6 +20,12 @@ pub(crate) enum Arguments {
     /// Proves one driver survives an externally orchestrated broker restart.
     Reconnect { bootstrap: String },
 
+    /// Proves one driver survives two ordered broker losses in a live cluster.
+    Rolling {
+        bootstrap: String,
+        coordination: String,
+    },
+
     /// Proves one exact SASL mechanism against an authenticated broker.
     Authenticate {
         mechanism: SaslSelection,
@@ -62,6 +68,10 @@ impl Arguments {
             }),
             [command, bootstrap] if command == "reconnect" => Ok(Self::Reconnect {
                 bootstrap: bootstrap.clone(),
+            }),
+            [command, bootstrap, coordination] if command == "rolling" => Ok(Self::Rolling {
+                bootstrap: bootstrap.clone(),
+                coordination: coordination.clone(),
             }),
             [command, mechanism, bootstrap] if command == "authenticate" => {
                 Ok(Self::Authenticate {
@@ -113,7 +123,7 @@ impl fmt::Display for ArgumentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Shape => formatter.write_str(
-                "usage: kafka-driver-probe readiness <host:port> | routes <host:port> <topic> <group> | reconnect <host:port> | authenticate <mechanism> <host:port> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <host:port> <samples>",
+                "usage: kafka-driver-probe readiness <bootstrap-set> | routes <bootstrap-set> <topic> <group> | reconnect <bootstrap-set> | rolling <bootstrap-set> <coordination-directory> | authenticate <mechanism> <bootstrap-set> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <bootstrap-set> <samples>",
             ),
             Self::Samples => write!(
                 formatter,
