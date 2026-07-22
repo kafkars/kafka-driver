@@ -24,6 +24,7 @@ mod round_trip_test;
 #[cfg(test)]
 mod submission_test;
 
+pub(in crate::reactor) use deadline::DeadlineProgress;
 pub(in crate::reactor) use error::BrokerError;
 pub(in crate::reactor) use identity::BrokerIds;
 pub(in crate::reactor) use limits::BrokerLimits;

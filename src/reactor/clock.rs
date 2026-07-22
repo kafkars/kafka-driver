@@ -42,10 +42,6 @@ impl ReactorClock {
         Ok(Moment::from_nanos(nanos))
     }
 
-    #[allow(
-        dead_code,
-        reason = "M4 timer delivery bounds host poll waits in the next slice"
-    )]
     pub(in crate::reactor) fn bounded_wait(
         now: Moment,
         next_deadline: Option<Moment>,

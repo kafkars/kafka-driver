@@ -8,7 +8,7 @@ use crate::{RequestError, config::DriverLimits};
 
 use super::{
     Command, MailboxSender, PollEvent, Poller, ReactorError, WakeHandle,
-    broker::{BrokerLimits, SingleBroker},
+    broker::{BrokerLimits, DeadlineProgress, SingleBroker},
     clock::ReactorClock,
     mailbox,
     mailbox::{DrainStatus, MailboxReceiver},
@@ -19,7 +19,7 @@ use super::{
 pub enum TurnOutcome {
     /// No command was available before the host's wait limit.
     Idle,
-    /// Commands were processed and more admitted work remains.
+    /// Bounded command, timer, or I/O work made progress.
     Progress {
         /// Number of commands processed during this turn.
         commands: usize,
@@ -76,35 +76,57 @@ impl Reactor {
         if self.shutdown {
             return Ok(TurnOutcome::Shutdown { commands: 0 });
         }
-        let mut external_progress = self.continue_broker_io()?;
         let mut status = self
             .commands
             .drain_into(&mut self.command_batch, self.limits.command_budget());
-        if self.command_batch.is_empty() && status == DrainStatus::Idle && !external_progress {
+        let mut processed = self.process_commands()?;
+        if self.shutdown {
+            return Ok(self.finish_shutdown(processed));
+        }
+        let deadlines = self.fire_due_deadlines()?;
+        let mut progress = deadlines.made_progress();
+        let mut more_due = deadlines.more_due();
+        progress |= processed != 0;
+        progress |= self.continue_broker_io()?;
+
+        if status == DrainStatus::Closed && processed == 0 {
+            self.shutdown = true;
+            return Ok(self.finish_shutdown(0));
+        }
+        if !progress && status == DrainStatus::Idle {
             self.poll_events.clear();
+            let wait = self.poll_wait(max_wait)?;
             self.poller
-                .poll_into(Some(max_wait), &mut self.poll_events)
+                .poll_into(Some(wait), &mut self.poll_events)
                 .map_err(ReactorError::poll)?;
             status = self
                 .commands
                 .drain_into(&mut self.command_batch, self.limits.command_budget());
-        }
-        external_progress |= self.observe_poll_events()?;
-        if self.command_batch.is_empty() {
-            if status == DrainStatus::Closed {
-                self.shutdown = true;
-                return Ok(TurnOutcome::Shutdown { commands: 0 });
+            processed += self.process_commands()?;
+            if self.shutdown {
+                return Ok(self.finish_shutdown(processed));
             }
-            return if external_progress {
-                Ok(TurnOutcome::Progress {
-                    commands: 0,
-                    more_work: self.broker_has_local_io(),
-                })
-            } else {
-                Ok(TurnOutcome::Idle)
-            };
+            let deadlines = self.fire_due_deadlines()?;
+            progress |= processed != 0 || deadlines.made_progress();
+            more_due |= deadlines.more_due();
+            progress |= self.observe_poll_events()?;
         }
+        if status == DrainStatus::Closed && processed == 0 && !progress {
+            self.shutdown = true;
+            return Ok(self.finish_shutdown(0));
+        }
+        if progress {
+            return Ok(TurnOutcome::Progress {
+                commands: processed,
+                more_work: status == DrainStatus::MorePending
+                    || more_due
+                    || self.broker_has_local_io(),
+            });
+        }
+        Ok(TurnOutcome::Idle)
+    }
 
+    fn process_commands(&mut self) -> Result<usize, ReactorError> {
         let mut processed = 0;
         for command in self.command_batch.drain(..) {
             processed += 1;
@@ -128,17 +150,7 @@ impl Reactor {
                 }
             }
         }
-        if self.shutdown {
-            drop(self.commands.close());
-            return Ok(TurnOutcome::Shutdown {
-                commands: processed,
-            });
-        }
-
-        Ok(TurnOutcome::Progress {
-            commands: processed,
-            more_work: status == DrainStatus::MorePending || self.broker_has_local_io(),
-        })
+        Ok(processed)
     }
 
     /// Returns a cloneable notification handle for embedded-host integration.
@@ -171,6 +183,28 @@ impl Reactor {
                 .continue_io(&self.poller)
                 .map_err(ReactorError::broker)
         })
+    }
+
+    fn fire_due_deadlines(&mut self) -> Result<DeadlineProgress, ReactorError> {
+        let now = self.clock.now().map_err(ReactorError::clock)?;
+        self.broker
+            .as_mut()
+            .map_or(Ok(DeadlineProgress::idle()), |broker| {
+                broker
+                    .fire_due(&self.poller, now)
+                    .map_err(ReactorError::broker)
+            })
+    }
+
+    fn poll_wait(&self, host_limit: Duration) -> Result<Duration, ReactorError> {
+        let now = self.clock.now().map_err(ReactorError::clock)?;
+        let deadline = self.broker.as_ref().and_then(SingleBroker::next_deadline);
+        Ok(ReactorClock::bounded_wait(now, deadline, host_limit))
+    }
+
+    fn finish_shutdown(&mut self, commands: usize) -> TurnOutcome {
+        drop(self.commands.close());
+        TurnOutcome::Shutdown { commands }
     }
 
     fn broker_has_local_io(&self) -> bool {

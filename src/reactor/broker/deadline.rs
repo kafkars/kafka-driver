@@ -14,6 +14,13 @@ pub(in crate::reactor) struct DeadlineProgress {
 }
 
 impl DeadlineProgress {
+    pub(in crate::reactor) const fn idle() -> Self {
+        Self {
+            fired: 0,
+            more_due: false,
+        }
+    }
+
     pub(in crate::reactor) const fn made_progress(self) -> bool {
         self.fired != 0
     }
