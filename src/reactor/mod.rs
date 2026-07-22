@@ -1,6 +1,7 @@
 //! Single-owner host, bounded command mailbox, and cross-thread wake contract.
 
 mod command;
+mod error;
 mod host;
 mod mailbox;
 #[allow(
@@ -24,6 +25,8 @@ mod wake;
 mod mailbox_test;
 
 pub(crate) use command::Command;
+pub use error::ReactorError;
 pub use host::{Reactor, TurnOutcome};
 pub(crate) use mailbox::{MailboxSender, TrySendError, mailbox};
+pub(in crate::reactor) use poller::{PollEvent, PollWake, Poller};
 pub use wake::WakeHandle;

@@ -1,9 +1,11 @@
 //! Embedded reactor host for bounded administrative command progress.
 
-use std::{num::NonZeroUsize, time::Duration};
+use std::time::Duration;
+
+use crate::config::DriverLimits;
 
 use super::{
-    Command, WakeHandle,
+    Command, MailboxSender, PollEvent, Poller, ReactorError, WakeHandle, mailbox,
     mailbox::{DrainStatus, MailboxReceiver},
 };
 
@@ -29,36 +31,52 @@ pub enum TurnOutcome {
 /// Single-owner embedded host for driver state and external resources.
 pub struct Reactor {
     commands: MailboxReceiver<Command>,
-    command_budget: NonZeroUsize,
+    limits: DriverLimits,
     command_batch: Vec<Command>,
+    poller: Poller,
+    poll_events: Vec<PollEvent>,
     shutdown: bool,
 }
 
 impl Reactor {
-    pub(crate) fn new(commands: MailboxReceiver<Command>, command_budget: NonZeroUsize) -> Self {
-        Self {
-            command_batch: Vec::with_capacity(command_budget.get()),
+    pub(crate) fn new(limits: DriverLimits) -> std::io::Result<(MailboxSender<Command>, Self)> {
+        let poller = Poller::new(limits.poll_event_budget())?;
+        let wake = WakeHandle::new(poller.wake_handle());
+        let (sender, commands) = mailbox(limits.mailbox_capacity(), wake);
+        let reactor = Self {
+            command_batch: Vec::with_capacity(limits.command_budget().get()),
+            poll_events: Vec::with_capacity(limits.poll_event_budget().get()),
             commands,
-            command_budget,
+            limits,
+            poller,
             shutdown: false,
-        }
+        };
+        Ok((sender, reactor))
     }
 
     /// Drives at most one fairness-bounded turn, waiting up to `max_wait`.
-    pub fn turn(&mut self, max_wait: Duration) -> TurnOutcome {
+    pub fn turn(&mut self, max_wait: Duration) -> Result<TurnOutcome, ReactorError> {
         if self.shutdown {
-            return TurnOutcome::Shutdown { commands: 0 };
+            return Ok(TurnOutcome::Shutdown { commands: 0 });
         }
-        self.commands.wait(max_wait);
-        let status = self
+        let mut status = self
             .commands
-            .drain_into(&mut self.command_batch, self.command_budget);
+            .drain_into(&mut self.command_batch, self.limits.command_budget());
+        if self.command_batch.is_empty() && status == DrainStatus::Idle {
+            self.poll_events.clear();
+            self.poller
+                .poll_into(Some(max_wait), &mut self.poll_events)
+                .map_err(ReactorError::poll)?;
+            status = self
+                .commands
+                .drain_into(&mut self.command_batch, self.limits.command_budget());
+        }
         if self.command_batch.is_empty() {
             if status == DrainStatus::Closed {
                 self.shutdown = true;
-                return TurnOutcome::Shutdown { commands: 0 };
+                return Ok(TurnOutcome::Shutdown { commands: 0 });
             }
-            return TurnOutcome::Idle;
+            return Ok(TurnOutcome::Idle);
         }
 
         let mut processed = 0;
@@ -69,15 +87,15 @@ impl Reactor {
         }
         if self.shutdown {
             drop(self.commands.close());
-            return TurnOutcome::Shutdown {
+            return Ok(TurnOutcome::Shutdown {
                 commands: processed,
-            };
+            });
         }
 
-        TurnOutcome::Progress {
+        Ok(TurnOutcome::Progress {
             commands: processed,
             more_work: status == DrainStatus::MorePending,
-        }
+        })
     }
 
     /// Returns a cloneable notification handle for embedded-host integration.
@@ -95,7 +113,7 @@ impl std::fmt::Debug for Reactor {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("Reactor")
-            .field("command_budget", &self.command_budget)
+            .field("limits", &self.limits)
             .field("shutdown", &self.shutdown)
             .finish_non_exhaustive()
     }

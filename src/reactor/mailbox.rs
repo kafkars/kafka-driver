@@ -5,13 +5,14 @@ use std::{
     fmt,
     num::NonZeroUsize,
     sync::{Arc, Mutex, MutexGuard},
-    time::Duration,
 };
 
 use super::WakeHandle;
 
-pub(crate) fn mailbox<T>(capacity: NonZeroUsize) -> (MailboxSender<T>, MailboxReceiver<T>) {
-    let wake = WakeHandle::new();
+pub(crate) fn mailbox<T>(
+    capacity: NonZeroUsize,
+    wake: WakeHandle,
+) -> (MailboxSender<T>, MailboxReceiver<T>) {
     let shared = Arc::new(Shared {
         capacity: capacity.get(),
         state: Mutex::new(State {
@@ -47,10 +48,10 @@ impl<T> Clone for MailboxSender<T> {
 impl<T> Drop for MailboxSender<T> {
     fn drop(&mut self) {
         let mut state = self.shared.lock();
-        state.senders = state.senders.saturating_sub(1);
-        if state.senders == 0 {
-            self.shared.wake.wake();
+        if state.senders == 1 {
+            drop(self.shared.wake.wake());
         }
+        state.senders = state.senders.saturating_sub(1);
     }
 }
 
@@ -63,8 +64,12 @@ impl<T> MailboxSender<T> {
         if state.queue.len() >= self.shared.capacity {
             return Err(TrySendError::Full(command));
         }
+        // The state lock prevents the reactor from observing this wake until
+        // publication below either succeeds or the command is returned.
+        if let Err(source) = self.shared.wake.wake() {
+            return Err(TrySendError::Wake { command, source });
+        }
         state.queue.push_back(command);
-        self.shared.wake.wake();
         Ok(())
     }
 }
@@ -98,10 +103,6 @@ impl<T> MailboxReceiver<T> {
         }
     }
 
-    pub(crate) fn wait(&self, timeout: Duration) -> bool {
-        self.shared.wake.wait(timeout)
-    }
-
     pub(crate) fn wake_handle(&self) -> WakeHandle {
         self.shared.wake.clone()
     }
@@ -123,6 +124,7 @@ impl<T> Drop for MailboxReceiver<T> {
 pub(crate) enum TrySendError<T> {
     Full(T),
     Closed(T),
+    Wake { command: T, source: std::io::Error },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

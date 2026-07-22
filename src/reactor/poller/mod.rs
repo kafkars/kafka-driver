@@ -12,4 +12,5 @@ mod poller_test;
 pub(in crate::reactor) use event::PollEvent;
 pub(in crate::reactor) use interest::PollInterest;
 pub(in crate::reactor) use readiness::Readiness;
+pub(in crate::reactor) use selector::Poller;
 pub(in crate::reactor) use wake::PollWake;

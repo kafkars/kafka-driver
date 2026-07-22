@@ -1,14 +1,14 @@
 //! Public construction, admission, and shutdown handle for one driver reactor.
 
-use std::fmt;
+use std::{fmt, io};
 
 use crate::{
     completion::completion_pair,
     config::DriverLimits,
-    reactor::{Command, MailboxSender, Reactor, TrySendError, mailbox},
+    reactor::{Command, MailboxSender, Reactor, TrySendError},
 };
 
-use super::Call;
+use super::{Call, DriverBuildError};
 
 /// Cloneable command-admission handle for one driver reactor.
 #[derive(Clone, Debug)]
@@ -47,22 +47,21 @@ impl DriverBuilder {
     }
 
     /// Builds a driver handle and an embedded, caller-driven reactor.
-    pub fn build_reactor(self) -> (Driver, Reactor) {
-        let (sender, receiver) = mailbox(self.limits.mailbox_capacity());
-        (
-            Driver { commands: sender },
-            Reactor::new(receiver, self.limits.command_budget()),
-        )
+    pub fn build_reactor(self) -> Result<(Driver, Reactor), DriverBuildError> {
+        let (commands, reactor) = Reactor::new(self.limits).map_err(DriverBuildError::new)?;
+        Ok((Driver { commands }, reactor))
     }
 }
 
 /// Why a command could not enter the bounded reactor mailbox.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum SubmitError {
     /// The mailbox has reached its configured command capacity.
     Full,
     /// The reactor has closed command admission permanently.
     Closed,
+    /// The command remained unadmitted because the OS poller could not be woken.
+    Wake(io::Error),
 }
 
 impl fmt::Display for SubmitError {
@@ -70,17 +69,29 @@ impl fmt::Display for SubmitError {
         match self {
             Self::Full => formatter.write_str("the driver command mailbox is full"),
             Self::Closed => formatter.write_str("the driver command mailbox is closed"),
+            Self::Wake(_) => formatter.write_str("the driver I/O shard could not be woken"),
         }
     }
 }
 
-impl std::error::Error for SubmitError {}
+impl std::error::Error for SubmitError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Wake(source) => Some(source),
+            Self::Full | Self::Closed => None,
+        }
+    }
+}
 
 impl From<TrySendError<Command>> for SubmitError {
     fn from(error: TrySendError<Command>) -> Self {
         match error {
             TrySendError::Full(_) => Self::Full,
             TrySendError::Closed(_) => Self::Closed,
+            TrySendError::Wake { command, source } => {
+                drop(command);
+                Self::Wake(source)
+            }
         }
     }
 }

@@ -14,9 +14,9 @@ mod reactor;
 mod response;
 
 pub use api::{
-    Call, CancellationRequest, CompletionError, Delivery, Driver, DriverBuilder,
+    Call, CancellationRequest, CompletionError, Delivery, Driver, DriverBuildError, DriverBuilder,
     RequestResponsePair, SubmitError, TrafficClass,
 };
 pub use config::DriverLimits;
 pub use kafka_driver_core::{CallId, Moment};
-pub use reactor::{Reactor, TurnOutcome, WakeHandle};
+pub use reactor::{Reactor, ReactorError, TurnOutcome, WakeHandle};

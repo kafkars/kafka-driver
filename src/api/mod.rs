@@ -1,11 +1,13 @@
 //! Curated public vocabulary independent of hosting mode.
 
+mod build;
 mod call;
 mod driver;
 mod protocol;
 mod traffic;
 
 pub use crate::completion::{CancellationRequest, CompletionError};
+pub use build::DriverBuildError;
 pub use call::Call;
 pub use driver::{Driver, DriverBuilder, SubmitError};
 pub use kafka_driver_core::Delivery;

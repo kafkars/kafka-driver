@@ -1,12 +1,15 @@
 //! Scenarios for bounded admission, FIFO draining, closure, and wake coalescing.
 
-use std::{num::NonZeroUsize, time::Duration};
+use std::num::NonZeroUsize;
 
-use super::mailbox::{DrainStatus, TrySendError, mailbox};
+use super::{
+    Poller, WakeHandle,
+    mailbox::{DrainStatus, MailboxReceiver, TrySendError, mailbox},
+};
 
 #[test]
 fn capacity_rejection_returns_the_unadmitted_command() {
-    let (sender, _receiver) = mailbox(NonZeroUsize::MIN);
+    let (sender, _receiver, _poller) = test_mailbox(NonZeroUsize::MIN);
     assert!(sender.try_send("admitted").is_ok());
 
     let result = sender.try_send("rejected");
@@ -16,7 +19,7 @@ fn capacity_rejection_returns_the_unadmitted_command() {
 
 #[test]
 fn bounded_drains_preserve_fifo_and_report_remaining_work() {
-    let (sender, receiver) = mailbox(nonzero(3));
+    let (sender, receiver, _poller) = test_mailbox(nonzero(3));
     assert!(sender.try_send(1).is_ok());
     assert!(sender.try_send(2).is_ok());
     assert!(sender.try_send(3).is_ok());
@@ -36,7 +39,7 @@ fn bounded_drains_preserve_fifo_and_report_remaining_work() {
 
 #[test]
 fn receiver_closure_rejects_future_admission() {
-    let (sender, receiver) = mailbox(NonZeroUsize::MIN);
+    let (sender, receiver, _poller) = test_mailbox(NonZeroUsize::MIN);
     drop(receiver);
 
     let result = sender.try_send(9);
@@ -46,7 +49,7 @@ fn receiver_closure_rejects_future_admission() {
 
 #[test]
 fn repeated_wakes_coalesce_until_the_mailbox_is_drained() {
-    let (sender, receiver) = mailbox(nonzero(2));
+    let (sender, receiver, _poller) = test_mailbox(nonzero(2));
     assert!(sender.try_send(1).is_ok());
     assert!(sender.try_send(2).is_ok());
     let wake = receiver.wake_handle();
@@ -57,8 +60,18 @@ fn repeated_wakes_coalesce_until_the_mailbox_is_drained() {
 
     assert_eq!(status, DrainStatus::Idle);
     assert!(!wake.is_requested());
-    wake.wake();
-    assert!(receiver.wait(Duration::ZERO));
+    assert!(wake.wake().is_ok());
+    assert!(wake.is_requested());
+}
+
+fn test_mailbox<T>(
+    capacity: NonZeroUsize,
+) -> (super::MailboxSender<T>, MailboxReceiver<T>, Poller) {
+    let Ok(poller) = Poller::new(NonZeroUsize::MIN) else {
+        panic!("host must provide a Mio selector");
+    };
+    let (sender, receiver) = mailbox(capacity, WakeHandle::new(poller.wake_handle()));
+    (sender, receiver, poller)
 }
 
 fn nonzero(value: usize) -> NonZeroUsize {

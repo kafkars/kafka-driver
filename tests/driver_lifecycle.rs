@@ -2,15 +2,17 @@
 
 use std::{num::NonZeroUsize, thread, time::Duration};
 
-use kafka_driver::{Driver, DriverLimits, SubmitError, TurnOutcome};
+use kafka_driver::{Driver, DriverLimits, Reactor, SubmitError, TurnOutcome};
 
 #[test]
 fn embedded_shutdown_completes_once_and_closes_admission() {
-    let (driver, mut reactor) = Driver::builder().build_reactor();
+    let (driver, mut reactor) = build_reactor(DriverLimits::default());
     let call = driver.shutdown();
     assert!(call.is_ok());
 
-    let outcome = reactor.turn(Duration::ZERO);
+    let Ok(outcome) = reactor.turn(Duration::ZERO) else {
+        panic!("reactor turn must succeed");
+    };
 
     assert_eq!(outcome, TurnOutcome::Shutdown { commands: 1 });
     assert!(reactor.is_shutdown());
@@ -24,16 +26,16 @@ fn embedded_shutdown_completes_once_and_closes_admission() {
 #[test]
 fn mailbox_capacity_rejects_a_second_pending_shutdown() {
     let limits = DriverLimits::new(NonZeroUsize::MIN, NonZeroUsize::MIN);
-    let (driver, mut reactor) = Driver::builder().limits(limits).build_reactor();
+    let (driver, mut reactor) = build_reactor(limits);
     let first = driver.shutdown();
 
     let second = driver.shutdown();
 
     assert!(matches!(second, Err(SubmitError::Full)));
-    assert_eq!(
-        reactor.turn(Duration::ZERO),
-        TurnOutcome::Shutdown { commands: 1 }
-    );
+    let Ok(outcome) = reactor.turn(Duration::ZERO) else {
+        panic!("reactor turn must succeed");
+    };
+    assert_eq!(outcome, TurnOutcome::Shutdown { commands: 1 });
     let Ok(first) = first else {
         panic!("the first shutdown must be admitted");
     };
@@ -42,7 +44,7 @@ fn mailbox_capacity_rejects_a_second_pending_shutdown() {
 
 #[test]
 fn cross_thread_admission_wakes_a_blocked_reactor_turn() {
-    let (driver, mut reactor) = Driver::builder().build_reactor();
+    let (driver, mut reactor) = build_reactor(DriverLimits::default());
     let owner = thread::spawn(move || reactor.turn(Duration::from_secs(30)));
 
     let call = driver.shutdown();
@@ -50,30 +52,39 @@ fn cross_thread_admission_wakes_a_blocked_reactor_turn() {
     assert!(call.is_ok());
     assert!(matches!(
         owner.join(),
-        Ok(TurnOutcome::Shutdown { commands: 1 })
+        Ok(Ok(TurnOutcome::Shutdown { commands: 1 }))
     ));
 }
 
 #[test]
 fn explicit_wake_releases_an_idle_embedded_turn() {
-    let (_driver, mut reactor) = Driver::builder().build_reactor();
+    let (_driver, mut reactor) = build_reactor(DriverLimits::default());
     let wake = reactor.wake_handle();
-    wake.wake();
+    assert!(wake.wake().is_ok());
 
-    let outcome = reactor.turn(Duration::from_secs(30));
+    let Ok(outcome) = reactor.turn(Duration::from_secs(30)) else {
+        panic!("reactor turn must succeed");
+    };
 
     assert_eq!(outcome, TurnOutcome::Idle);
 }
 
 #[test]
 fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
-    let (driver, mut reactor) = Driver::builder().build_reactor();
+    let (driver, mut reactor) = build_reactor(DriverLimits::default());
     let owner = thread::spawn(move || reactor.turn(Duration::from_secs(30)));
 
     drop(driver);
 
     assert!(matches!(
         owner.join(),
-        Ok(TurnOutcome::Shutdown { commands: 0 })
+        Ok(Ok(TurnOutcome::Shutdown { commands: 0 }))
     ));
+}
+
+fn build_reactor(limits: DriverLimits) -> (Driver, Reactor) {
+    let Ok(pair) = Driver::builder().limits(limits).build_reactor() else {
+        panic!("host must provide a Mio selector");
+    };
+    pair
 }
