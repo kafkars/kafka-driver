@@ -61,7 +61,9 @@ impl Reactor {
 
     fn start_drain(&mut self) -> Result<(), ReactorError> {
         self.close_admission()?;
-        self.resolution = None;
+        if let Some(resolution) = self.resolution.take() {
+            resolution.shutdown().map_err(ReactorError::host)?;
+        }
         if let Some(metadata) = &mut self.metadata {
             metadata.fail_waiters(&draining());
         }

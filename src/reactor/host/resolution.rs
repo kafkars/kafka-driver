@@ -57,6 +57,10 @@ impl NameResolution {
         Ok(resolution)
     }
 
+    pub(super) fn shutdown(self) -> std::io::Result<()> {
+        self.resolver.shutdown()
+    }
+
     pub(super) fn reserve_effect(&mut self) -> Result<EffectId, NameResolutionError> {
         self.effect_ids
             .reserve()

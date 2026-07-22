@@ -1,6 +1,9 @@
 //! Focused real-worker scenario for identity, wake, and numeric address fidelity.
 
-use std::{num::NonZeroU16, time::Duration};
+use std::{
+    num::{NonZeroU16, NonZeroUsize},
+    time::Duration,
+};
 
 use kafka_driver_core::{
     BrokerEndpoint, ConnectionEpoch, DnsRequest, EffectId, HostName, IpAddress,
@@ -46,6 +49,41 @@ fn numeric_resolution_wakes_the_reactor_with_exact_request_identity() {
         addresses.iter().next().map(|address| address.ip()),
         Some(IpAddress::V4([127, 0, 0, 1]))
     );
+    resolver
+        .shutdown()
+        .unwrap_or_else(|error| panic!("join DNS worker: {error}"));
+}
+
+#[test]
+fn shutdown_joins_a_worker_blocked_by_full_outcome_capacity() {
+    let mut poller = Poller::new(NonZeroUsize::MIN)
+        .unwrap_or_else(|error| panic!("create test poller: {error}"));
+    let wake = crate::reactor::WakeHandle::new(poller.wake_handle());
+    let limits = ResolverLimits::new(
+        nonzero(2),
+        NonZeroUsize::MIN,
+        NonZeroUsize::MIN,
+        NonZeroUsize::MIN,
+    );
+    let resolver =
+        Resolver::spawn(limits, wake).unwrap_or_else(|error| panic!("spawn DNS worker: {error}"));
+    for raw in 1..=2 {
+        resolver
+            .submit(DnsRequest::new(
+                ConnectionEpoch::from_raw(1),
+                EffectId::from_raw(raw),
+                endpoint(),
+            ))
+            .unwrap_or_else(|error| panic!("admit DNS request: {error}"));
+    }
+    let mut events = Vec::new();
+    poller
+        .poll_into(Some(Duration::from_secs(1)), &mut events)
+        .unwrap_or_else(|error| panic!("wait for first DNS outcome: {error}"));
+
+    resolver
+        .shutdown()
+        .unwrap_or_else(|error| panic!("join capacity-blocked DNS worker: {error}"));
 }
 
 fn endpoint() -> BrokerEndpoint {
@@ -59,4 +97,8 @@ const fn port() -> NonZeroU16 {
         panic!("test port must be nonzero");
     };
     port
+}
+
+fn nonzero(value: usize) -> NonZeroUsize {
+    NonZeroUsize::new(value).unwrap_or_else(|| panic!("test limit must be nonzero"))
 }

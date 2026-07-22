@@ -3,6 +3,7 @@
 use std::{
     io,
     sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel},
+    thread,
 };
 
 use kafka_driver_core::{DnsOutcome, DnsRequest, ResolutionLimits};
@@ -13,9 +14,10 @@ use super::{ResolverSubmitError, worker};
 
 /// Reactor-owned half of one bounded internal DNS worker.
 pub(in crate::reactor) struct Resolver {
-    requests: SyncSender<DnsRequest>,
-    outcomes: Receiver<DnsOutcome>,
+    requests: Option<SyncSender<DnsRequest>>,
+    outcomes: Option<Receiver<DnsOutcome>>,
     outcome_budget: usize,
+    worker: Option<thread::JoinHandle<()>>,
 }
 
 impl Resolver {
@@ -27,9 +29,10 @@ impl Resolver {
         let (outcome_sender, outcomes) = sync_channel(limits.outcome_capacity().get());
         (
             Self {
-                requests,
-                outcomes,
+                requests: Some(requests),
+                outcomes: Some(outcomes),
                 outcome_budget: limits.outcome_budget().get(),
+                worker: None,
             },
             request_receiver,
             outcome_sender,
@@ -39,16 +42,17 @@ impl Resolver {
     pub(in crate::reactor) fn spawn(limits: ResolverLimits, wake: WakeHandle) -> io::Result<Self> {
         let (requests, request_receiver) = sync_channel(limits.request_capacity().get());
         let (outcome_sender, outcomes) = sync_channel(limits.outcome_capacity().get());
-        worker::spawn(
+        let worker = worker::spawn(
             request_receiver,
             outcome_sender,
             ResolutionLimits::new(limits.max_addresses()),
             wake,
         )?;
         Ok(Self {
-            requests,
-            outcomes,
+            requests: Some(requests),
+            outcomes: Some(outcomes),
             outcome_budget: limits.outcome_budget().get(),
+            worker: Some(worker),
         })
     }
 
@@ -56,12 +60,13 @@ impl Resolver {
         &self,
         request: DnsRequest,
     ) -> Result<(), ResolverSubmitError> {
-        self.requests
-            .try_send(request)
-            .map_err(|error| match error {
-                TrySendError::Full(request) => ResolverSubmitError::Full(request),
-                TrySendError::Disconnected(request) => ResolverSubmitError::Closed(request),
-            })
+        let Some(requests) = &self.requests else {
+            return Err(ResolverSubmitError::Closed(request));
+        };
+        requests.try_send(request).map_err(|error| match error {
+            TrySendError::Full(request) => ResolverSubmitError::Full(request),
+            TrySendError::Disconnected(request) => ResolverSubmitError::Closed(request),
+        })
     }
 
     pub(in crate::reactor) fn drain_into(
@@ -69,8 +74,14 @@ impl Resolver {
         destination: &mut Vec<DnsOutcome>,
     ) -> ResolverProgress {
         let mut disconnected = false;
+        let Some(outcomes) = &self.outcomes else {
+            return ResolverProgress {
+                outcomes: 0,
+                more_work: false,
+            };
+        };
         for _ in 0..self.outcome_budget {
-            match self.outcomes.try_recv() {
+            match outcomes.try_recv() {
                 Ok(outcome) => destination.push(outcome),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
@@ -83,6 +94,32 @@ impl Resolver {
             outcomes: destination.len(),
             more_work: !disconnected && destination.len() == self.outcome_budget,
         }
+    }
+
+    pub(in crate::reactor) fn shutdown(mut self) -> io::Result<()> {
+        self.close_channels();
+        self.join_worker()
+    }
+
+    fn close_channels(&mut self) {
+        self.requests = None;
+        self.outcomes = None;
+    }
+
+    fn join_worker(&mut self) -> io::Result<()> {
+        let Some(worker) = self.worker.take() else {
+            return Ok(());
+        };
+        worker
+            .join()
+            .map_err(|_| io::Error::other("DNS worker panicked"))
+    }
+}
+
+impl Drop for Resolver {
+    fn drop(&mut self) {
+        self.close_channels();
+        drop(self.join_worker());
     }
 }
 
