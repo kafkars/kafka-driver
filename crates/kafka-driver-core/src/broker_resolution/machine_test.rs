@@ -114,6 +114,43 @@ fn matching_failure_is_sanitized_and_terminal_for_that_route() {
 }
 
 #[test]
+fn fresh_epoch_retries_a_failed_endpoint_without_new_metadata() {
+    let mut machine = BrokerResolutionMachine::new(id(7));
+    let route = route(1, 7);
+    let endpoint = endpoint("seven.test");
+    let _ = machine.apply(start(route, endpoint.clone(), 1, 1));
+    let _ = machine.apply(completed(DnsOutcome::new(
+        epoch(1),
+        effect(1),
+        Err(DnsFailure::Temporary),
+    )));
+
+    let retried = machine.apply(start(route, endpoint.clone(), 2, 2));
+
+    assert_eq!(retried.disposition(), BrokerResolutionDisposition::Applied);
+    assert_eq!(
+        retried.effects(),
+        [BrokerResolutionEffect::Resolve {
+            request: crate::DnsRequest::new(epoch(2), effect(2), endpoint),
+        }]
+    );
+}
+
+#[test]
+fn newer_metadata_cannot_reuse_an_owned_connection_epoch() {
+    let mut machine = BrokerResolutionMachine::new(id(7));
+    let _ = machine.apply(start(route(1, 7), endpoint("old.test"), 1, 1));
+
+    let repeated_epoch = machine.apply(start(route(2, 7), endpoint("new.test"), 1, 2));
+
+    assert_eq!(
+        repeated_epoch.disposition(),
+        BrokerResolutionDisposition::IgnoredBusy
+    );
+    assert!(repeated_epoch.effects().is_empty());
+}
+
+#[test]
 fn route_for_another_broker_cannot_claim_this_machine() {
     let mut machine = BrokerResolutionMachine::new(id(7));
 

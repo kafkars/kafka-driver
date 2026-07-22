@@ -9,7 +9,7 @@ pub enum BrokerResolutionDisposition {
     Applied,
     /// The input belongs to an older route, epoch, or external effect.
     IgnoredStale,
-    /// The exact route is already resolving or terminal.
+    /// The supplied connection epoch is already owned by this broker.
     IgnoredBusy,
     /// The route names a broker other than this machine's owner.
     RejectedBroker,

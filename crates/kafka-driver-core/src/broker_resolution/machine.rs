@@ -56,7 +56,7 @@ impl BrokerResolutionMachine {
             if route.generation() < current_route.generation() || epoch < current_epoch {
                 return stale();
             }
-            if route.generation() == current_route.generation() || epoch == current_epoch {
+            if epoch == current_epoch {
                 return transition(Vec::new(), BrokerResolutionDisposition::IgnoredBusy);
             }
         }
