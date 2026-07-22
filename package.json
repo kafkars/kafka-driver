@@ -10,6 +10,7 @@
     "measure:real-kafka": "smoque run smoke/ --tag real-kafka-performance --ci",
     "smoke:list": "smoque list smoke/",
     "smoke:real-kafka": "smoque run smoke/ --tag real-kafka --ci",
+    "smoke:real-kafka-multi-broker": "smoque run smoke/ --tag real-kafka-multi-broker --ci",
     "smoke:real-kafka-sasl": "smoque run smoke/ --tag real-kafka-sasl --ci",
     "smoke:real-kafka-security": "smoque run smoke/ --tag real-kafka-security --ci",
     "smoke:real-kafka-tls": "smoque run smoke/ --tag real-kafka-tls --ci",
