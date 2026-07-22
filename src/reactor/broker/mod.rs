@@ -39,6 +39,8 @@ mod round_trip_test;
 #[cfg(test)]
 mod scenario_support_test;
 #[cfg(test)]
+mod scram_authentication_test;
+#[cfg(test)]
 mod submission_test;
 
 pub(in crate::reactor) use deadline::DeadlineProgress;
