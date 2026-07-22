@@ -23,6 +23,7 @@ repository = "https://github.com/zsumz/kafka-driver"
 bytes = "1.10"
 kafka-driver = { path = "." }
 kafka-driver-core = { path = "crates/kafka-driver-core" }
+kafka-driver-sim = { path = "crates/kafka-driver-sim" }
 kafka-driver-transport = { path = "crates/kafka-driver-transport" }
 kafka-wire-core = { path = "../kafka-protocol/crates/kafka-wire-core" }
 serde = { version = "1.0", features = ["derive"] }
@@ -47,6 +48,7 @@ kafka-wire-core.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true
+kafka-driver-sim.workspace = true
 serde.workspace = true
 syn.workspace = true
 toml.workspace = true

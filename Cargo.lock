@@ -36,6 +36,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "kafka-driver-core",
+ "kafka-driver-sim",
  "kafka-driver-transport",
  "kafka-wire",
  "kafka-wire-core",

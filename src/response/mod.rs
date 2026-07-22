@@ -10,6 +10,8 @@ mod slot;
 mod admission_test;
 #[cfg(test)]
 mod dispatch_test;
+#[cfg(test)]
+mod end_to_end_test;
 
 pub(crate) use envelope::ResponseEnvelope;
 pub(crate) use error::{ResponseAdmissionError, ResponseDispatchError, ResponseInspectError};
