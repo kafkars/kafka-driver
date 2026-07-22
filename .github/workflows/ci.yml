@@ -45,28 +45,10 @@ jobs:
           rustup toolchain install 1.88.0 --profile minimal --component clippy,rustfmt
           rustup default 1.88.0
 
-      - name: Check formatting
-        run: >-
-          cargo fmt
-          --package kafka-driver
-          --package kafka-driver-core
-          --package kafka-driver-sim
-          --package kafka-driver-transport
-          -- --check
+      - name: Fetch the locked dependency graph
+        run: cargo fetch --locked
 
-      - name: Run Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      - name: Run executable architecture guards
-        run: cargo test --test guardrails
-
-      - name: Run all tests
-        run: cargo test --workspace --all-features
-
-      - name: Build documentation
+      - name: Run the canonical repository gate
+        run: scripts/check
         env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc --workspace --all-features --no-deps
-
-      - name: Reject whitespace errors
-        run: git diff --check
+          CARGO_NET_OFFLINE: "true"

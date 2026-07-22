@@ -175,6 +175,18 @@ fn ci_pins_the_verified_public_kafka_wire_source() {
 }
 
 #[test]
+fn ci_delegates_validation_to_the_canonical_repository_gate() {
+    let root = workspace_root();
+    let workflow = read(&root.join(".github/workflows/ci.yml"));
+
+    assert_eq!(
+        workflow.matches("run: scripts/check").count(),
+        1,
+        "CI must execute scripts/check exactly once instead of duplicating its policy"
+    );
+}
+
+#[test]
 fn package_extraction_matches_exact_names_only() {
     let packages = lockfile_packages(
         "[[package]]\nname = \"tokio-util-extra\"\n[[package]]\nname = \"bytes\"\n",
