@@ -1,15 +1,27 @@
 //! Incremental bounded decoding of Kafka's signed length-prefixed frames.
 
+use std::fmt;
+
 use bytes::BytesMut;
 
 use super::{FrameBody, FrameDecodeError, FrameLimits, limits::LENGTH_PREFIX_BYTES};
 
 /// Single-stream accumulator for complete Kafka frame bodies.
-#[derive(Debug)]
 pub struct FrameDecoder {
     limits: FrameLimits,
     buffered: BytesMut,
     failed: bool,
+}
+
+impl fmt::Debug for FrameDecoder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FrameDecoder")
+            .field("limits", &self.limits)
+            .field("buffered_bytes", &self.buffered.len())
+            .field("failed", &self.failed)
+            .finish()
+    }
 }
 
 impl FrameDecoder {

@@ -208,6 +208,17 @@ fn discard_releases_original_bytes_even_after_partial_progress() {
     );
 }
 
+#[test]
+fn diagnostics_report_capacity_without_exposing_queued_frame_bytes() {
+    let mut queue = queue(2, 64);
+    admit(&mut queue, 1, 11, framed(b"private-credential"));
+
+    let diagnostic = format!("{queue:?}");
+
+    assert!(diagnostic.contains("queued_frames: 1"));
+    assert!(!diagnostic.contains("private-credential"));
+}
+
 fn queue(max_frames: usize, max_bytes: usize) -> WriteQueue {
     WriteQueue::new(WriteQueueLimits::new(
         nonzero(max_frames),

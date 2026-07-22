@@ -106,6 +106,17 @@ fn limits_require_space_for_one_maximum_frame() {
     );
 }
 
+#[test]
+fn diagnostics_report_buffering_without_exposing_partial_frame_bytes() {
+    let mut decoder = decoder(64, 68);
+    assert_eq!(decoder.feed(b"private-challenge"), Ok(()));
+
+    let diagnostic = format!("{decoder:?}");
+
+    assert!(diagnostic.contains("buffered_bytes: 17"));
+    assert!(!diagnostic.contains("private-challenge"));
+}
+
 fn decoder(max_frame: usize, max_buffered: usize) -> FrameDecoder {
     let Some(max_frame) = NonZeroUsize::new(max_frame) else {
         panic!("test frame limit is nonzero");

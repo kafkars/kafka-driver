@@ -1,6 +1,6 @@
 //! Bounded FIFO storage and exact partial-write advancement.
 
-use std::{collections::VecDeque, num::NonZeroUsize};
+use std::{collections::VecDeque, fmt, num::NonZeroUsize};
 
 use bytes::Bytes;
 use kafka_driver_core::{CallId, EffectId};
@@ -13,11 +13,21 @@ use super::{
 const KAFKA_LENGTH_PREFIX_BYTES: usize = size_of::<i32>();
 
 /// Single-transport owner of complete encoded request frames in wire order.
-#[derive(Debug)]
 pub struct WriteQueue {
     limits: WriteQueueLimits,
     frames: VecDeque<QueuedWrite>,
     buffered_bytes: usize,
+}
+
+impl fmt::Debug for WriteQueue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WriteQueue")
+            .field("limits", &self.limits)
+            .field("queued_frames", &self.frames.len())
+            .field("buffered_bytes", &self.buffered_bytes)
+            .finish()
+    }
 }
 
 impl WriteQueue {
@@ -177,7 +187,6 @@ fn reject(failure: WriteAdmissionFailure, frame: Bytes) -> WriteAdmissionError {
     WriteAdmissionError::new(failure, frame)
 }
 
-#[derive(Debug)]
 struct QueuedWrite {
     call_id: CallId,
     effect_id: EffectId,
