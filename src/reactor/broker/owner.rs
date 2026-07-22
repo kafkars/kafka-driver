@@ -68,6 +68,7 @@ impl SingleBroker {
         Self::new_configured(BrokerConfig::plaintext(address), limits)
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) fn new_configured(config: BrokerConfig, limits: BrokerLimits) -> Self {
         Self::new_configured_in(config, limits, ResourceNamespace::single())
     }

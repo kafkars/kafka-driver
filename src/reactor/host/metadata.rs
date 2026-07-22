@@ -7,12 +7,15 @@ impl Reactor {
         if self.state != HostState::Running {
             return Ok(false);
         }
-        let (Some(metadata), Some(broker)) = (&mut self.metadata, &mut self.broker) else {
+        let Some(metadata) = &mut self.metadata else {
+            return Ok(false);
+        };
+        let Some(seed) = self.brokers.seed_mut() else {
             return Ok(false);
         };
         let now = self.clock.now().map_err(ReactorError::clock)?;
         metadata
-            .drive(broker, &self.poller, now, &self.call_ids)
+            .drive(seed, &self.poller, now, &self.call_ids)
             .map_err(ReactorError::metadata)
     }
 }

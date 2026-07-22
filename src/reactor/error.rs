@@ -2,7 +2,7 @@
 
 use std::{fmt, io};
 
-use super::{broker::BrokerError, clock::ClockOverflow, metadata::MetadataOwnerError};
+use super::{broker_set::BrokerSetError, clock::ClockOverflow, metadata::MetadataOwnerError};
 
 /// Why one reactor turn could not observe external readiness.
 #[derive(Debug)]
@@ -19,10 +19,10 @@ impl ReactorError {
         }
     }
 
-    pub(super) fn broker(source: BrokerError) -> Self {
+    pub(super) fn broker_set(source: BrokerSetError) -> Self {
         Self {
             source: io::Error::other(source),
-            operation: ReactorOperation::Broker,
+            operation: ReactorOperation::BrokerSet,
         }
     }
 
@@ -52,7 +52,7 @@ impl fmt::Display for ReactorError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.operation {
             ReactorOperation::Poll => formatter.write_str("the driver I/O selector failed"),
-            ReactorOperation::Broker => formatter.write_str("the broker reactor failed"),
+            ReactorOperation::BrokerSet => formatter.write_str("the broker set failed"),
             ReactorOperation::Clock => formatter.write_str("the driver clock failed"),
             ReactorOperation::Metadata => formatter.write_str("the cluster metadata owner failed"),
             ReactorOperation::Host => formatter.write_str("the reactor host invariant failed"),
@@ -63,7 +63,7 @@ impl fmt::Display for ReactorError {
 #[derive(Clone, Copy, Debug)]
 enum ReactorOperation {
     Poll,
-    Broker,
+    BrokerSet,
     Clock,
     Metadata,
     Host,

@@ -8,7 +8,6 @@ use crate::{
     reactor::{
         ReactorError, WakeHandle,
         bootstrap::{BootstrapOwner, BootstrapOwnerError},
-        broker::{BrokerLimits, SingleBroker},
         resolver::{Resolver, ResolverEffectIds},
     },
 };
@@ -84,18 +83,15 @@ impl Reactor {
     }
 
     fn install_broker(&mut self, config: BrokerConfig) -> Result<(), ReactorError> {
-        if self.broker.is_some() {
+        if self.brokers.has_seed() {
             return Err(ReactorError::host(std::io::Error::other(
                 "bootstrap attempted to replace an owned broker",
             )));
         }
         let now = self.clock.now().map_err(ReactorError::clock)?;
-        let mut broker = SingleBroker::new_configured(config, BrokerLimits::default());
-        broker
-            .start(&self.poller, now)
-            .map_err(ReactorError::broker)?;
-        self.broker = Some(broker);
-        Ok(())
+        self.brokers
+            .install_seed(config, &self.poller, now)
+            .map_err(ReactorError::broker_set)
     }
 }
 

@@ -2,6 +2,7 @@
 
 mod bootstrap;
 mod broker;
+mod broker_set;
 mod clock;
 mod command;
 mod error;

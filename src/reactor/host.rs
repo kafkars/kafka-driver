@@ -16,7 +16,8 @@ use crate::{
 
 use super::{
     Command, MailboxSender, PollEvent, Poller, ReactorError, WakeHandle,
-    broker::{BrokerLimits, SingleBroker},
+    broker::BrokerLimits,
+    broker_set::BrokerSet,
     clock::ReactorClock,
     mailbox,
     mailbox::{DrainStatus, MailboxReceiver},
@@ -52,7 +53,7 @@ pub struct Reactor {
     command_batch: Vec<Command>,
     poller: Poller,
     poll_events: Vec<PollEvent>,
-    broker: Option<SingleBroker>,
+    brokers: BrokerSet,
     resolution: Option<NameResolution>,
     metadata: Option<MetadataOwner>,
     call_ids: Arc<CallIds>,
@@ -72,32 +73,31 @@ impl Reactor {
         let (sender, commands) = mailbox(limits.mailbox_capacity(), wake.clone());
         let clock = ReactorClock::new();
         let now = clock.now().map_err(std::io::Error::other)?;
-        let (mut broker, resolution, metadata) = match target {
-            Some(DriverTarget::Direct(config)) => (
-                Some(SingleBroker::new_configured(
-                    config,
-                    BrokerLimits::default(),
-                )),
-                None,
-                None,
-            ),
+        let mut brokers = BrokerSet::new(
+            BrokerLimits::default(),
+            limits.metadata().broker_directory(),
+        )
+        .map_err(std::io::Error::other)?;
+        let (resolution, metadata) = match target {
+            Some(DriverTarget::Direct(config)) => {
+                brokers
+                    .install_seed(config, &poller, now)
+                    .map_err(std::io::Error::other)?;
+                (None, None)
+            }
             Some(DriverTarget::Bootstrap(config)) => (
-                None,
                 Some(NameResolution::start(config, limits.resolver(), wake)?),
                 Some(MetadataOwner::new(limits.metadata())),
             ),
-            None => (None, None, None),
+            None => (None, None),
         };
-        if let Some(broker) = &mut broker {
-            broker.start(&poller, now).map_err(std::io::Error::other)?;
-        }
         let reactor = Self {
             command_batch: Vec::with_capacity(limits.command_budget().get()),
             poll_events: Vec::with_capacity(limits.poll_event_budget().get()),
             commands,
             limits,
             poller,
-            broker,
+            brokers,
             resolution,
             metadata,
             call_ids,
@@ -181,12 +181,7 @@ impl Reactor {
     }
 
     fn finish_shutdown_if_terminal(&mut self, commands: usize) -> Option<TurnOutcome> {
-        if self.state != HostState::Draining
-            || self
-                .broker
-                .as_ref()
-                .is_some_and(|broker| !broker.is_terminal())
-        {
+        if self.state != HostState::Draining || !self.brokers.is_terminal() {
             return None;
         }
         self.state = HostState::Shutdown;

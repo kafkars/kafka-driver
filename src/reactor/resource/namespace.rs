@@ -23,6 +23,7 @@ impl ResourceNamespace {
         })
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn single() -> Self {
         let Some(namespace) = Self::new(0, NonZeroUsize::MIN) else {
             panic!("single resource namespace must be valid");

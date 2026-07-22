@@ -15,11 +15,11 @@ impl Reactor {
             processed += 1;
             match command {
                 Command::Submit { request } if self.state == HostState::Running => {
-                    if let Some(broker) = &mut self.broker {
-                        let now = self.clock.now().map_err(ReactorError::clock)?;
-                        broker
-                            .submit(&self.poller, request, now)
-                            .map_err(ReactorError::broker)?;
+                    let now = self.clock.now().map_err(ReactorError::clock)?;
+                    if self.brokers.has_seed() {
+                        self.brokers
+                            .submit_seed(&self.poller, request, now)
+                            .map_err(ReactorError::broker_set)?;
                     } else {
                         request.fail(not_ready());
                     }
@@ -58,12 +58,10 @@ impl Reactor {
 
     fn start_drain(&mut self) -> Result<(), ReactorError> {
         self.close_admission()?;
-        if let Some(broker) = &mut self.broker {
-            let now = self.clock.now().map_err(ReactorError::clock)?;
-            broker
-                .begin_drain(&self.poller, now)
-                .map_err(ReactorError::broker)?;
-        }
+        let now = self.clock.now().map_err(ReactorError::clock)?;
+        self.brokers
+            .begin_drain(&self.poller, now)
+            .map_err(ReactorError::broker_set)?;
         self.state = HostState::Draining;
         Ok(())
     }
