@@ -4,8 +4,7 @@ use kafka_driver_core::{
     ConnectionPhase, MetadataEffect, MetadataGeneration, MetadataInput, MetadataMachine,
     MetadataQuery, MetadataTransition, Moment, OperationId,
 };
-use kafka_wire::{MetadataRequest, MetadataResponse, metadata_request::MetadataRequestTopic};
-use kafka_wire_core::StrBytes;
+use kafka_wire::{METADATA_API_DESCRIPTOR, MetadataResponse};
 
 use crate::{
     Call, MetadataLimits, RequestError,
@@ -15,20 +14,23 @@ use crate::{
     request::erased_request,
 };
 
-use super::{error::MetadataOwnerError, identity::MetadataOperationIds};
+use super::{
+    error::MetadataOwnerError, identity::MetadataOperationIds, request::metadata_request,
+    waiting::PartitionWaiters,
+};
 
 /// Reactor owner joining generated responses to deterministic metadata policy.
-#[derive(Debug)]
 pub(in crate::reactor) struct MetadataOwner {
-    machine: MetadataMachine,
-    limits: MetadataLimits,
+    pub(super) machine: MetadataMachine,
+    pub(super) limits: MetadataLimits,
     operation_ids: MetadataOperationIds,
     pending: Option<PendingMetadata>,
+    pub(super) waiters: PartitionWaiters,
     initial_refresh: bool,
 }
 
 impl MetadataOwner {
-    pub(in crate::reactor) const fn new(limits: MetadataLimits) -> Self {
+    pub(in crate::reactor) fn new(limits: MetadataLimits) -> Self {
         Self {
             machine: MetadataMachine::with_query_limits(
                 MetadataGeneration::from_raw(1),
@@ -37,6 +39,10 @@ impl MetadataOwner {
             limits,
             operation_ids: MetadataOperationIds::new(),
             pending: None,
+            waiters: PartitionWaiters::new(
+                limits.partition_waiting_calls(),
+                limits.partition_waiting_bytes(),
+            ),
             initial_refresh: true,
         }
     }
@@ -53,6 +59,9 @@ impl MetadataOwner {
         call_ids: &CallIds,
     ) -> Result<bool, MetadataOwnerError> {
         let mut progress = self.observe_completion(broker, poller, now, call_ids)?;
+        if progress {
+            self.waiters.begin_scan();
+        }
         if self.initial_refresh && broker.state().phase() == ConnectionPhase::Ready {
             self.initial_refresh = false;
             let operation_id = self.reserve_operation()?;
@@ -126,7 +135,7 @@ impl MetadataOwner {
         })
     }
 
-    fn interpret(
+    pub(super) fn interpret(
         &mut self,
         transition: MetadataTransition,
         broker: &mut SingleBroker,
@@ -179,7 +188,10 @@ impl MetadataOwner {
             .ok_or(MetadataOwnerError::CallIdentityExhausted)?;
         let (call, request) = erased_request(
             call_id,
-            metadata_request(&fetch.query),
+            metadata_request(
+                &fetch.query,
+                broker.negotiated_version(METADATA_API_DESCRIPTOR.api_key),
+            ),
             self.limits.request_timeout(),
         );
         broker
@@ -194,7 +206,7 @@ impl MetadataOwner {
         Ok(())
     }
 
-    fn reserve_operation(&mut self) -> Result<OperationId, MetadataOwnerError> {
+    pub(super) fn reserve_operation(&mut self) -> Result<OperationId, MetadataOwnerError> {
         self.operation_ids
             .reserve()
             .ok_or(MetadataOwnerError::OperationIdentityExhausted)
@@ -213,18 +225,4 @@ struct PendingMetadata {
     generation: MetadataGeneration,
     query: MetadataQuery,
     call: Call<Result<MetadataResponse, RequestError>>,
-}
-
-pub(super) fn metadata_request(query: &MetadataQuery) -> MetadataRequest {
-    let mut request = MetadataRequest::default();
-    request.topics = match query {
-        MetadataQuery::Cluster => Some(Vec::new()),
-        MetadataQuery::Topic(topic) => {
-            request.allow_auto_topic_creation = false;
-            let mut requested = MetadataRequestTopic::default();
-            requested.name = Some(StrBytes::from(topic.as_str()));
-            Some(vec![requested])
-        }
-    };
-    request
 }

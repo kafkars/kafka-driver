@@ -4,7 +4,7 @@ use kafka_driver_core::{
     BrokerRoute, CallFailure, Delivery, DnsFailure, DnsOutcome, Moment, PartitionId, TopicName,
 };
 
-use crate::{RequestError, Route, request::ErasedRequest};
+use crate::{RequestError, Route, reactor::metadata::PartitionWait, request::ErasedRequest};
 
 use super::{Reactor, ReactorError};
 
@@ -19,7 +19,7 @@ impl Reactor {
             Route::AnyBroker => self.submit_any_broker(request, now),
             Route::Controller => self.submit_controller(request, now),
             Route::PartitionLeader { topic, partition } => {
-                self.submit_partition_leader(&topic, partition, request, now)
+                self.submit_partition_leader(topic, partition, request, now)
             }
         }
     }
@@ -57,7 +57,7 @@ impl Reactor {
 
     fn submit_partition_leader(
         &mut self,
-        topic: &TopicName,
+        topic: TopicName,
         partition: PartitionId,
         request: Box<dyn ErasedRequest>,
         now: Moment,
@@ -66,10 +66,26 @@ impl Reactor {
             .metadata
             .as_ref()
             .and_then(|metadata| metadata.current())
-            .and_then(|snapshot| snapshot.partition_route(topic, partition))
+            .and_then(|snapshot| snapshot.partition_route(&topic, partition))
             .map(|route| route.broker_route())
         else {
-            request.fail(RequestError::RouteUnavailable);
+            let Some(metadata) = &mut self.metadata else {
+                request.fail(RequestError::RouteUnavailable);
+                return Ok(());
+            };
+            let Some(seed) = self.brokers.seed_mut() else {
+                request.fail(RequestError::RouteUnavailable);
+                return Ok(());
+            };
+            metadata
+                .wait_for_partition(
+                    PartitionWait::new(topic, partition, request),
+                    seed,
+                    &self.poller,
+                    now,
+                    &self.call_ids,
+                )
+                .map_err(ReactorError::metadata)?;
             return Ok(());
         };
         self.submit_broker_route(route, request, now)

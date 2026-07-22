@@ -59,6 +59,9 @@ impl Reactor {
     fn start_drain(&mut self) -> Result<(), ReactorError> {
         self.close_admission()?;
         self.resolution = None;
+        if let Some(metadata) = &mut self.metadata {
+            metadata.fail_waiters(&draining());
+        }
         self.metadata = None;
         let now = self.clock.now().map_err(ReactorError::clock)?;
         self.brokers

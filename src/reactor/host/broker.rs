@@ -35,7 +35,16 @@ impl Reactor {
 
     pub(super) fn poll_wait(&self, host_limit: Duration) -> Result<Duration, ReactorError> {
         let now = self.clock.now().map_err(ReactorError::clock)?;
-        let deadline = self.brokers.next_deadline();
+        let deadline = self
+            .brokers
+            .next_deadline()
+            .into_iter()
+            .chain(
+                self.metadata
+                    .as_ref()
+                    .and_then(super::super::metadata::MetadataOwner::next_wait_deadline),
+            )
+            .min();
         Ok(ReactorClock::bounded_wait(now, deadline, host_limit))
     }
 

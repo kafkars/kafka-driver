@@ -170,7 +170,8 @@ impl Reactor {
                 more_work: status == DrainStatus::MorePending
                     || more_due
                     || more_resolution
-                    || self.broker_has_local_io(),
+                    || self.broker_has_local_io()
+                    || self.metadata_has_local_work(),
             });
         }
         Ok(TurnOutcome::Idle)

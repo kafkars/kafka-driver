@@ -7,23 +7,40 @@ impl Reactor {
         if self.state != HostState::Running {
             return Ok(false);
         }
-        let Some(metadata) = &mut self.metadata else {
-            return Ok(false);
-        };
-        let progress = {
+        let now = self.clock.now().map_err(ReactorError::clock)?;
+        let (progress, directory, waiting) = {
+            let Some(metadata) = &mut self.metadata else {
+                return Ok(false);
+            };
             let Some(seed) = self.brokers.seed_mut() else {
                 return Ok(false);
             };
-            let now = self.clock.now().map_err(ReactorError::clock)?;
-            metadata
+            let progress = metadata
                 .drive(seed, &self.poller, now, &self.call_ids)
-                .map_err(ReactorError::metadata)?
+                .map_err(ReactorError::metadata)?;
+            let directory = metadata
+                .current()
+                .map(|snapshot| snapshot.brokers().clone());
+            let waiting = metadata.drain_partition_waiters(now);
+            (progress, directory, waiting)
         };
-        let installed = metadata.current().map_or(Ok(false), |snapshot| {
+        let installed = directory.as_ref().map_or(Ok(false), |directory| {
             self.brokers
-                .install_directory(snapshot.brokers())
+                .install_directory(directory)
                 .map_err(ReactorError::broker_set)
         })?;
-        Ok(progress || installed)
+        let waiting_progress = waiting.made_progress();
+        let waiting_more = waiting.more_work();
+        for routed in waiting.into_routed() {
+            let route = routed.route().broker_route();
+            self.submit_broker_route(route, routed.into_request(), now)?;
+        }
+        Ok(progress || installed || waiting_progress || waiting_more)
+    }
+
+    pub(super) fn metadata_has_local_work(&self) -> bool {
+        self.metadata
+            .as_ref()
+            .is_some_and(super::super::metadata::MetadataOwner::has_pending_wait_scan)
     }
 }

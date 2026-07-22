@@ -1,21 +1,22 @@
 //! Request-shape scenarios for bounded cluster and exact-topic discovery.
 
 use kafka_driver_core::{MetadataQuery, TopicName};
+use kafka_wire_core::ApiVersion;
 
-use super::owner::metadata_request;
+use super::request::metadata_request;
 
 #[test]
 fn initial_refresh_does_not_expand_an_unbounded_all_topics_response() {
-    let request = metadata_request(&MetadataQuery::Cluster);
+    let request = metadata_request(&MetadataQuery::Cluster, Some(ApiVersion::new(1)));
 
     assert!(request.topics.is_some_and(|topics| topics.is_empty()));
 }
 
 #[test]
-fn topic_refresh_requests_exactly_one_name_without_auto_creation() {
+fn modern_topic_refresh_requests_exactly_one_name_without_auto_creation() {
     let topic = TopicName::new("orders").unwrap_or_else(|error| panic!("valid topic: {error}"));
 
-    let request = metadata_request(&MetadataQuery::Topic(topic));
+    let request = metadata_request(&MetadataQuery::Topic(topic), Some(ApiVersion::new(4)));
 
     assert!(!request.allow_auto_topic_creation);
     assert_eq!(
@@ -27,4 +28,13 @@ fn topic_refresh_requests_exactly_one_name_without_auto_creation() {
             .map(kafka_wire_core::StrBytes::as_str),
         Some("orders")
     );
+}
+
+#[test]
+fn legacy_topic_refresh_preserves_the_only_representable_auto_creation_policy() {
+    let topic = TopicName::new("orders").unwrap_or_else(|error| panic!("valid topic: {error}"));
+
+    let request = metadata_request(&MetadataQuery::Topic(topic), Some(ApiVersion::new(1)));
+
+    assert!(request.allow_auto_topic_creation);
 }

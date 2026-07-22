@@ -8,7 +8,7 @@ use kafka_driver_core::{
 };
 use kafka_driver_transport::FrameBody;
 use kafka_wire::OutboundFrameLimits;
-use kafka_wire_core::DecodeLimits;
+use kafka_wire_core::{ApiKey, ApiVersion, DecodeLimits};
 
 use crate::negotiation::{NegotiationExchange, NegotiationLimits};
 use crate::reactor::{
@@ -196,6 +196,10 @@ impl SingleBroker {
 
     pub(in crate::reactor) fn state(&self) -> ConnectionState {
         self.connection.state()
+    }
+
+    pub(in crate::reactor) fn negotiated_version(&self, api_key: ApiKey) -> Option<ApiVersion> {
+        self.connection.negotiated_version(api_key)
     }
 
     pub(in crate::reactor) const fn broker_state(&self) -> kafka_driver_core::BrokerState {

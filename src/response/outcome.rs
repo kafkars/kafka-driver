@@ -35,12 +35,17 @@ pub enum RequestError {
     DeadlineOverflow,
     /// The semantic destination is unavailable in the current metadata generation.
     RouteUnavailable,
-    /// The bounded waiting queue for one broker cannot retain this call.
+    /// A bounded semantic-route waiting queue cannot retain this call.
     RouteCapacityReached {
-        /// Maximum retained calls for one broker.
+        /// Maximum retained calls for this route owner.
         call_limit: usize,
-        /// Maximum retained request bytes for one broker.
+        /// Maximum retained request bytes for this route owner.
         byte_limit: usize,
+    },
+    /// The bounded distinct Metadata query queue cannot admit this topic lookup.
+    MetadataQueryCapacityReached {
+        /// Maximum distinct queries retained behind the active Metadata RPC.
+        limit: usize,
     },
     /// Advertised broker name resolution failed without endpoint details.
     NameResolutionFailed {
@@ -84,8 +89,11 @@ impl fmt::Display for RequestError {
                 byte_limit,
             } => write!(
                 formatter,
-                "broker route wait capacity reached ({call_limit} calls, {byte_limit} bytes)"
+                "route wait capacity reached ({call_limit} calls, {byte_limit} bytes)"
             ),
+            Self::MetadataQueryCapacityReached { limit } => {
+                write!(formatter, "metadata query capacity {limit} reached")
+            }
             Self::NameResolutionFailed { failure } => {
                 write!(formatter, "broker name resolution failed: {failure:?}")
             }
@@ -114,6 +122,7 @@ impl Error for RequestError {
             | Self::DeadlineOverflow
             | Self::RouteUnavailable
             | Self::RouteCapacityReached { .. }
+            | Self::MetadataQueryCapacityReached { .. }
             | Self::NameResolutionFailed { .. }
             | Self::Rejected { .. }
             | Self::ConnectionClosed(_) => None,
