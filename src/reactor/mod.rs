@@ -9,6 +9,7 @@ mod mailbox;
 mod plaintext;
 mod poller;
 mod resource;
+mod tcp;
 mod timer;
 mod wake;
 

@@ -4,7 +4,6 @@ mod connection;
 mod error;
 mod limits;
 mod progress;
-mod socket;
 
 #[cfg(test)]
 mod connection_test;
@@ -13,5 +12,5 @@ pub(in crate::reactor) use connection::PlaintextConnection;
 pub(in crate::reactor) use error::PlaintextError;
 pub(in crate::reactor) use limits::{PlaintextLimits, ReadBudget, WriteBudget};
 pub(in crate::reactor) use progress::{
-    CompletedWrite, ConnectProgress, ReadProgress, ReadState, WriteDrive, WriteState,
+    CompletedWrite, ReadProgress, ReadState, WriteDrive, WriteState,
 };

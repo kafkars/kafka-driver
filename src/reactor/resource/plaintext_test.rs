@@ -4,10 +4,7 @@ use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
 
 use kafka_driver_core::{ConnectionEpoch, TransportId};
 
-use crate::reactor::{
-    PollEvent, Poller,
-    plaintext::{ConnectProgress, PlaintextLimits},
-};
+use crate::reactor::{PollEvent, Poller, plaintext::PlaintextLimits, tcp::ConnectProgress};
 
 use super::{ResourceIdentity, plaintext::PlaintextResources};
 

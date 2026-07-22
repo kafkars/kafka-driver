@@ -12,14 +12,15 @@ use mio::net::TcpStream;
 use mio::{Registry, Token, event::Source};
 
 use super::{
-    CompletedWrite, ConnectProgress, PlaintextError, PlaintextLimits, ReadBudget, ReadProgress,
-    ReadState, WriteBudget, WriteDrive, WriteState, socket::PlaintextSocket,
+    CompletedWrite, PlaintextError, PlaintextLimits, ReadBudget, ReadProgress, ReadState,
+    WriteBudget, WriteDrive, WriteState,
 };
+use crate::reactor::tcp::{ConnectProgress, TcpSocket};
 
 /// One reactor-owned plaintext socket and its ordered byte progress.
 #[derive(Debug)]
 pub(in crate::reactor) struct PlaintextConnection {
-    socket: PlaintextSocket,
+    socket: TcpSocket,
     frames: FrameDecoder,
     writes: WriteQueue,
     read_buffer: Box<[u8]>,
@@ -31,15 +32,15 @@ impl PlaintextConnection {
         address: SocketAddr,
         limits: PlaintextLimits,
     ) -> io::Result<Self> {
-        PlaintextSocket::connect(address).map(|socket| Self::with_socket(socket, limits))
+        TcpSocket::connect(address).map(|socket| Self::with_socket(socket, limits))
     }
 
     #[cfg(test)]
     pub(in crate::reactor) fn new(socket: TcpStream, limits: PlaintextLimits) -> Self {
-        Self::with_socket(PlaintextSocket::open(socket), limits)
+        Self::with_socket(TcpSocket::open(socket), limits)
     }
 
-    fn with_socket(socket: PlaintextSocket, limits: PlaintextLimits) -> Self {
+    fn with_socket(socket: TcpSocket, limits: PlaintextLimits) -> Self {
         Self {
             socket,
             frames: FrameDecoder::new(limits.frame()),

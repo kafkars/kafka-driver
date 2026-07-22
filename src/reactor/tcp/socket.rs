@@ -6,15 +6,15 @@ use mio::{Interest, Registry, Token, event::Source, net::TcpStream};
 
 use super::ConnectProgress;
 
-/// One TCP stream whose connect completion is explicit state.
+/// One nonblocking TCP stream whose connect completion is explicit state.
 #[derive(Debug)]
-pub(super) struct PlaintextSocket {
+pub(in crate::reactor) struct TcpSocket {
     stream: TcpStream,
     phase: SocketPhase,
 }
 
-impl PlaintextSocket {
-    pub(super) fn connect(address: SocketAddr) -> io::Result<Self> {
+impl TcpSocket {
+    pub(in crate::reactor) fn connect(address: SocketAddr) -> io::Result<Self> {
         TcpStream::connect(address).map(|stream| Self {
             stream,
             phase: SocketPhase::Connecting,
@@ -22,14 +22,14 @@ impl PlaintextSocket {
     }
 
     #[cfg(test)]
-    pub(super) const fn open(stream: TcpStream) -> Self {
+    pub(in crate::reactor) const fn open(stream: TcpStream) -> Self {
         Self {
             stream,
             phase: SocketPhase::Open,
         }
     }
 
-    pub(super) fn finish_connect(&mut self) -> io::Result<ConnectProgress> {
+    pub(in crate::reactor) fn finish_connect(&mut self) -> io::Result<ConnectProgress> {
         if self.phase == SocketPhase::Open {
             return Ok(ConnectProgress::AlreadyOpen);
         }
@@ -49,13 +49,13 @@ impl PlaintextSocket {
     }
 }
 
-impl Read for PlaintextSocket {
+impl Read for TcpSocket {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         self.stream.read(buffer)
     }
 }
 
-impl Write for PlaintextSocket {
+impl Write for TcpSocket {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
         self.stream.write(buffer)
     }
@@ -65,7 +65,7 @@ impl Write for PlaintextSocket {
     }
 }
 
-impl Source for PlaintextSocket {
+impl Source for TcpSocket {
     fn register(
         &mut self,
         registry: &Registry,

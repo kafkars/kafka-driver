@@ -13,10 +13,12 @@ use kafka_wire_core::Bytes;
 use mio::net::TcpStream;
 
 use super::{
-    ConnectProgress, PlaintextLimits, ReadBudget, ReadState, WriteBudget, WriteState,
+    PlaintextLimits, ReadBudget, ReadState, WriteBudget, WriteState,
     connection::PlaintextConnection,
 };
-use crate::reactor::{PollEvent, Poller, poller::PollInterest, resource::ResourceToken};
+use crate::reactor::{
+    PollEvent, Poller, poller::PollInterest, resource::ResourceToken, tcp::ConnectProgress,
+};
 
 #[test]
 fn read_byte_budget_retains_a_fragment_until_the_next_drive() {

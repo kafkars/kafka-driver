@@ -13,8 +13,9 @@ use kafka_wire_core::DecodeLimits;
 use crate::negotiation::{NegotiationExchange, NegotiationLimits};
 use crate::reactor::{
     PollEvent, Poller,
-    plaintext::{CompletedWrite, ConnectProgress, ReadBudget, WriteBudget},
+    plaintext::{CompletedWrite, ReadBudget, WriteBudget},
     resource::{PlaintextResources, ResourceIdentity, ResourceToken},
+    tcp::ConnectProgress,
     timer::{DeadlineTimer, TimerHeap},
 };
 use crate::response::ResponseRegistry;
