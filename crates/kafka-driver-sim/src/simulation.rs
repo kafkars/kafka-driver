@@ -5,7 +5,7 @@ use std::{error::Error, fmt, time::Duration};
 use kafka_driver_core::Moment;
 
 use crate::{
-    ClockError, Scheduled, SimClock, SimEventId, SimulationLimits, schedule::ScheduleError,
+    ClockError, Planned, Scheduled, SimClock, SimEventId, SimulationLimits, schedule::ScheduleError,
 };
 
 /// A deterministic, single-owner event simulation.
@@ -70,6 +70,11 @@ impl<E> Simulator<E> {
         };
 
         self.events.schedule(at, event).map_err(Into::into)
+    }
+
+    /// Schedules a delayed outcome returned by an external-capability script.
+    pub fn schedule_planned(&mut self, planned: Planned<E>) -> Result<SimEventId, SimulationError> {
+        self.schedule_after(planned.delay(), planned.into_outcome())
     }
 
     /// Advances to and returns exactly one event, preserving per-step budgets.
