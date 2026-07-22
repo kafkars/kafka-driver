@@ -21,7 +21,7 @@ use super::{
 /// Cloneable command-admission handle for one driver reactor.
 #[derive(Clone, Debug)]
 pub struct Driver {
-    commands: MailboxSender<Command>,
+    pub(super) commands: MailboxSender<Command>,
     call_ids: Arc<CallIds>,
 }
 

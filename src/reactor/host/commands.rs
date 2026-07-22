@@ -4,7 +4,7 @@ use std::io;
 
 use kafka_driver_core::{CallFailure, Delivery};
 
-use crate::{RequestError, reactor::Command};
+use crate::{InvalidationDisposition, RequestError, reactor::Command};
 
 use super::{HostState, Reactor, ReactorError};
 
@@ -24,6 +24,15 @@ impl Reactor {
                         self.process_submission(route, request, submitted_at)?;
                     }
                     Command::Submit { request, .. } => request.fail(draining()),
+                    Command::Invalidate {
+                        receipt,
+                        completion,
+                    } if self.state == HostState::Running => {
+                        self.process_invalidation(receipt, completion)?;
+                    }
+                    Command::Invalidate { completion, .. } => {
+                        let _ = completion.complete(InvalidationDisposition::Unavailable);
+                    }
                     Command::Shutdown { completion } => {
                         self.shutdown_waiters
                             .admit(completion)
@@ -84,6 +93,9 @@ impl Reactor {
         for command in self.commands.close() {
             match command {
                 Command::Submit { request, .. } => request.fail(draining()),
+                Command::Invalidate { completion, .. } => {
+                    let _ = completion.complete(InvalidationDisposition::Unavailable);
+                }
                 Command::Shutdown { completion } => {
                     self.shutdown_waiters
                         .admit(completion)

@@ -5,6 +5,7 @@ mod broker;
 mod commands;
 mod coordinator;
 mod debug;
+mod invalidation;
 mod metadata;
 mod resolution;
 mod resolution_error;

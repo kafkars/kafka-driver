@@ -16,9 +16,9 @@ mod request;
 mod response;
 
 pub use api::{
-    Call, CompletionError, Delivery, Driver, DriverBuildError, DriverBuilder, RequestError,
-    RequestResponsePair, ResponseCloseReason, Route, RouteReceipt, RoutedCall, RoutedOutcome,
-    SubmitError, TrafficClass,
+    Call, CompletionError, Delivery, Driver, DriverBuildError, DriverBuilder,
+    InvalidationDisposition, RequestError, RequestResponsePair, ResponseCloseReason, Route,
+    RouteReceipt, RoutedCall, RoutedOutcome, SubmitError, TrafficClass,
 };
 pub use config::{
     CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits, SaslConfig, SaslConfigError,

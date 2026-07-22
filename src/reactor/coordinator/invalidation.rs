@@ -1,6 +1,6 @@
 //! Exact route-token invalidation before a newer coordinator discovery.
 
-use kafka_driver_core::{CoordinatorInput, CoordinatorRoute, Moment};
+use kafka_driver_core::{CoordinatorDisposition, CoordinatorInput, CoordinatorRoute, Moment};
 
 use crate::{
     api::CallIds,
@@ -17,9 +17,9 @@ impl CoordinatorOwner {
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
-    ) -> Result<(), CoordinatorOwnerError> {
+    ) -> Result<CoordinatorDisposition, CoordinatorOwnerError> {
         let Some(index) = self.entry_index(route.key()) else {
-            return Ok(());
+            return Ok(CoordinatorDisposition::IgnoredStale);
         };
         let operation_id = self.reserve_operation()?;
         let transition = self.entries[index]
@@ -28,6 +28,8 @@ impl CoordinatorOwner {
                 route,
                 operation_id,
             });
-        self.interpret(index, transition, broker, poller, now, call_ids)
+        let disposition = transition.disposition();
+        self.interpret(index, transition, broker, poller, now, call_ids)?;
+        Ok(disposition)
     }
 }
