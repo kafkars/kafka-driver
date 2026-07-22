@@ -126,6 +126,7 @@ impl BrokerSet {
             self.broker_limits,
             self.waiting_calls,
             self.waiting_bytes,
+            self.admission_budget,
         ));
         Ok(index)
     }

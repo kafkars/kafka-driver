@@ -1,6 +1,8 @@
 //! I/O, timer, and shutdown delegation for one lazy broker child.
 
-use kafka_driver_core::{CallFailure, Delivery, Moment};
+use kafka_driver_core::{
+    BrokerCloseReason, BrokerState, CallFailure, CloseReason, Delivery, Moment,
+};
 
 use crate::{
     RequestError,
@@ -19,11 +21,12 @@ impl BrokerChild {
         event: PollEvent,
         now: Moment,
     ) -> Result<bool, BrokerSetError> {
-        self.connection.as_mut().map_or(Ok(false), |connection| {
+        let progress = self.connection.as_mut().map_or(Ok(false), |connection| {
             connection
                 .observe(poller, event, now)
                 .map_err(BrokerSetError::Broker)
-        })
+        })?;
+        Ok(progress | self.settle_terminal_waiting())
     }
 
     pub(super) fn continue_io(
@@ -48,7 +51,7 @@ impl BrokerChild {
                 .continue_io(poller, now)
                 .map_err(BrokerSetError::Broker)
         })?;
-        Ok(progress)
+        Ok(progress | self.settle_terminal_waiting())
     }
 
     pub(super) fn fire_due(
@@ -56,19 +59,30 @@ impl BrokerChild {
         poller: &Poller,
         now: Moment,
     ) -> Result<DeadlineProgress, BrokerSetError> {
-        self.connection
-            .as_mut()
-            .map_or(Ok(DeadlineProgress::idle()), |connection| {
+        let expiration = self.waiting.expire_due(now);
+        let mut progress = DeadlineProgress::from_work(expiration.settled(), expiration.more_due());
+        progress = progress.merge(self.connection.as_mut().map_or(
+            Ok(DeadlineProgress::idle()),
+            |connection| {
                 connection
                     .fire_due(poller, now)
                     .map_err(BrokerSetError::Broker)
-            })
+            },
+        )?);
+        self.settle_terminal_waiting();
+        Ok(progress)
     }
 
     pub(super) fn next_deadline(&self) -> Option<Moment> {
-        self.connection
-            .as_ref()
-            .and_then(SingleBroker::next_deadline)
+        self.waiting
+            .next_deadline()
+            .into_iter()
+            .chain(
+                self.connection
+                    .as_ref()
+                    .and_then(SingleBroker::next_deadline),
+            )
+            .min()
     }
 
     pub(super) fn begin_drain(
@@ -96,6 +110,7 @@ impl BrokerChild {
             .as_ref()
             .is_some_and(SingleBroker::has_local_io)
             || (self.is_ready() && !self.waiting.is_empty())
+            || (self.is_terminal() && !self.waiting.is_empty())
             || (self.retired
                 && !self.retirement_started
                 && self
@@ -109,11 +124,40 @@ impl BrokerChild {
             connection.state().phase() == kafka_driver_core::ConnectionPhase::Ready
         })
     }
+
+    fn settle_terminal_waiting(&mut self) -> bool {
+        let Some(BrokerState::Closed { reason }) =
+            self.connection.as_ref().map(SingleBroker::broker_state)
+        else {
+            return false;
+        };
+        if self.waiting.is_empty() {
+            return false;
+        }
+        self.waiting.fail_all(&terminal(reason));
+        true
+    }
 }
 
 fn draining() -> RequestError {
     RequestError::Rejected {
         failure: CallFailure::Draining,
+        delivery: Delivery::NotSent,
+    }
+}
+
+fn terminal(reason: BrokerCloseReason) -> RequestError {
+    let failure = match reason {
+        BrokerCloseReason::AuthenticationFailed(failure) => CallFailure::ConnectionClosed {
+            reason: CloseReason::AuthenticationFailed(failure),
+        },
+        BrokerCloseReason::Requested => CallFailure::Draining,
+        BrokerCloseReason::EpochExhausted
+        | BrokerCloseReason::RetryExhausted
+        | BrokerCloseReason::ClockOverflow => CallFailure::Closed,
+    };
+    RequestError::Rejected {
+        failure,
         delivery: Delivery::NotSent,
     }
 }

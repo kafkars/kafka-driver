@@ -32,6 +32,10 @@ impl DeadlineProgress {
         self.more_due
     }
 
+    pub(in crate::reactor) const fn from_work(fired: usize, more_due: bool) -> Self {
+        Self { fired, more_due }
+    }
+
     pub(in crate::reactor) const fn merge(self, other: Self) -> Self {
         Self {
             fired: self.fired.saturating_add(other.fired),

@@ -13,7 +13,7 @@ use super::waiting::{WaitingCallOutcome, WaitingCalls};
 fn exact_count_capacity_is_admitted_and_one_more_call_is_rejected() {
     let (first_call, first) = request(1, Duration::from_secs(1));
     let bytes = first.retained_bytes();
-    let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes * 2));
+    let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes * 2), nonzero(1));
     assert!(waiting.admit(first, Moment::ORIGIN));
     let (overflow_call, overflow) = request(2, Duration::from_secs(1));
 
@@ -33,7 +33,7 @@ fn exact_count_capacity_is_admitted_and_one_more_call_is_rejected() {
 fn exact_byte_capacity_is_admitted_and_one_more_byte_is_rejected() {
     let (first_call, first) = request(1, Duration::from_secs(1));
     let bytes = first.retained_bytes();
-    let mut waiting = WaitingCalls::new(nonzero(2), nonzero(bytes));
+    let mut waiting = WaitingCalls::new(nonzero(2), nonzero(bytes), nonzero(1));
     assert!(waiting.admit(first, Moment::ORIGIN));
     let (overflow_call, overflow) = request(2, Duration::from_secs(1));
 
@@ -50,7 +50,7 @@ fn exact_byte_capacity_is_admitted_and_one_more_byte_is_rejected() {
 fn time_spent_waiting_is_removed_from_the_connection_timeout() {
     let (call, request) = request(1, Duration::from_nanos(10));
     let bytes = request.retained_bytes();
-    let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes));
+    let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes), nonzero(1));
     assert!(waiting.admit(request, Moment::from_nanos(100)));
 
     let WaitingCallOutcome::Ready(request) = waiting.pop(Moment::from_nanos(104)) else {
@@ -65,7 +65,7 @@ fn time_spent_waiting_is_removed_from_the_connection_timeout() {
 fn a_call_expiring_in_the_wait_queue_is_never_submitted() {
     let (call, request) = request(1, Duration::from_nanos(10));
     let bytes = request.retained_bytes();
-    let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes));
+    let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes), nonzero(1));
     assert!(waiting.admit(request, Moment::from_nanos(100)));
 
     assert!(matches!(
@@ -80,6 +80,58 @@ fn a_call_expiring_in_the_wait_queue_is_never_submitted() {
             delivery: Delivery::NotSent,
         }))
     );
+}
+
+#[test]
+fn earliest_deadline_is_reported_even_when_it_is_not_at_the_fifo_front() {
+    let (later_call, later) = request(1, Duration::from_nanos(20));
+    let bytes = later.retained_bytes();
+    let mut waiting = WaitingCalls::new(nonzero(2), nonzero(bytes * 2), nonzero(1));
+    assert!(waiting.admit(later, Moment::ORIGIN));
+    let (earlier_call, earlier) = request(2, Duration::from_nanos(10));
+    assert!(waiting.admit(earlier, Moment::ORIGIN));
+
+    assert_eq!(waiting.next_deadline(), Some(Moment::from_nanos(10)));
+    let expiration = waiting.expire_due(Moment::from_nanos(10));
+
+    assert_eq!(expiration.settled(), 1);
+    assert!(!expiration.more_due());
+    assert_eq!(waiting.next_deadline(), Some(Moment::from_nanos(20)));
+    assert_eq!(
+        earlier_call.wait(),
+        Ok(Err(RequestError::Rejected {
+            failure: CallFailure::DeadlineExceeded,
+            delivery: Delivery::NotSent,
+        }))
+    );
+    drop(later_call);
+}
+
+#[test]
+fn expiration_settlement_is_bounded_and_reports_remaining_due_work() {
+    let (first_call, first) = request(1, Duration::from_nanos(10));
+    let bytes = first.retained_bytes();
+    let mut waiting = WaitingCalls::new(nonzero(2), nonzero(bytes * 2), nonzero(1));
+    assert!(waiting.admit(first, Moment::ORIGIN));
+    let (second_call, second) = request(2, Duration::from_nanos(10));
+    assert!(waiting.admit(second, Moment::ORIGIN));
+
+    let first_turn = waiting.expire_due(Moment::from_nanos(10));
+
+    assert_eq!(first_turn.settled(), 1);
+    assert!(first_turn.more_due());
+    assert_eq!(waiting.len(), 1);
+    assert!(matches!(
+        first_call.wait(),
+        Ok(Err(RequestError::Rejected { .. }))
+    ));
+    let second_turn = waiting.expire_due(Moment::from_nanos(10));
+    assert_eq!(second_turn.settled(), 1);
+    assert!(!second_turn.more_due());
+    assert!(matches!(
+        second_call.wait(),
+        Ok(Err(RequestError::Rejected { .. }))
+    ));
 }
 
 fn request(

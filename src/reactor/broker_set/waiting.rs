@@ -11,15 +11,21 @@ pub(super) struct WaitingCalls {
     retained_bytes: usize,
     call_limit: NonZeroUsize,
     byte_limit: NonZeroUsize,
+    turn_budget: NonZeroUsize,
 }
 
 impl WaitingCalls {
-    pub(super) fn new(call_limit: NonZeroUsize, byte_limit: NonZeroUsize) -> Self {
+    pub(super) fn new(
+        call_limit: NonZeroUsize,
+        byte_limit: NonZeroUsize,
+        turn_budget: NonZeroUsize,
+    ) -> Self {
         Self {
             calls: VecDeque::with_capacity(call_limit.get().min(16)),
             retained_bytes: 0,
             call_limit,
             byte_limit,
+            turn_budget,
         }
     }
 
@@ -63,6 +69,28 @@ impl WaitingCalls {
         WaitingCallOutcome::Ready(waiting.request)
     }
 
+    pub(super) fn expire_due(&mut self, now: Moment) -> WaitingExpiration {
+        let mut survivors = VecDeque::with_capacity(self.calls.len());
+        let mut settled = 0;
+        let mut more_due = false;
+        while let Some(waiting) = self.calls.pop_front() {
+            if is_due(waiting.deadline, now) && settled < self.turn_budget.get() {
+                self.retained_bytes -= waiting.bytes;
+                waiting.request.fail(deadline_exceeded());
+                settled += 1;
+            } else {
+                more_due |= is_due(waiting.deadline, now);
+                survivors.push_back(waiting);
+            }
+        }
+        self.calls = survivors;
+        WaitingExpiration { settled, more_due }
+    }
+
+    pub(super) fn next_deadline(&self) -> Option<Moment> {
+        self.calls.iter().map(|waiting| waiting.deadline).min()
+    }
+
     pub(super) fn fail_all(&mut self, failure: &RequestError) {
         for waiting in self.calls.drain(..) {
             waiting.request.fail(failure.clone());
@@ -92,6 +120,21 @@ pub(super) enum WaitingCallOutcome {
     Ready(Box<dyn ErasedRequest>),
 }
 
+pub(super) struct WaitingExpiration {
+    settled: usize,
+    more_due: bool,
+}
+
+impl WaitingExpiration {
+    pub(super) const fn settled(&self) -> usize {
+        self.settled
+    }
+
+    pub(super) const fn more_due(&self) -> bool {
+        self.more_due
+    }
+}
+
 struct WaitingCall {
     request: Box<dyn ErasedRequest>,
     deadline: Moment,
@@ -103,4 +146,10 @@ fn deadline_exceeded() -> RequestError {
         failure: CallFailure::DeadlineExceeded,
         delivery: Delivery::NotSent,
     }
+}
+
+fn is_due(deadline: Moment, now: Moment) -> bool {
+    deadline
+        .duration_since(now)
+        .is_none_or(|remaining| remaining.is_zero())
 }

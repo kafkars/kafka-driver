@@ -174,4 +174,18 @@ impl BrokerSet {
             .and_then(|child| child.connection.as_ref())
             .and_then(super::super::broker::SingleBroker::resource_token_for_test)
     }
+
+    #[cfg(test)]
+    pub(super) fn child_broker_phase(
+        &self,
+        lane: super::BrokerLane,
+    ) -> Option<kafka_driver_core::BrokerPhase> {
+        self.children
+            .iter()
+            .filter_map(Option::as_ref)
+            .find(|child| child.lane() == lane)
+            .and_then(|child| child.connection.as_ref())
+            .map(super::super::broker::SingleBroker::broker_state)
+            .map(kafka_driver_core::BrokerState::phase)
+    }
 }

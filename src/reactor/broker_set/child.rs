@@ -43,13 +43,14 @@ impl BrokerChild {
         limits: BrokerLimits,
         waiting_calls: std::num::NonZeroUsize,
         waiting_bytes: std::num::NonZeroUsize,
+        waiting_budget: std::num::NonZeroUsize,
     ) -> Self {
         Self {
             lane,
             resolution: BrokerResolutionMachine::new(lane.broker_id()),
             connection: None,
             endpoint: None,
-            waiting: WaitingCalls::new(waiting_calls, waiting_bytes),
+            waiting: WaitingCalls::new(waiting_calls, waiting_bytes, waiting_budget),
             namespace,
             limits,
             next_epoch: Some(1),

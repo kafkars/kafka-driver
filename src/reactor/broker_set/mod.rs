@@ -13,11 +13,15 @@ mod seed;
 mod waiting;
 
 #[cfg(test)]
+mod deadline_test;
+#[cfg(test)]
 mod lane_test;
 #[cfg(test)]
 mod owner_test;
 #[cfg(test)]
 mod routing_test;
+#[cfg(test)]
+mod terminal_test;
 #[cfg(test)]
 mod waiting_test;
 
