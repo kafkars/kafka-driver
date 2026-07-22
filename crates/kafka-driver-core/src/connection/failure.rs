@@ -38,11 +38,22 @@ pub enum CloseReason {
     },
     /// A response arrived when no call was awaiting one.
     UnexpectedResponse,
+    /// A complete response frame did not contain a decodable Kafka header.
+    MalformedResponse,
     /// A pending call reached its deadline.
     DeadlineExceeded {
         /// Call whose deadline closed the epoch.
         call_id: CallId,
     },
+}
+
+/// Why the external response adapter could not present a correlation identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResponseFault {
+    /// No FIFO response obligation existed for the received frame.
+    Unexpected,
+    /// The expected generated response header could not be decoded.
+    Malformed,
 }
 
 /// Why one call was rejected or failed by connection policy.

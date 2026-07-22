@@ -132,6 +132,11 @@ impl ConnectionMachine {
                 transport_id,
                 correlation_id,
             } => Ok(self.response_received(epoch, transport_id, correlation_id)),
+            ConnectionInput::ResponseRejected {
+                epoch,
+                transport_id,
+                fault,
+            } => Ok(self.response_rejected(epoch, transport_id, fault)),
             ConnectionInput::DeadlineElapsed {
                 epoch,
                 timer_id,

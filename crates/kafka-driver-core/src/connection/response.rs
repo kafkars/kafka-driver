@@ -4,10 +4,30 @@ use crate::{ConnectionEpoch, Moment, TimerId, TransportId};
 
 use super::{
     ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, CorrelationId,
-    Decision, PendingPhase, StateData,
+    Decision, PendingPhase, ResponseFault, StateData,
 };
 
 impl ConnectionMachine {
+    pub(super) fn response_rejected(
+        &mut self,
+        epoch: ConnectionEpoch,
+        transport_id: TransportId,
+        fault: ResponseFault,
+    ) -> Decision {
+        let StateData::Active { connection, .. } = &self.state else {
+            return Decision::stale();
+        };
+        if epoch != connection.epoch || transport_id != connection.transport_id {
+            return Decision::stale();
+        }
+        let reason = match fault {
+            ResponseFault::Unexpected => CloseReason::UnexpectedResponse,
+            ResponseFault::Malformed => CloseReason::MalformedResponse,
+        };
+        let effects = self.begin_active_close(reason, None);
+        Decision::fault(effects)
+    }
+
     pub(super) fn response_received(
         &mut self,
         epoch: ConnectionEpoch,

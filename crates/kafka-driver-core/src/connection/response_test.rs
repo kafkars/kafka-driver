@@ -6,7 +6,7 @@ use super::scenario_support_test::{
     EPOCH, TRANSPORT, apply, call, correlation, mark_submitted, ready_machine, submit, timer,
 };
 use super::{
-    CallFailure, CloseReason, ConnectionEffect, ConnectionInput, ConnectionPhase,
+    CallFailure, CloseReason, ConnectionEffect, ConnectionInput, ConnectionPhase, ResponseFault,
     TransitionDisposition,
 };
 
@@ -163,4 +163,65 @@ fn unsolicited_response_closes_an_idle_ready_epoch() {
             reason: CloseReason::UnexpectedResponse,
         }]
     );
+}
+
+#[test]
+fn malformed_response_header_faults_and_fails_the_pending_epoch() {
+    let mut machine = ready_machine();
+    submit(&mut machine, 1);
+    mark_submitted(&mut machine, 1);
+
+    let response = apply(
+        &mut machine,
+        ConnectionInput::ResponseRejected {
+            epoch: EPOCH,
+            transport_id: TRANSPORT,
+            fault: ResponseFault::Malformed,
+        },
+    );
+
+    assert_eq!(
+        response.record().disposition(),
+        TransitionDisposition::Fault
+    );
+    assert_eq!(machine.state().phase(), ConnectionPhase::Closing);
+    assert_eq!(
+        response.effects(),
+        &[
+            ConnectionEffect::CloseTransport {
+                epoch: EPOCH,
+                transport_id: TRANSPORT,
+                reason: CloseReason::MalformedResponse,
+            },
+            ConnectionEffect::CancelDeadline { timer_id: timer(1) },
+            ConnectionEffect::FailCall {
+                call_id: call(1),
+                failure: CallFailure::ConnectionClosed {
+                    reason: CloseReason::MalformedResponse,
+                },
+                delivery: Delivery::PossiblySent,
+            },
+        ]
+    );
+}
+
+#[test]
+fn stale_response_rejection_cannot_close_the_current_epoch() {
+    let mut machine = ready_machine();
+
+    let response = apply(
+        &mut machine,
+        ConnectionInput::ResponseRejected {
+            epoch: super::scenario_support_test::STALE_EPOCH,
+            transport_id: TRANSPORT,
+            fault: ResponseFault::Unexpected,
+        },
+    );
+
+    assert_eq!(
+        response.record().disposition(),
+        TransitionDisposition::IgnoredStale
+    );
+    assert!(response.effects().is_empty());
+    assert_eq!(machine.state().phase(), ConnectionPhase::Ready);
 }

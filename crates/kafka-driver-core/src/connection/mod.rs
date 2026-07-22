@@ -35,7 +35,7 @@ mod shutdown_test;
 pub use correlation::CorrelationId;
 pub use effect::ConnectionEffect;
 pub use failure::{
-    CallFailure, CloseReason, ConnectionMachineError, IdentityKind, TransportFailure,
+    CallFailure, CloseReason, ConnectionMachineError, IdentityKind, ResponseFault, TransportFailure,
 };
 pub use input::{ConnectionInput, ConnectionInputKind};
 pub use limits::ConnectionLimits;

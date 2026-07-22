@@ -2,7 +2,7 @@
 
 use crate::{CallId, ConnectionEpoch, EffectId, Moment, TimerId, TransportId};
 
-use super::{CorrelationId, TransportFailure};
+use super::{CorrelationId, ResponseFault, TransportFailure};
 
 /// One internal command or external outcome applied to the machine.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,6 +76,15 @@ pub enum ConnectionInput {
         /// Correlation decoded from the response header.
         correlation_id: CorrelationId,
     },
+    /// Reports a complete response that could not yield a policy-safe correlation.
+    ResponseRejected {
+        /// Connection epoch that produced the frame.
+        epoch: ConnectionEpoch,
+        /// Transport resource that produced the frame.
+        transport_id: TransportId,
+        /// Sanitized reason header inspection could not continue.
+        fault: ResponseFault,
+    },
     /// Reports a call deadline timer firing.
     DeadlineElapsed {
         /// Connection epoch echoed from the timer effect.
@@ -108,6 +117,7 @@ impl ConnectionInput {
             Self::WriteSubmitted { .. } => ConnectionInputKind::WriteSubmitted,
             Self::WriteFailed { .. } => ConnectionInputKind::WriteFailed,
             Self::ResponseReceived { .. } => ConnectionInputKind::ResponseReceived,
+            Self::ResponseRejected { .. } => ConnectionInputKind::ResponseRejected,
             Self::DeadlineElapsed { .. } => ConnectionInputKind::DeadlineElapsed,
             Self::BeginDrain => ConnectionInputKind::BeginDrain,
             Self::TransportClosed { .. } => ConnectionInputKind::TransportClosed,
@@ -132,6 +142,8 @@ pub enum ConnectionInputKind {
     WriteFailed,
     /// `ConnectionInput::ResponseReceived`.
     ResponseReceived,
+    /// `ConnectionInput::ResponseRejected`.
+    ResponseRejected,
     /// `ConnectionInput::DeadlineElapsed`.
     DeadlineElapsed,
     /// `ConnectionInput::BeginDrain`.

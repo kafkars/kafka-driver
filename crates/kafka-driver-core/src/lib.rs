@@ -16,7 +16,7 @@ mod time_test;
 pub use connection::{
     CallFailure, CloseReason, ConnectionEffect, ConnectionInput, ConnectionInputKind,
     ConnectionLimits, ConnectionMachine, ConnectionMachineError, ConnectionPhase, ConnectionState,
-    ConnectionTransition, CorrelationId, IdentityKind, PendingCall, PendingPhase,
+    ConnectionTransition, CorrelationId, IdentityKind, PendingCall, PendingPhase, ResponseFault,
     TransitionDisposition, TransitionRecord, TransitionSequence, TransportFailure,
 };
 pub use delivery::Delivery;
