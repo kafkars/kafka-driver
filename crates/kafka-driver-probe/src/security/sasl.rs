@@ -13,15 +13,19 @@ pub(crate) fn session(
     endpoints: BootstrapSet,
     mechanism: SaslSelection,
 ) -> Result<ProbeSession, ProbeError> {
+    let config = configuration(mechanism)?;
+    ProbeSession::spawn_sasl(endpoints, config)
+}
+
+pub(crate) fn configuration(mechanism: SaslSelection) -> Result<SaslConfig, ProbeError> {
     let username = credential(USERNAME)?;
     let password = credential(PASSWORD)?;
-    let config = match mechanism {
+    match mechanism {
         SaslSelection::Plain => SaslConfig::plain(username, password),
         SaslSelection::ScramSha256 => SaslConfig::scram_sha_256(username, password),
         SaslSelection::ScramSha512 => SaslConfig::scram_sha_512(username, password),
     }
-    .map_err(|source| ProbeError::stage("validate SASL credentials", source))?;
-    ProbeSession::spawn_sasl(endpoints, config)
+    .map_err(|source| ProbeError::stage("validate SASL credentials", source))
 }
 
 fn credential(name: &'static str) -> Result<String, ProbeError> {

@@ -94,6 +94,27 @@ fn tls_retains_address_trust_anchor_and_server_identity() {
 }
 
 #[test]
+fn tls_authentication_retains_mechanism_and_certificate_policy() {
+    let parsed = Arguments::parse(strings([
+        "tls-authenticate",
+        "scram-sha-512",
+        "127.0.0.1:9093",
+        "/tmp/test-ca.pem",
+        "broker.test",
+    ]));
+
+    assert_eq!(
+        parsed,
+        Ok(Arguments::TlsAuthenticate {
+            mechanism: SaslSelection::ScramSha512,
+            address: "127.0.0.1:9093".to_owned(),
+            certificate: "/tmp/test-ca.pem".to_owned(),
+            server_name: "broker.test".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn partial_or_expanded_commands_are_rejected() {
     assert_eq!(
         Arguments::parse(strings(["readiness"])),

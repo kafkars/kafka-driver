@@ -33,6 +33,14 @@ pub(crate) enum Arguments {
         server_name: String,
     },
 
+    /// Proves one SASL mechanism over certificate-verified rustls.
+    TlsAuthenticate {
+        mechanism: SaslSelection,
+        address: String,
+        certificate: String,
+        server_name: String,
+    },
+
     /// Measures bounded generated-RPC progress through one real broker.
     Measure {
         bootstrap: String,
@@ -66,6 +74,16 @@ impl Arguments {
                 certificate: certificate.clone(),
                 server_name: server_name.clone(),
             }),
+            [command, mechanism, address, certificate, server_name]
+                if command == "tls-authenticate" =>
+            {
+                Ok(Self::TlsAuthenticate {
+                    mechanism: SaslSelection::parse(mechanism)?,
+                    address: address.clone(),
+                    certificate: certificate.clone(),
+                    server_name: server_name.clone(),
+                })
+            }
             [command, bootstrap, samples] if command == "measure" => {
                 let samples = samples
                     .parse::<usize>()
@@ -95,7 +113,7 @@ impl fmt::Display for ArgumentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Shape => formatter.write_str(
-                "usage: kafka-driver-probe readiness <host:port> | routes <host:port> <topic> <group> | reconnect <host:port> | authenticate <plain|scram-sha-256|scram-sha-512> <host:port> | tls <ip:port> <ca.pem> <server-name> | measure <host:port> <samples>",
+                "usage: kafka-driver-probe readiness <host:port> | routes <host:port> <topic> <group> | reconnect <host:port> | authenticate <mechanism> <host:port> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <host:port> <samples>",
             ),
             Self::Samples => write!(
                 formatter,

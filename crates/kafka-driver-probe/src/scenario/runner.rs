@@ -8,7 +8,9 @@ use crate::{
     session::ProbeSession,
 };
 
-use super::{authentication, encryption, measurement, readiness, reconnect, routes};
+use super::{
+    authentication, encryption, measurement, readiness, reconnect, routes, secure_authentication,
+};
 
 pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
     let (session, scenario) = match arguments {
@@ -45,6 +47,20 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
                 Scenario::Tls,
             )
         }
+        Arguments::TlsAuthenticate {
+            mechanism,
+            address,
+            certificate,
+            server_name,
+        } => {
+            let address = endpoint::socket(&address)
+                .map_err(|source| ProbeError::stage("validate direct TLS endpoint", source))?;
+            let sasl = security::sasl_config(mechanism)?;
+            (
+                security::tls_sasl_session(address, &certificate, server_name, sasl)?,
+                Scenario::TlsAuthentication { mechanism },
+            )
+        }
         Arguments::Measure { bootstrap, samples } => {
             (spawn_plaintext(&bootstrap)?, Scenario::Measure { samples })
         }
@@ -55,6 +71,9 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
         Scenario::Reconnect => reconnect::run(&session),
         Scenario::Authentication { mechanism } => authentication::run(&session, mechanism),
         Scenario::Tls => encryption::run(&session),
+        Scenario::TlsAuthentication { mechanism } => {
+            secure_authentication::run(&session, mechanism)
+        }
         Scenario::Measure { samples } => measurement::run(&session, samples),
     };
     let close = session.close();
@@ -73,5 +92,6 @@ enum Scenario {
     Reconnect,
     Authentication { mechanism: SaslSelection },
     Tls,
+    TlsAuthentication { mechanism: SaslSelection },
     Measure { samples: std::num::NonZeroUsize },
 }

@@ -2,7 +2,7 @@
 
 use std::{fs, net::SocketAddr, sync::Arc};
 
-use kafka_driver::TlsClientConfig;
+use kafka_driver::{SaslConfig, TlsClientConfig};
 use rustls::{
     ClientConfig, RootCertStore,
     pki_types::{CertificateDer, ServerName, pem::PemObject},
@@ -15,6 +15,24 @@ pub(crate) fn session(
     certificate_path: &str,
     server_name: String,
 ) -> Result<ProbeSession, ProbeError> {
+    let tls = configuration(certificate_path, server_name)?;
+    ProbeSession::spawn_tls(address, tls)
+}
+
+pub(crate) fn authenticated_session(
+    address: SocketAddr,
+    certificate_path: &str,
+    server_name: String,
+    sasl: SaslConfig,
+) -> Result<ProbeSession, ProbeError> {
+    let tls = configuration(certificate_path, server_name)?;
+    ProbeSession::spawn_tls_sasl(address, tls, sasl)
+}
+
+fn configuration(
+    certificate_path: &str,
+    server_name: String,
+) -> Result<TlsClientConfig, ProbeError> {
     let pem = fs::read(certificate_path)
         .map_err(|source| ProbeError::stage("read TLS trust anchor", source))?;
     let certificate = CertificateDer::from_pem_slice(&pem)
@@ -32,6 +50,5 @@ pub(crate) fn session(
         .with_no_client_auth();
     let server_name = ServerName::try_from(server_name)
         .map_err(|source| ProbeError::stage("validate TLS server identity", source))?;
-    let tls = TlsClientConfig::new(Arc::new(client), server_name);
-    ProbeSession::spawn_tls(address, tls)
+    Ok(TlsClientConfig::new(Arc::new(client), server_name))
 }

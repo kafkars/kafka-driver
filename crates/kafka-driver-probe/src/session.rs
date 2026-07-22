@@ -45,6 +45,14 @@ impl ProbeSession {
         Self::spawn_builder(Driver::builder().rustls_broker(address, tls))
     }
 
+    pub(crate) fn spawn_tls_sasl(
+        address: std::net::SocketAddr,
+        tls: TlsClientConfig,
+        sasl: SaslConfig,
+    ) -> Result<Self, ProbeError> {
+        Self::spawn_builder(Driver::builder().rustls_broker(address, tls).sasl(sasl))
+    }
+
     fn spawn_builder(builder: kafka_driver::DriverBuilder) -> Result<Self, ProbeError> {
         let (driver, host) = builder
             .spawn()

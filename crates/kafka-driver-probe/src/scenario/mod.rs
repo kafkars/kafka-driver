@@ -9,5 +9,6 @@ mod reconnect;
 mod reconnect_test;
 mod routes;
 mod runner;
+mod secure_authentication;
 
 pub(crate) use runner::run;
