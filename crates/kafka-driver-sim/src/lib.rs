@@ -8,6 +8,7 @@ mod dns;
 mod event;
 mod limits;
 mod plan;
+mod poller;
 mod schedule;
 mod simulation;
 
@@ -28,4 +29,7 @@ pub use dns::{
 pub use event::{Scheduled, SimEventId};
 pub use limits::SimulationLimits;
 pub use plan::Planned;
+pub use poller::{
+    PollInterest, PollRequest, PollScriptError, PollStep, Readiness, ReadinessEvent, ScriptedPoller,
+};
 pub use simulation::{SimulationError, Simulator};

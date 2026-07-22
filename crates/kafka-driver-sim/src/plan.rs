@@ -29,4 +29,9 @@ impl<T> Planned<T> {
     pub fn into_outcome(self) -> T {
         self.outcome
     }
+
+    /// Transforms the outcome while preserving its virtual delay.
+    pub fn map<U>(self, map: impl FnOnce(T) -> U) -> Planned<U> {
+        Planned::new(self.delay, map(self.outcome))
+    }
 }
