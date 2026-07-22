@@ -9,6 +9,8 @@ mod proof;
 mod session;
 
 #[cfg(test)]
+mod fanout_bench_test;
+#[cfg(test)]
 mod message_test;
 #[cfg(test)]
 mod session_test;
