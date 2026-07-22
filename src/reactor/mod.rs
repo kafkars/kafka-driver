@@ -1,5 +1,10 @@
 //! Single-owner host, bounded command mailbox, and cross-thread wake contract.
 
+#[allow(
+    dead_code,
+    reason = "M4 clock drives connection deadlines in the broker-owner slice"
+)]
+mod clock;
 mod command;
 mod error;
 mod host;
@@ -26,6 +31,8 @@ mod resource;
 mod timer;
 mod wake;
 
+#[cfg(test)]
+mod clock_test;
 #[cfg(test)]
 mod mailbox_test;
 
