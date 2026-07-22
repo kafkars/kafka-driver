@@ -4,7 +4,7 @@ use kafka_driver_core::{BrokerRoute, DnsOutcome, DnsRequest, EffectId, Moment};
 
 use crate::{
     RequestError,
-    reactor::{Poller, resolver::socket_address, resource::ResourceNamespace},
+    reactor::{Poller, resource::ResourceNamespace},
     request::ErasedRequest,
 };
 
@@ -160,7 +160,7 @@ impl BrokerSet {
             .clone()
             .ok_or(BrokerSetError::BrokerTemplateMissing)?;
         child.install(
-            template.at(socket_address(pending.address)),
+            template.at_resolved(pending.addresses),
             pending.endpoint,
             pending.epoch,
             poller,

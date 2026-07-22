@@ -2,7 +2,7 @@
 
 use kafka_driver_core::{
     BrokerEndpoint, BrokerResolutionMachine, BrokerResolutionState, BrokerRoute, ConnectionEpoch,
-    ResolvedAddress,
+    ResolvedAddressSet,
 };
 
 use crate::RequestError;
@@ -13,7 +13,7 @@ pub(super) struct PendingBroker {
     pub(super) route: BrokerRoute,
     pub(super) epoch: ConnectionEpoch,
     pub(super) endpoint: BrokerEndpoint,
-    pub(super) address: ResolvedAddress,
+    pub(super) addresses: ResolvedAddressSet,
 }
 
 impl BrokerChild {

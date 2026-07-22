@@ -2,6 +2,8 @@
 
 use std::net::SocketAddr;
 
+use kafka_driver_core::ResolvedAddressSet;
+
 #[cfg(feature = "tls-rustls")]
 use super::TlsClientConfig;
 
@@ -10,14 +12,14 @@ use super::SaslConfig;
 /// Fully selected connection mechanics for one configured broker.
 #[derive(Clone, Debug)]
 pub(crate) struct BrokerConfig {
-    address: SocketAddr,
+    addresses: BrokerAddresses,
     template: BrokerTemplate,
 }
 
 impl BrokerConfig {
     pub(crate) const fn plaintext(address: SocketAddr) -> Self {
         Self {
-            address,
+            addresses: BrokerAddresses::Direct(address),
             template: BrokerTemplate::plaintext(),
         }
     }
@@ -25,7 +27,7 @@ impl BrokerConfig {
     #[cfg(feature = "tls-rustls")]
     pub(crate) const fn rustls(address: SocketAddr, tls: TlsClientConfig) -> Self {
         Self {
-            address,
+            addresses: BrokerAddresses::Direct(address),
             template: BrokerTemplate::rustls(tls),
         }
     }
@@ -35,9 +37,9 @@ impl BrokerConfig {
         self
     }
 
-    pub(crate) fn into_parts(self) -> (SocketAddr, BrokerSecurity, Option<SaslConfig>) {
+    pub(crate) fn into_parts(self) -> (BrokerAddresses, BrokerSecurity, Option<SaslConfig>) {
         let (security, sasl) = self.template.into_parts();
-        (self.address, security, sasl)
+        (self.addresses, security, sasl)
     }
 
     pub(crate) fn requires_proof_worker(&self) -> bool {
@@ -73,9 +75,9 @@ impl BrokerTemplate {
         self
     }
 
-    pub(crate) fn at(self, address: SocketAddr) -> BrokerConfig {
+    pub(crate) fn at_resolved(self, addresses: ResolvedAddressSet) -> BrokerConfig {
         BrokerConfig {
-            address,
+            addresses: BrokerAddresses::Resolved(addresses),
             template: self,
         }
     }
@@ -89,6 +91,15 @@ impl BrokerTemplate {
     fn into_parts(self) -> (BrokerSecurity, Option<SaslConfig>) {
         (self.security, self.sasl)
     }
+}
+
+/// Nonempty address ownership before reactor-side socket selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum BrokerAddresses {
+    /// One directly configured numeric socket address.
+    Direct(SocketAddr),
+    /// One bounded resolver result in resolver preference order.
+    Resolved(ResolvedAddressSet),
 }
 
 /// Selected byte-stream protection beneath Kafka framing.

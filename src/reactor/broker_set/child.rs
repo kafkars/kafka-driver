@@ -134,17 +134,12 @@ impl BrokerChild {
                     endpoint,
                     addresses,
                 },
-            ] => {
-                let Some(address) = addresses.iter().next().copied() else {
-                    return Err(BrokerSetError::UnexpectedResolutionEffect);
-                };
-                Ok(ChildResolution::Resolved(PendingBroker {
-                    route: *route,
-                    epoch: *epoch,
-                    endpoint: endpoint.clone(),
-                    address,
-                }))
-            }
+            ] => Ok(ChildResolution::Resolved(PendingBroker {
+                route: *route,
+                epoch: *epoch,
+                endpoint: endpoint.clone(),
+                addresses: addresses.clone(),
+            })),
             [BrokerResolutionEffect::Failed { failure, .. }] => {
                 self.waiting
                     .fail_all(&RequestError::NameResolutionFailed { failure: *failure });

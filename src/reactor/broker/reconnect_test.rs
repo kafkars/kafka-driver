@@ -1,15 +1,74 @@
 //! Real-loop scenario for broker-owned replacement of a failed connection epoch.
 
-use std::{net::TcpListener, num::NonZeroUsize};
+use std::{
+    net::TcpListener,
+    num::{NonZeroU16, NonZeroUsize},
+};
 
-use kafka_driver_core::{BrokerPhase, BrokerState, ConnectionEpoch, ConnectionState, Moment};
+use kafka_driver_core::{
+    BrokerPhase, BrokerState, ConnectionEpoch, ConnectionState, IpAddress, Moment,
+    ResolutionLimits, ResolvedAddress, ResolvedAddressSet,
+};
 
-use crate::reactor::{Poller, broker::limits::BrokerLimits};
+use crate::{
+    config::BrokerTemplate,
+    reactor::{Poller, broker::limits::BrokerLimits},
+};
 
 use super::{
     owner::SingleBroker,
     scenario_support_test::{complete_negotiation, observe_once},
 };
+
+#[test]
+fn given_multiple_resolved_addresses_when_the_first_refuses_then_reconnect_uses_the_second() {
+    // Given
+    let refused = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("reserve refused loopback address: {error}"));
+    let refused_port = refused
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read refused loopback address: {error}"))
+        .port();
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
+    let port = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read loopback broker address: {error}"))
+        .port();
+    drop(refused);
+    let config = BrokerTemplate::plaintext().at_resolved(resolved_addresses(refused_port, port));
+    let mut poller = Poller::new(NonZeroUsize::MIN)
+        .unwrap_or_else(|error| panic!("create broker poller: {error}"));
+    let mut broker = SingleBroker::new_configured(config, BrokerLimits::default());
+    broker
+        .start(&poller, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("start first address: {error}"));
+    if broker.broker_state().phase() == BrokerPhase::Connecting {
+        observe_once(&mut poller, &mut broker);
+    }
+    let BrokerState::Backoff { deadline, .. } = broker.broker_state() else {
+        panic!("refused first address must enter reconnect backoff");
+    };
+
+    // When
+    broker
+        .fire_due(&poller, deadline)
+        .unwrap_or_else(|error| panic!("deliver reconnect deadline: {error}"));
+    let (mut peer, _) = listener
+        .accept()
+        .unwrap_or_else(|error| panic!("accept second address: {error}"));
+    complete_negotiation(&mut poller, &mut broker, &mut peer);
+
+    // Then
+    assert!(matches!(
+        broker.state(),
+        ConnectionState::Ready {
+            epoch,
+            ..
+        } if epoch == ConnectionEpoch::from_raw(2)
+    ));
+    assert_eq!(broker.broker_state().phase(), BrokerPhase::Available);
+}
 
 #[test]
 fn given_a_lost_ready_connection_when_backoff_elapses_then_a_fresh_epoch_negotiates() {
@@ -50,4 +109,19 @@ fn given_a_lost_ready_connection_when_backoff_elapses_then_a_fresh_epoch_negotia
     };
     assert_eq!(epoch, ConnectionEpoch::from_raw(2));
     assert_eq!(broker.broker_state().phase(), BrokerPhase::Available);
+}
+
+fn resolved_addresses(refused_port: u16, listening_port: u16) -> ResolvedAddressSet {
+    let refused_port =
+        NonZeroU16::new(refused_port).unwrap_or_else(|| panic!("refused port is nonzero"));
+    let listening_port =
+        NonZeroU16::new(listening_port).unwrap_or_else(|| panic!("listener port is nonzero"));
+    ResolvedAddressSet::try_from_iter(
+        [
+            ResolvedAddress::new(IpAddress::V4([127, 0, 0, 1]), refused_port),
+            ResolvedAddress::new(IpAddress::V4([127, 0, 0, 1]), listening_port),
+        ],
+        ResolutionLimits::new(NonZeroUsize::new(2).unwrap_or(NonZeroUsize::MIN)),
+    )
+    .unwrap_or_else(|error| panic!("valid resolved addresses: {error}"))
 }

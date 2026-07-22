@@ -33,5 +33,5 @@ pub use scram_proof::ScramProofLimits;
 pub use tls::TlsClientConfig;
 
 pub(crate) use bootstrap::BootstrapConfig;
-pub(crate) use broker::{BrokerConfig, BrokerSecurity, BrokerTemplate};
+pub(crate) use broker::{BrokerAddresses, BrokerConfig, BrokerSecurity, BrokerTemplate};
 pub(crate) use target::DriverTarget;

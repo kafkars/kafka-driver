@@ -4,10 +4,7 @@ use kafka_driver_core::{
     BootstrapEffect, BootstrapInput, BootstrapMachine, ConnectionEpoch, DnsOutcome, EffectId,
 };
 
-use crate::{
-    config::{BootstrapConfig, BrokerConfig, BrokerTemplate},
-    reactor::resolver::socket_address,
-};
+use crate::config::{BootstrapConfig, BrokerConfig, BrokerTemplate};
 
 use super::BootstrapOwnerError;
 
@@ -64,14 +61,9 @@ impl BootstrapOwner {
         match effects {
             [BootstrapEffect::Exhausted { .. }] => Ok(BootstrapAction::Exhausted),
             [BootstrapEffect::Resolve { request }] => Ok(BootstrapAction::Resolve(request.clone())),
-            [BootstrapEffect::Resolved { addresses, .. }] => {
-                let Some(address) = addresses.iter().next().copied() else {
-                    return Err(BootstrapOwnerError::UnexpectedEffect);
-                };
-                Ok(BootstrapAction::Install(
-                    self.broker.clone().at(socket_address(address)),
-                ))
-            }
+            [BootstrapEffect::Resolved { addresses, .. }] => Ok(BootstrapAction::Install(
+                self.broker.clone().at_resolved(addresses.clone()),
+            )),
             _ => Err(BootstrapOwnerError::UnexpectedEffect),
         }
     }

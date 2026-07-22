@@ -192,7 +192,8 @@ impl SingleBroker {
             return Ok(());
         }
         let identity = ResourceIdentity::new(*transport_id, epoch);
-        match self.resources.open(poller, identity, self.address) {
+        let address = self.addresses.next();
+        match self.resources.open(poller, identity, address) {
             Ok(token) => self.resource_token = Some(token),
             Err(error) => {
                 self.apply_open_failed(epoch, *effect_id, *transport_id, open_failure(&error))?;

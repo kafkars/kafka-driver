@@ -1,6 +1,6 @@
 //! One broker endpoint joining connection policy to one registered transport.
 
-use std::{net::SocketAddr, num::NonZeroUsize};
+use std::num::NonZeroUsize;
 
 use kafka_driver_core::{
     AuthenticationLimits, BrokerMachine, ConnectionEpoch, ConnectionInput, ConnectionMachine,
@@ -25,15 +25,15 @@ use crate::{
 };
 
 use super::{
-    BrokerError, BrokerIds, entropy::BackoffEntropy, failure::transport_failure,
-    limits::BrokerLimits, terminal::expect_no_effects,
+    BrokerError, BrokerIds, address_rotation::AddressRotation, entropy::BackoffEntropy,
+    failure::transport_failure, limits::BrokerLimits, terminal::expect_no_effects,
 };
 
 /// Single-owner adapter for one broker and its replaceable connection epoch.
 #[derive(Debug)]
 pub(in crate::reactor) struct SingleBroker {
     pub(super) limits: BrokerLimits,
-    pub(super) address: SocketAddr,
+    pub(super) addresses: AddressRotation,
     pub(super) broker: BrokerMachine,
     pub(super) connection: ConnectionMachine,
     pub(super) connection_limits: kafka_driver_core::ConnectionLimits,

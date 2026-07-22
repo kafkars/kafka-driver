@@ -13,6 +13,7 @@ use crate::{
     response::ResponseRegistry,
 };
 
+use super::address_rotation::AddressRotation;
 use super::{BrokerLimits, entropy::BackoffEntropy, owner::SingleBroker};
 
 impl SingleBroker {
@@ -48,7 +49,8 @@ impl SingleBroker {
         epoch: ConnectionEpoch,
         scram_proof: Option<ScramProofSender>,
     ) -> Self {
-        let (address, security, sasl) = config.into_parts();
+        let (addresses, security, sasl) = config.into_parts();
+        let addresses = AddressRotation::new(addresses);
         let resources = TransportResources::in_namespace(
             limits.resource_capacity(),
             limits.transport(),
@@ -63,13 +65,13 @@ impl SingleBroker {
         );
         Self {
             limits,
-            address,
+            entropy: BackoffEntropy::for_broker(addresses.primary()),
+            addresses,
             broker: BrokerMachine::new(epoch, limits.backoff()),
             connection,
             connection_limits: limits.connection(),
             authentication_limits: limits.authentication(),
             ids: super::BrokerIds::new(),
-            entropy: BackoffEntropy::for_broker(address),
             resources,
             resource_token: None,
             responses: ResponseRegistry::new(limits.response_capacity(), DecodeLimits::default()),

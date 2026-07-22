@@ -1,5 +1,6 @@
 //! Single-broker ownership above deterministic policy and below the host.
 
+mod address_rotation;
 mod authentication;
 mod construction;
 mod deadline;
@@ -20,6 +21,8 @@ mod submission;
 mod terminal;
 mod write_admission;
 
+#[cfg(test)]
+mod address_rotation_test;
 #[cfg(test)]
 mod authentication_fixture_test;
 #[cfg(test)]

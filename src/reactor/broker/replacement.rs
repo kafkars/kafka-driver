@@ -5,7 +5,9 @@ use kafka_wire_core::DecodeLimits;
 
 use crate::{config::BrokerConfig, reactor::timer::TimerHeap, response::ResponseRegistry};
 
-use super::{BrokerError, entropy::BackoffEntropy, owner::SingleBroker};
+use super::{
+    BrokerError, address_rotation::AddressRotation, entropy::BackoffEntropy, owner::SingleBroker,
+};
 
 impl SingleBroker {
     pub(in crate::reactor) fn reconfigure(
@@ -16,8 +18,10 @@ impl SingleBroker {
         if !self.is_terminal() {
             return Err(BrokerError::ReplacementBeforeTerminal);
         }
-        let (address, security, sasl) = config.into_parts();
-        self.address = address;
+        let (addresses, security, sasl) = config.into_parts();
+        let addresses = AddressRotation::new(addresses);
+        self.entropy = BackoffEntropy::for_broker(addresses.primary());
+        self.addresses = addresses;
         self.broker = BrokerMachine::new(epoch, self.limits.backoff());
         self.connection = Self::connection_machine(
             epoch,
@@ -25,7 +29,6 @@ impl SingleBroker {
             sasl.as_ref(),
             self.authentication_limits,
         );
-        self.entropy = BackoffEntropy::for_broker(address);
         self.resources.replace_security(security);
         self.resource_token = None;
         self.responses =
