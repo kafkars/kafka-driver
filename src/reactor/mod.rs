@@ -2,6 +2,11 @@
 
 #[allow(
     dead_code,
+    reason = "M4 broker identities are consumed by the broker owner in the next slice"
+)]
+mod broker;
+#[allow(
+    dead_code,
     reason = "M4 clock drives connection deadlines in the broker-owner slice"
 )]
 mod clock;
