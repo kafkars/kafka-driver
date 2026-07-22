@@ -13,7 +13,7 @@ use kafka_wire_core::DecodeLimits;
 use crate::negotiation::{NegotiationExchange, NegotiationLimits};
 use crate::reactor::{
     PollEvent, Poller,
-    resource::{ResourceIdentity, ResourceToken, TransportResources},
+    resource::{ResourceIdentity, ResourceNamespace, ResourceToken, TransportResources},
     tcp::ConnectProgress,
     timer::{DeadlineTimer, TimerHeap},
     transport::{CompletedWrite, ReadBudget, WriteBudget},
@@ -69,9 +69,21 @@ impl SingleBroker {
     }
 
     pub(in crate::reactor) fn new_configured(config: BrokerConfig, limits: BrokerLimits) -> Self {
+        Self::new_configured_in(config, limits, ResourceNamespace::single())
+    }
+
+    pub(in crate::reactor) fn new_configured_in(
+        config: BrokerConfig,
+        limits: BrokerLimits,
+        namespace: ResourceNamespace,
+    ) -> Self {
         let (address, security, sasl) = config.into_parts();
-        let resources =
-            TransportResources::new(limits.resource_capacity(), limits.transport(), security);
+        let resources = TransportResources::in_namespace(
+            limits.resource_capacity(),
+            limits.transport(),
+            security,
+            namespace,
+        );
         let connection = Self::connection_machine(
             ConnectionEpoch::from_raw(1),
             limits.connection(),

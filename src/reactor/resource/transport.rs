@@ -11,7 +11,8 @@ use crate::{
 };
 
 use super::{
-    ResourceAdmissionFailure, ResourceIdentity, ResourceToken, registry::ResourceRegistry,
+    ResourceAdmissionFailure, ResourceIdentity, ResourceNamespace, ResourceToken,
+    registry::ResourceRegistry,
 };
 
 /// Reactor-owned set of registered broker transport resources.
@@ -23,13 +24,23 @@ pub(in crate::reactor) struct TransportResources {
 }
 
 impl TransportResources {
+    #[cfg(test)]
     pub(in crate::reactor) fn new(
         capacity: NonZeroUsize,
         limits: TransportLimits,
         security: BrokerSecurity,
     ) -> Self {
+        Self::in_namespace(capacity, limits, security, ResourceNamespace::single())
+    }
+
+    pub(in crate::reactor) fn in_namespace(
+        capacity: NonZeroUsize,
+        limits: TransportLimits,
+        security: BrokerSecurity,
+        namespace: ResourceNamespace,
+    ) -> Self {
         Self {
-            connections: ResourceRegistry::new(capacity),
+            connections: ResourceRegistry::in_namespace(capacity, namespace),
             limits,
             security,
         }

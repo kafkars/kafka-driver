@@ -18,6 +18,7 @@ pub(in crate::reactor) struct ResourceRegistry<R> {
 }
 
 impl<R> ResourceRegistry<R> {
+    #[cfg(test)]
     pub(in crate::reactor) fn new(capacity: NonZeroUsize) -> Self {
         Self::in_namespace(capacity, ResourceNamespace::single())
     }
