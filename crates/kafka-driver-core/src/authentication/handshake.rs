@@ -7,6 +7,8 @@ use super::{
     AuthenticationRound, Decision, StateData,
 };
 
+const HANDSHAKE_CORRELATION: crate::CorrelationId = crate::CorrelationId::from_raw(1);
+
 impl AuthenticationMachine {
     pub(super) fn start(&mut self, attempt: AuthenticationAttempt) -> Decision {
         if self.state != StateData::Dormant {
@@ -30,6 +32,7 @@ impl AuthenticationMachine {
                 epoch: self.epoch,
                 transport_id: self.transport_id,
                 effect_id: attempt.effect_id,
+                correlation_id: HANDSHAKE_CORRELATION,
                 mechanism: self.protocol.mechanism(),
                 version: self.protocol.handshake_version(),
             },

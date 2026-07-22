@@ -2,6 +2,7 @@
 
 use kafka_wire_core::ApiVersion;
 
+use crate::CorrelationId;
 use crate::{ConnectionEpoch, EffectId, Moment, TimerId, TransportId};
 
 use super::{AuthenticationFailure, AuthenticationRound, SaslMechanism};
@@ -26,6 +27,8 @@ pub enum AuthenticationEffect {
         transport_id: TransportId,
         /// High-level authentication effect identity.
         effect_id: EffectId,
+        /// Correlation reserved for the handshake request and response.
+        correlation_id: CorrelationId,
         /// Configured mechanism without credentials.
         mechanism: SaslMechanism,
         /// Negotiated Kafka API version.
@@ -41,6 +44,8 @@ pub enum AuthenticationEffect {
         effect_id: EffectId,
         /// One-based challenge-response round.
         round: AuthenticationRound,
+        /// Correlation reserved for this round's request and response.
+        correlation_id: CorrelationId,
         /// Negotiated Kafka API version.
         version: ApiVersion,
     },

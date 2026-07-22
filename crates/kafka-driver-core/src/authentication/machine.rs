@@ -1,6 +1,6 @@
 //! Authentication owner, input dispatch, terminal outcomes, and shared identity checks.
 
-use crate::{ConnectionEpoch, EffectId, TimerId, TransportId};
+use crate::{ConnectionEpoch, CorrelationId, EffectId, TimerId, TransportId};
 
 use super::{
     AuthenticationDisposition, AuthenticationEffect, AuthenticationFailure, AuthenticationInput,
@@ -81,7 +81,7 @@ impl AuthenticationMachine {
         epoch == self.epoch && transport_id == self.transport_id && effect_id == expected_effect
     }
 
-    pub(super) const fn exchange_effect(
+    pub(super) fn exchange_effect(
         &self,
         effect_id: EffectId,
         round: AuthenticationRound,
@@ -91,6 +91,7 @@ impl AuthenticationMachine {
             transport_id: self.transport_id,
             effect_id,
             round,
+            correlation_id: CorrelationId::from_raw(i32::from(round.get()) + 1),
             version: self.protocol.authenticate_version(),
         }
     }

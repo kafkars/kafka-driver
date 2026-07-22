@@ -4,7 +4,7 @@ use std::num::NonZeroU8;
 
 use kafka_wire_core::ApiVersion;
 
-use crate::{ConnectionEpoch, EffectId, Moment, TimerId, TransportId};
+use crate::{ConnectionEpoch, CorrelationId, EffectId, Moment, TimerId, TransportId};
 
 use super::{
     AuthenticationAttempt, AuthenticationDisposition, AuthenticationEffect, AuthenticationFailure,
@@ -34,6 +34,7 @@ fn given_a_sasl_protocol_when_started_then_deadline_precedes_handshake() {
                 epoch: epoch(),
                 transport_id: transport(),
                 effect_id: effect(),
+                correlation_id: CorrelationId::from_raw(1),
                 mechanism: SaslMechanism::ScramSha256,
                 version: ApiVersion::new(1),
             },
@@ -63,6 +64,7 @@ fn given_a_matching_handshake_when_scram_continues_then_rounds_are_explicit() {
             transport_id: transport(),
             effect_id: effect(),
             round: round(1),
+            correlation_id: CorrelationId::from_raw(2),
             version: ApiVersion::new(2),
         }]
     );
@@ -73,6 +75,7 @@ fn given_a_matching_handshake_when_scram_continues_then_rounds_are_explicit() {
             transport_id: transport(),
             effect_id: effect(),
             round: round(2),
+            correlation_id: CorrelationId::from_raw(3),
             version: ApiVersion::new(2),
         }]
     );
