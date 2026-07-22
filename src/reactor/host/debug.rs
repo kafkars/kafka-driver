@@ -14,7 +14,7 @@ impl std::fmt::Debug for Reactor {
                 &self.broker.as_ref().map(SingleBroker::broker_state),
             )
             .field("connection", &self.broker.as_ref().map(SingleBroker::state))
-            .field("bootstrapping", &self.bootstrap.is_some())
+            .field("resolving_names", &self.resolution.is_some())
             .field("state", &self.state)
             .finish_non_exhaustive()
     }

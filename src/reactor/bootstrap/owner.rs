@@ -3,13 +3,13 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
 
 use kafka_driver_core::{
-    BootstrapEffect, BootstrapInput, BootstrapMachine, ConnectionEpoch, DnsOutcome, IpAddress,
-    ResolvedAddress,
+    BootstrapEffect, BootstrapInput, BootstrapMachine, ConnectionEpoch, DnsOutcome, EffectId,
+    IpAddress, ResolvedAddress,
 };
 
 use crate::config::{BootstrapConfig, BrokerConfig, BrokerTemplate};
 
-use super::{BootstrapOwnerError, identity::BootstrapEffectIds};
+use super::BootstrapOwnerError;
 use crate::reactor::resolver::Resolver;
 
 /// Reactor-side owner joining pure bootstrap policy to the blocking DNS worker.
@@ -17,22 +17,18 @@ use crate::reactor::resolver::Resolver;
 pub(in crate::reactor) struct BootstrapOwner {
     machine: BootstrapMachine,
     broker: BrokerTemplate,
-    effect_ids: BootstrapEffectIds,
 }
 
 impl BootstrapOwner {
-    pub(super) fn start(
+    pub(in crate::reactor) fn start(
         config: BootstrapConfig,
+        effect_id: EffectId,
         resolver: &Resolver,
     ) -> Result<Self, BootstrapOwnerError> {
         let (endpoints, broker) = config.into_parts();
         let mut owner = Self {
             machine: BootstrapMachine::new(endpoints),
             broker,
-            effect_ids: BootstrapEffectIds::new(),
-        };
-        let Some(effect_id) = owner.effect_ids.reserve() else {
-            return Err(BootstrapOwnerError::IdentityExhausted);
         };
         let transition = owner.machine.apply(BootstrapInput::Start {
             epoch: ConnectionEpoch::from_raw(1),
@@ -44,14 +40,12 @@ impl BootstrapOwner {
         Ok(owner)
     }
 
-    pub(super) fn complete(
+    pub(in crate::reactor) fn complete(
         &mut self,
         outcome: DnsOutcome,
+        retry_effect_id: EffectId,
         resolver: &Resolver,
     ) -> Result<Option<BrokerConfig>, BootstrapOwnerError> {
-        let Some(retry_effect_id) = self.effect_ids.reserve() else {
-            return Err(BootstrapOwnerError::IdentityExhausted);
-        };
         let transition = self.machine.apply(BootstrapInput::ResolutionCompleted {
             outcome,
             retry_effect_id,

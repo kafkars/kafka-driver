@@ -2,7 +2,7 @@
 
 use std::num::NonZeroU16;
 
-use kafka_driver_core::{BootstrapLimits, BootstrapSet, BrokerEndpoint, HostName};
+use kafka_driver_core::{BootstrapLimits, BootstrapSet, BrokerEndpoint, EffectId, HostName};
 
 use crate::{ResolverLimits, config::BootstrapConfig, reactor::Poller};
 
@@ -18,7 +18,7 @@ fn numeric_bootstrap_starts_external_resolution_without_opening_on_the_owner_thr
         .unwrap_or_else(|error| panic!("spawn DNS worker: {error}"));
     let config = BootstrapConfig::plaintext(bootstrap_set());
 
-    let owner = BootstrapOwner::start(config, &resolver);
+    let owner = BootstrapOwner::start(config, EffectId::from_raw(1), &resolver);
 
     assert!(owner.is_ok());
 }

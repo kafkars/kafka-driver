@@ -11,13 +11,13 @@ use crate::config::{DriverLimits, DriverTarget};
 
 use super::{
     Command, MailboxSender, PollEvent, Poller, ReactorError, WakeHandle,
-    bootstrap::BootstrapResolution,
     broker::{BrokerLimits, DeadlineProgress, SingleBroker},
     clock::ReactorClock,
     mailbox,
     mailbox::{DrainStatus, MailboxReceiver},
 };
 
+use resolution::NameResolution;
 use state::{HostState, ShutdownWaiters};
 
 /// Result of one bounded reactor turn.
@@ -47,7 +47,7 @@ pub struct Reactor {
     poller: Poller,
     poll_events: Vec<PollEvent>,
     broker: Option<SingleBroker>,
-    bootstrap: Option<BootstrapResolution>,
+    resolution: Option<NameResolution>,
     clock: ReactorClock,
     state: HostState,
     shutdown_waiters: ShutdownWaiters,
@@ -63,7 +63,7 @@ impl Reactor {
         let (sender, commands) = mailbox(limits.mailbox_capacity(), wake.clone());
         let clock = ReactorClock::new();
         let now = clock.now().map_err(std::io::Error::other)?;
-        let (mut broker, bootstrap) = match target {
+        let (mut broker, resolution) = match target {
             Some(DriverTarget::Direct(config)) => (
                 Some(SingleBroker::new_configured(
                     config,
@@ -73,7 +73,7 @@ impl Reactor {
             ),
             Some(DriverTarget::Bootstrap(config)) => (
                 None,
-                Some(BootstrapResolution::start(config, limits.resolver(), wake)?),
+                Some(NameResolution::start(config, limits.resolver(), wake)?),
             ),
             None => (None, None),
         };
@@ -87,7 +87,7 @@ impl Reactor {
             limits,
             poller,
             broker,
-            bootstrap,
+            resolution,
             clock,
             state: HostState::Running,
             shutdown_waiters: ShutdownWaiters::new(limits.mailbox_capacity()),
@@ -113,9 +113,9 @@ impl Reactor {
         let deadlines = self.fire_due_deadlines()?;
         let mut progress = deadlines.made_progress();
         let mut more_due = deadlines.more_due();
-        let bootstrap = self.continue_bootstrap()?;
-        let mut more_bootstrap = bootstrap.more_work();
-        progress |= bootstrap.made_progress();
+        let resolution = self.continue_resolution()?;
+        let mut more_resolution = resolution.more_work();
+        progress |= resolution.made_progress();
         progress |= processed != 0;
         progress |= self.continue_broker_io()?;
 
@@ -135,9 +135,9 @@ impl Reactor {
             let deadlines = self.fire_due_deadlines()?;
             progress |= processed != 0 || deadlines.made_progress();
             more_due |= deadlines.more_due();
-            let bootstrap = self.continue_bootstrap()?;
-            progress |= bootstrap.made_progress();
-            more_bootstrap |= bootstrap.more_work();
+            let resolution = self.continue_resolution()?;
+            progress |= resolution.made_progress();
+            more_resolution |= resolution.more_work();
             progress |= self.observe_poll_events()?;
         }
         if let Some(outcome) = self.finish_shutdown_if_terminal(processed) {
@@ -148,7 +148,7 @@ impl Reactor {
                 commands: processed,
                 more_work: status == DrainStatus::MorePending
                     || more_due
-                    || more_bootstrap
+                    || more_resolution
                     || self.broker_has_local_io(),
             });
         }
@@ -216,7 +216,7 @@ impl Reactor {
             return None;
         }
         self.state = HostState::Shutdown;
-        self.bootstrap = None;
+        self.resolution = None;
         drop(self.commands.close());
         self.shutdown_waiters.complete_all();
         Some(TurnOutcome::Shutdown { commands })

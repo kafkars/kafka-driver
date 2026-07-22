@@ -2,6 +2,7 @@
 
 mod error;
 mod handle;
+mod identity;
 mod worker;
 
 #[cfg(test)]
@@ -11,3 +12,4 @@ mod worker_test;
 
 pub(in crate::reactor) use error::ResolverSubmitError;
 pub(in crate::reactor) use handle::Resolver;
+pub(in crate::reactor) use identity::ResolverEffectIds;
