@@ -1,5 +1,7 @@
 //! Semantic request routing from immutable metadata into bounded broker ownership.
 
+use std::time::Instant;
+
 use kafka_driver_core::{
     BrokerRoute, CallFailure, CoordinatorKey, CoordinatorRoute, Delivery, DnsFailure, DnsOutcome,
     Moment, PartitionId, TopicName,
@@ -32,9 +34,10 @@ impl Reactor {
 
     fn submit_any_broker(
         &mut self,
-        request: Box<dyn ErasedRequest>,
+        mut request: Box<dyn ErasedRequest>,
         now: Moment,
     ) -> Result<(), ReactorError> {
+        request.mark_routed(Instant::now());
         if !self.brokers.has_seed() {
             request.fail(not_ready());
             return Ok(());

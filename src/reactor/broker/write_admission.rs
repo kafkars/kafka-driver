@@ -1,5 +1,7 @@
 //! Request preparation and bounded ordered-writer admission for one write effect.
 
+use std::time::Instant;
+
 use kafka_driver_core::{ConnectionEffect, ConnectionInput};
 
 use crate::{
@@ -66,7 +68,11 @@ impl SingleBroker {
                 (observed == identity).then(|| connection.admit_write(call_id, effect_id, frame))
             });
         match admission {
-            Some(Ok(_)) => {}
+            Some(Ok(_)) => {
+                if !self.responses.mark_writer_admitted(call_id, Instant::now()) {
+                    return Err(BrokerError::MissingEffect);
+                }
+            }
             Some(Err(_)) => {
                 self.abort_unsent_call(call_id, effect_id, None)?;
                 return Ok(WriteRequestOutcome::Settled);

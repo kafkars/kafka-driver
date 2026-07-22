@@ -11,15 +11,17 @@ mod coordinator;
 mod host;
 mod metadata;
 mod negotiation;
+mod observation;
 mod reactor;
 mod request;
 mod response;
 
 pub use api::{
-    BrokerLanePhase, BrokerLaneSnapshot, Call, CompletionError, Delivery, Driver, DriverBuildError,
-    DriverBuilder, DriverSnapshot, InvalidationDisposition, MailboxSnapshot, RequestError,
-    RequestResponsePair, ResponseCloseReason, Route, RouteReceipt, RoutedCall, RoutedOutcome,
-    SeedSnapshot, SnapshotError, SubmitError, TrafficClass,
+    BrokerLanePhase, BrokerLaneSnapshot, Call, CallCounters, CallLatencySnapshot, CompletionError,
+    Delivery, Driver, DriverBuildError, DriverBuilder, DriverSnapshot, FailureCounters,
+    InvalidationDisposition, LatencyMetric, MailboxSnapshot, RequestError, RequestResponsePair,
+    ResponseCloseReason, Route, RouteReceipt, RoutedCall, RoutedOutcome, SeedSnapshot,
+    SnapshotError, SubmitError, TrafficClass,
 };
 pub use config::{
     CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits, SaslConfig, SaslConfigError,

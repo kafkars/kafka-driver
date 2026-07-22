@@ -1,5 +1,7 @@
 //! Object-safe request preparation consumed only by the reactor owner.
 
+use std::time::Instant;
+
 use kafka_driver_core::{CallId, CorrelationId, Moment};
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::{ApiKey, ApiVersion, Bytes};
@@ -22,6 +24,12 @@ pub(crate) trait ErasedRequest: Send {
 
     /// Returns an encoded-work estimate used by bounded waiting queues.
     fn retained_bytes(&self) -> usize;
+
+    /// Records first reactor ownership for public lifecycle observation.
+    fn mark_reactor(&mut self, at: Instant);
+
+    /// Records first resolved semantic-route ownership.
+    fn mark_routed(&mut self, at: Instant);
 
     /// Records the exact semantic route selected before broker ownership.
     fn record_route(&mut self, receipt: RouteReceipt) -> Result<(), RouteReceipt>;

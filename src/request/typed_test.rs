@@ -11,7 +11,7 @@ use crate::{
     response::{ResponseCloseReason, ResponseRegistry},
 };
 
-use super::typed::{erased_request, erased_request_in};
+use super::construct::{erased_request, erased_request_in};
 
 #[test]
 fn requests_own_their_explicit_lane_and_default_to_interactive() {

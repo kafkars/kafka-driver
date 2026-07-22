@@ -3,9 +3,13 @@
 mod envelope;
 mod error;
 mod local_rejection;
+mod observation;
 mod outcome;
 mod registry;
 mod slot;
+
+#[cfg(test)]
+mod testing;
 
 #[cfg(test)]
 mod admission_test;

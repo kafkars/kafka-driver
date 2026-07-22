@@ -7,6 +7,7 @@ use kafka_driver_core::BootstrapSet;
 use crate::{
     config::{BootstrapConfig, BrokerConfig, DriverLimits, DriverTarget},
     host::DriverHost,
+    observation::Observation,
     reactor::Reactor,
 };
 
@@ -77,9 +78,15 @@ impl DriverBuilder {
     pub fn build_reactor(self) -> Result<(Driver, Reactor), DriverBuildError> {
         let target = self.target.map(|target| target.with_sasl(self.sasl));
         let call_ids = Arc::new(CallIds::new());
-        let (commands, reactor) = Reactor::new(self.limits, target, Arc::clone(&call_ids))
-            .map_err(DriverBuildError::new)?;
-        Ok((Driver::new(commands, call_ids), reactor))
+        let observation = Arc::new(Observation::default());
+        let (commands, reactor) = Reactor::new(
+            self.limits,
+            target,
+            Arc::clone(&call_ids),
+            Arc::clone(&observation),
+        )
+        .map_err(DriverBuildError::new)?;
+        Ok((Driver::new(commands, call_ids, observation), reactor))
     }
 
     /// Builds a driver and starts its reactor on one dedicated thread.

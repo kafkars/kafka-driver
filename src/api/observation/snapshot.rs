@@ -2,7 +2,10 @@
 
 use kafka_driver_core::MetadataGeneration;
 
-use super::{BrokerLaneSnapshot, MailboxSnapshot, SeedSnapshot};
+use super::{
+    BrokerLaneSnapshot, CallCounters, CallLatencySnapshot, FailureCounters, MailboxSnapshot,
+    SeedSnapshot,
+};
 
 /// One point-in-time view built by the single reactor owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -11,6 +14,9 @@ pub struct DriverSnapshot {
     metadata_generation: Option<MetadataGeneration>,
     seed: Option<SeedSnapshot>,
     lanes: Vec<BrokerLaneSnapshot>,
+    calls: CallCounters,
+    failures: FailureCounters,
+    latency: CallLatencySnapshot,
 }
 
 impl DriverSnapshot {
@@ -19,12 +25,18 @@ impl DriverSnapshot {
         metadata_generation: Option<MetadataGeneration>,
         seed: Option<SeedSnapshot>,
         lanes: Vec<BrokerLaneSnapshot>,
+        calls: CallCounters,
+        failures: FailureCounters,
+        latency: CallLatencySnapshot,
     ) -> Self {
         Self {
             mailbox,
             metadata_generation,
             seed,
             lanes,
+            calls,
+            failures,
+            latency,
         }
     }
 
@@ -46,5 +58,20 @@ impl DriverSnapshot {
     /// Borrows one deterministic entry per live sparse discovered-broker lane.
     pub fn lanes(&self) -> &[BrokerLaneSnapshot] {
         &self.lanes
+    }
+
+    /// Returns cumulative public-call admission and terminal outcome counts.
+    pub const fn calls(&self) -> CallCounters {
+        self.calls
+    }
+
+    /// Returns cumulative classified public-call failures.
+    pub const fn failures(&self) -> FailureCounters {
+        self.failures
+    }
+
+    /// Returns cumulative public-call stage and end-to-end duration summaries.
+    pub const fn latency(&self) -> CallLatencySnapshot {
+        self.latency
     }
 }

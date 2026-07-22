@@ -7,9 +7,9 @@ use kafka_driver_transport::FrameBody;
 use kafka_wire::{KafkaMessage, RequestResponsePair, ResponseHeader, response_header_version_for};
 use kafka_wire_core::{ApiVersion, DecodeLimits, Decoder, KafkaDecode};
 
-use crate::completion::CompletionSender;
 #[cfg(test)]
 use crate::{api::Call, completion::completion_pair};
+use crate::{completion::CompletionSender, observation::CallTimeline};
 
 use super::{
     CompletionDisposition, RequestError, ResponseAdmissionError, ResponseDispatch,
@@ -17,9 +17,6 @@ use super::{
     ResponseInspectError,
     slot::{PendingResponse, TypedSlot},
 };
-#[cfg(test)]
-use super::{FailedResponses, ResponseCloseReason};
-
 /// Bounded typed response ownership in Kafka connection order.
 pub(crate) struct ResponseRegistry {
     pub(super) slots: VecDeque<Box<dyn PendingResponse>>,
@@ -51,7 +48,14 @@ impl ResponseRegistry {
     {
         let header_version = self.validate_admission::<R>(call_id, correlation_id, version)?;
         let (receiver, completion) = completion_pair();
-        self.insert_validated::<R>(call_id, correlation_id, version, header_version, completion);
+        self.insert_validated::<R>(
+            call_id,
+            correlation_id,
+            version,
+            header_version,
+            completion,
+            None,
+        );
         Ok(Call::new(receiver))
     }
 
@@ -63,6 +67,7 @@ impl ResponseRegistry {
         version: ApiVersion,
         header_version: ApiVersion,
         completion: CompletionSender<Result<R::Response, ResponseFailure>>,
+        timeline: Option<CallTimeline>,
     ) where
         R: RequestResponsePair,
         R::Response: Send + 'static,
@@ -73,6 +78,7 @@ impl ResponseRegistry {
             version,
             header_version,
             completion,
+            timeline,
         )));
     }
 
@@ -160,27 +166,6 @@ impl ResponseRegistry {
             return Err(ResponseFailError::NoPendingResponse { call_id, failure });
         };
         Ok(slot.fail(failure))
-    }
-
-    /// Fails and removes every remaining slot when its connection epoch ends.
-    #[cfg(test)]
-    pub(crate) fn fail_all(&mut self, reason: ResponseCloseReason) -> FailedResponses {
-        let mut failed = FailedResponses::default();
-        while let Some(slot) = self.slots.pop_front() {
-            failed.total += 1;
-            if slot.fail(RequestError::ConnectionClosed(reason))
-                == CompletionDisposition::ReceiverAbandoned
-            {
-                failed.abandoned += 1;
-            }
-        }
-        failed
-    }
-
-    /// Returns typed response slots currently awaiting frames.
-    #[cfg(test)]
-    pub(crate) fn pending(&self) -> usize {
-        self.slots.len()
     }
 
     pub(crate) fn validate_admission<R>(

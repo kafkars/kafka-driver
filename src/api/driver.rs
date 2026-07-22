@@ -10,8 +10,9 @@ use kafka_wire::RequestResponsePair;
 
 use crate::{
     completion::completion_pair,
+    observation::{CallTimeline, Observation},
     reactor::{Command, MailboxSender, TrySendError},
-    request::{erased_request, erased_request_in, routed_request_in},
+    request::{observed_request, observed_request_in, observed_routed_request_in},
 };
 
 use super::{
@@ -23,11 +24,20 @@ use super::{
 pub struct Driver {
     pub(super) commands: MailboxSender<Command>,
     call_ids: Arc<CallIds>,
+    observation: Arc<Observation>,
 }
 
 impl Driver {
-    pub(super) const fn new(commands: MailboxSender<Command>, call_ids: Arc<CallIds>) -> Self {
-        Self { commands, call_ids }
+    pub(super) const fn new(
+        commands: MailboxSender<Command>,
+        call_ids: Arc<CallIds>,
+        observation: Arc<Observation>,
+    ) -> Self {
+        Self {
+            commands,
+            call_ids,
+            observation,
+        }
     }
 
     /// Starts configuration of a driver and its reactor host.
@@ -83,8 +93,9 @@ impl Driver {
         let Some(call_id) = self.call_ids.allocate() else {
             return Err(SubmitError::IdentityExhausted);
         };
-        let (call, request) = erased_request(call_id, request, timeout);
         let submitted_at = Instant::now();
+        let timeline = CallTimeline::new(Arc::clone(&self.observation), submitted_at, timeout);
+        let (call, request) = observed_request(call_id, request, timeout, timeline);
         self.commands
             .try_send(Command::Submit {
                 route,
@@ -114,8 +125,10 @@ impl Driver {
         let Some(call_id) = self.call_ids.allocate() else {
             return Err(SubmitError::IdentityExhausted);
         };
-        let (call, request) = erased_request_in(call_id, traffic_class, request, timeout);
         let submitted_at = Instant::now();
+        let timeline = CallTimeline::new(Arc::clone(&self.observation), submitted_at, timeout);
+        let (call, request) =
+            observed_request_in(call_id, traffic_class, request, timeout, timeline);
         self.commands
             .try_send(Command::Submit {
                 route,
@@ -160,8 +173,10 @@ impl Driver {
         let Some(call_id) = self.call_ids.allocate() else {
             return Err(SubmitError::IdentityExhausted);
         };
-        let (call, request) = routed_request_in(call_id, traffic_class, request, timeout);
         let submitted_at = Instant::now();
+        let timeline = CallTimeline::new(Arc::clone(&self.observation), submitted_at, timeout);
+        let (call, request) =
+            observed_routed_request_in(call_id, traffic_class, request, timeout, timeline);
         self.commands
             .try_send(Command::Submit {
                 route,

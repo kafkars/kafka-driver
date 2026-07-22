@@ -1,9 +1,14 @@
 //! Type-erased FIFO ownership with generated response decoding at completion.
 
+use std::time::Instant;
+
 use kafka_driver_core::{CallId, CorrelationId};
 use kafka_wire_core::{ApiVersion, Bytes, DecodeError, DecodeLimits, Decoder, KafkaDecode};
 
-use crate::completion::CompletionSender;
+use crate::{
+    completion::CompletionSender,
+    observation::{CallOutcome, CallTimeline},
+};
 
 use super::{CompletionDisposition, RequestError, ResponseFailure};
 
@@ -11,6 +16,7 @@ pub(super) trait PendingResponse: Send {
     fn call_id(&self) -> CallId;
     fn correlation_id(&self) -> CorrelationId;
     fn header_version(&self) -> ApiVersion;
+    fn mark_writer(&mut self, at: Instant);
     fn decode(
         self: Box<Self>,
         body: Bytes,
@@ -25,6 +31,7 @@ pub(super) struct TypedSlot<T> {
     version: ApiVersion,
     header_version: ApiVersion,
     completion: CompletionSender<Result<T, ResponseFailure>>,
+    timeline: Option<CallTimeline>,
 }
 
 impl<T> TypedSlot<T> {
@@ -34,6 +41,7 @@ impl<T> TypedSlot<T> {
         version: ApiVersion,
         header_version: ApiVersion,
         completion: CompletionSender<Result<T, ResponseFailure>>,
+        timeline: Option<CallTimeline>,
     ) -> Self {
         Self {
             call_id,
@@ -41,6 +49,7 @@ impl<T> TypedSlot<T> {
             version,
             header_version,
             completion,
+            timeline,
         }
     }
 }
@@ -61,31 +70,50 @@ where
         self.header_version
     }
 
+    fn mark_writer(&mut self, at: Instant) {
+        if let Some(timeline) = &mut self.timeline {
+            timeline.mark_writer(at);
+        }
+    }
+
     fn decode(
         self: Box<Self>,
         body: Bytes,
         limits: DecodeLimits,
     ) -> Result<CompletionDisposition, SlotDecodeError> {
+        let Self {
+            version,
+            completion,
+            timeline,
+            ..
+        } = *self;
         let decoded = Decoder::new(body, limits).and_then(|mut decoder| {
-            let response = T::decode(&mut decoder, self.version)?;
+            let response = T::decode(&mut decoder, version)?;
             decoder.finish()?;
             Ok(response)
         });
         match decoded {
-            Ok(response) => Ok(disposition(self.completion.complete(Ok(response)).is_ok())),
+            Ok(response) => {
+                let delivered = completion.complete(Ok(response)).is_ok();
+                finish(timeline, CallOutcome::Succeeded, delivered);
+                Ok(disposition(delivered))
+            }
             Err(error) => {
-                let completion = disposition(
-                    self.completion
-                        .complete(Err(ResponseFailure::Decode(error.clone())))
-                        .is_ok(),
-                );
-                Err(SlotDecodeError { error, completion })
+                let failure = ResponseFailure::Decode(error.clone());
+                let delivered = completion.complete(Err(failure.clone())).is_ok();
+                finish(timeline, CallOutcome::Failed(&failure), delivered);
+                Err(SlotDecodeError {
+                    error,
+                    completion: disposition(delivered),
+                })
             }
         }
     }
 
     fn fail(self: Box<Self>, failure: RequestError) -> CompletionDisposition {
-        disposition(self.completion.complete(Err(failure)).is_ok())
+        let delivered = self.completion.complete(Err(failure.clone())).is_ok();
+        finish(self.timeline, CallOutcome::Failed(&failure), delivered);
+        disposition(delivered)
     }
 }
 
@@ -99,5 +127,11 @@ const fn disposition(delivered: bool) -> CompletionDisposition {
         CompletionDisposition::Delivered
     } else {
         CompletionDisposition::ReceiverAbandoned
+    }
+}
+
+fn finish(timeline: Option<CallTimeline>, outcome: CallOutcome<'_>, delivered: bool) {
+    if let Some(timeline) = timeline {
+        timeline.finish(outcome, delivered);
     }
 }

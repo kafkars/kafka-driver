@@ -1,6 +1,6 @@
 //! FIFO command interpretation and transition into graceful drain ownership.
 
-use std::io;
+use std::{io, time::Instant};
 
 use kafka_driver_core::{CallFailure, Delivery};
 
@@ -18,12 +18,16 @@ impl Reactor {
                 match command {
                     Command::Submit {
                         route,
-                        request,
+                        mut request,
                         submitted_at,
-                    } if self.state == HostState::Running => {
-                        self.process_submission(route, request, submitted_at)?;
+                    } => {
+                        request.mark_reactor(Instant::now());
+                        if self.state == HostState::Running {
+                            self.process_submission(route, request, submitted_at)?;
+                        } else {
+                            request.fail(draining());
+                        }
                     }
-                    Command::Submit { request, .. } => request.fail(draining()),
                     Command::Invalidate {
                         receipt,
                         completion,
@@ -98,7 +102,10 @@ impl Reactor {
     fn close_admission(&mut self) -> Result<(), ReactorError> {
         for command in self.commands.close() {
             match command {
-                Command::Submit { request, .. } => request.fail(draining()),
+                Command::Submit { mut request, .. } => {
+                    request.mark_reactor(Instant::now());
+                    request.fail(draining());
+                }
                 Command::Invalidate { completion, .. } => {
                     let _ = completion.complete(InvalidationDisposition::Unavailable);
                 }

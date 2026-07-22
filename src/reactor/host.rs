@@ -24,6 +24,7 @@ use std::{sync::Arc, time::Duration};
 use crate::{
     api::CallIds,
     config::{DriverLimits, DriverTarget},
+    observation::Observation,
 };
 
 use super::{
@@ -76,6 +77,7 @@ pub struct Reactor {
     metadata: Option<MetadataOwner>,
     coordinator: Option<CoordinatorOwner>,
     call_ids: Arc<CallIds>,
+    observation: Arc<Observation>,
     clock: ReactorClock,
     state: HostState,
     shutdown_waiters: ShutdownWaiters,
@@ -86,6 +88,7 @@ impl Reactor {
         limits: DriverLimits,
         target: Option<DriverTarget>,
         call_ids: Arc<CallIds>,
+        observation: Arc<Observation>,
     ) -> std::io::Result<(MailboxSender<Command>, Self)> {
         let poller = Poller::new(limits.poll_event_budget())?;
         let wake = WakeHandle::new(poller.wake_handle());
@@ -137,6 +140,7 @@ impl Reactor {
             metadata,
             coordinator,
             call_ids,
+            observation,
             clock,
             state: HostState::Running,
             shutdown_waiters: ShutdownWaiters::new(limits.mailbox_capacity()),

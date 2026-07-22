@@ -1,6 +1,6 @@
 //! Generated request encoding paired atomically with its typed completion sender.
 
-use std::time::Duration;
+use std::time::Instant;
 
 use bytes::BytesMut;
 use kafka_driver_core::{CallId, CorrelationId};
@@ -8,83 +8,17 @@ use kafka_wire::{OutboundFrameLimits, RequestResponsePair, encode_request};
 use kafka_wire_core::{ApiVersion, Bytes};
 
 use crate::{
-    Call, RequestError, RouteReceipt, RoutedCall, TrafficClass,
-    api::{RouteReceiptWriter, route_receipt_pair},
-    completion::{CompletionSender, completion_pair},
+    RequestError, RouteReceipt, TrafficClass,
+    api::RouteReceiptWriter,
+    completion::CompletionSender,
+    observation::{CallOutcome, CallTimeline},
     request::RequestDeadline,
     response::{ResponseAdmissionError, ResponseRegistry},
 };
 
-use super::ErasedRequest;
+use super::{ErasedRequest, construct::retained_bytes};
 
-pub(crate) type ErasedRequestPair<T> = (Call<Result<T, RequestError>>, Box<dyn ErasedRequest>);
-pub(crate) type RoutedRequestPair<T> = (RoutedCall<T>, Box<dyn ErasedRequest>);
-
-pub(crate) fn erased_request<R>(
-    call_id: CallId,
-    request: R,
-    timeout: Duration,
-) -> ErasedRequestPair<R::Response>
-where
-    R: RequestResponsePair + Send + 'static,
-    R::Response: Send + 'static,
-{
-    erased_request_in(call_id, TrafficClass::Interactive, request, timeout)
-}
-
-pub(crate) fn erased_request_in<R>(
-    call_id: CallId,
-    traffic_class: TrafficClass,
-    request: R,
-    timeout: Duration,
-) -> ErasedRequestPair<R::Response>
-where
-    R: RequestResponsePair + Send + 'static,
-    R::Response: Send + 'static,
-{
-    let (receiver, completion) = completion_pair();
-    let retained_bytes = retained_bytes(&request);
-    let request = TypedRequest {
-        call_id,
-        traffic_class,
-        request,
-        deadline: RequestDeadline::new(timeout),
-        retained_bytes,
-        completion,
-        receipt: None,
-    };
-    (Call::new(receiver), Box::new(request))
-}
-
-pub(crate) fn routed_request_in<R>(
-    call_id: CallId,
-    traffic_class: TrafficClass,
-    request: R,
-    timeout: Duration,
-) -> RoutedRequestPair<R::Response>
-where
-    R: RequestResponsePair + Send + 'static,
-    R::Response: Send + 'static,
-{
-    let (receiver, completion) = completion_pair();
-    let (receipt, writer) = route_receipt_pair();
-    let retained_bytes = retained_bytes(&request);
-    let request = TypedRequest {
-        call_id,
-        traffic_class,
-        request,
-        deadline: RequestDeadline::new(timeout),
-        retained_bytes,
-        completion,
-        receipt: Some(writer),
-    };
-    (
-        RoutedCall::new(Call::new(receiver), receipt),
-        Box::new(request),
-    )
-}
-
-struct TypedRequest<R>
+pub(super) struct TypedRequest<R>
 where
     R: RequestResponsePair,
 {
@@ -94,7 +28,56 @@ where
     deadline: RequestDeadline,
     retained_bytes: usize,
     completion: CompletionSender<Result<R::Response, RequestError>>,
+    lifecycle: RequestLifecycle,
+}
+
+pub(super) struct RequestLifecycle {
     receipt: Option<RouteReceiptWriter>,
+    timeline: Option<CallTimeline>,
+}
+
+impl RequestLifecycle {
+    pub(super) const fn unobserved() -> Self {
+        Self {
+            receipt: None,
+            timeline: None,
+        }
+    }
+
+    pub(super) const fn observed(
+        timeline: CallTimeline,
+        receipt: Option<RouteReceiptWriter>,
+    ) -> Self {
+        Self {
+            receipt,
+            timeline: Some(timeline),
+        }
+    }
+}
+
+impl<R> TypedRequest<R>
+where
+    R: RequestResponsePair,
+{
+    pub(super) fn new(
+        call_id: CallId,
+        traffic_class: TrafficClass,
+        request: R,
+        deadline: RequestDeadline,
+        completion: CompletionSender<Result<R::Response, RequestError>>,
+        lifecycle: RequestLifecycle,
+    ) -> Self {
+        let retained_bytes = retained_bytes(&request);
+        Self {
+            call_id,
+            traffic_class,
+            request,
+            deadline,
+            retained_bytes,
+            completion,
+            lifecycle,
+        }
+    }
 }
 
 impl<R> ErasedRequest for TypedRequest<R>
@@ -125,8 +108,22 @@ where
         self.retained_bytes
     }
 
+    fn mark_reactor(&mut self, at: Instant) {
+        if let Some(timeline) = &mut self.lifecycle.timeline {
+            timeline.mark_reactor(at);
+        }
+    }
+
+    fn mark_routed(&mut self, at: Instant) {
+        if let Some(timeline) = &mut self.lifecycle.timeline {
+            timeline.mark_routed(at);
+        }
+    }
+
     fn record_route(&mut self, receipt: RouteReceipt) -> Result<(), RouteReceipt> {
-        self.receipt
+        self.mark_routed(Instant::now());
+        self.lifecycle
+            .receipt
             .as_ref()
             .map_or(Ok(()), |writer| writer.publish(receipt))
     }
@@ -142,12 +139,16 @@ where
             call_id,
             request,
             completion,
+            lifecycle,
             ..
         } = *self;
+        let mut timeline = lifecycle.timeline;
         let header_version =
             match responses.validate_admission::<R>(call_id, correlation_id, version) {
                 Ok(header_version) => header_version,
-                Err(source) => return fail(completion, admission_failure(source)),
+                Err(source) => {
+                    return fail(completion, timeline, admission_failure(source));
+                }
             };
         let mut frame = BytesMut::new();
         if let Err(source) = encode_request(
@@ -158,7 +159,10 @@ where
             version,
             outbound_limits,
         ) {
-            return fail(completion, RequestError::Encode(source));
+            return fail(completion, timeline, RequestError::Encode(source));
+        }
+        if let Some(timeline) = &mut timeline {
+            timeline.mark_prepared(Instant::now());
         }
         responses.insert_validated::<R>(
             call_id,
@@ -166,35 +170,28 @@ where
             version,
             header_version,
             completion,
+            timeline,
         );
         Ok(frame.freeze())
     }
 
     fn fail(self: Box<Self>, failure: RequestError) {
-        drop(self.completion.complete(Err(failure)));
+        let delivered = self.completion.complete(Err(failure.clone())).is_ok();
+        if let Some(timeline) = self.lifecycle.timeline {
+            timeline.finish(CallOutcome::Failed(&failure), delivered);
+        }
     }
-}
-
-fn retained_bytes<R>(request: &R) -> usize
-where
-    R: RequestResponsePair,
-{
-    let descriptor = R::API_DESCRIPTOR;
-    let version = descriptor
-        .latest_stable_version()
-        .unwrap_or(descriptor.supported_versions.max());
-    request
-        .encoded_len(version)
-        .ok()
-        .and_then(|encoded| encoded.checked_add(size_of::<TypedRequest<R>>()))
-        .unwrap_or(usize::MAX)
 }
 
 fn fail<T>(
     completion: CompletionSender<Result<T, RequestError>>,
+    timeline: Option<CallTimeline>,
     failure: RequestError,
 ) -> Result<Bytes, RequestError> {
-    drop(completion.complete(Err(failure.clone())));
+    let delivered = completion.complete(Err(failure.clone())).is_ok();
+    if let Some(timeline) = timeline {
+        timeline.finish(CallOutcome::Failed(&failure), delivered);
+    }
     Err(failure)
 }
 
