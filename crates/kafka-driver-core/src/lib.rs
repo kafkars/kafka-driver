@@ -6,6 +6,7 @@
 mod authentication;
 mod bootstrap;
 mod broker;
+mod broker_resolution;
 mod capability;
 mod connection;
 mod delivery;
@@ -37,6 +38,10 @@ pub use broker::{
     BackoffPolicy, BackoffPolicyError, BrokerCloseReason, BrokerDisposition, BrokerEffect,
     BrokerInput, BrokerMachine, BrokerPhase, BrokerState, BrokerTransition, JitterSample,
     ReconnectSchedule, RetryOrdinal,
+};
+pub use broker_resolution::{
+    BrokerResolutionDisposition, BrokerResolutionEffect, BrokerResolutionInput,
+    BrokerResolutionMachine, BrokerResolutionState, BrokerResolutionTransition,
 };
 pub use capability::{CapabilityError, NegotiatedApi, NegotiatedCapabilities};
 pub use connection::{
