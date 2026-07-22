@@ -33,7 +33,11 @@ impl Driver {
         DriverBuilder::default()
     }
 
-    /// Requests terminal shutdown through the bounded command mailbox.
+    /// Requests terminal shutdown through the separately bounded control lane.
+    ///
+    /// A full request lane cannot reject or delay this command. Admission can
+    /// still fail if the shutdown-control bound itself is exhausted, command
+    /// admission is closed, or the reactor cannot be woken.
     pub fn shutdown(&self) -> Result<Call<()>, SubmitError> {
         let (completion, sender) = completion_pair();
         let call = Call::new(completion);

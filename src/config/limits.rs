@@ -65,7 +65,7 @@ impl DriverLimits {
         self
     }
 
-    /// Returns the maximum number of admitted commands.
+    /// Returns each independent request and shutdown-control command bound.
     pub const fn mailbox_capacity(self) -> NonZeroUsize {
         self.mailbox_capacity
     }
