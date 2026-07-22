@@ -3,8 +3,8 @@
 use std::{net::SocketAddr, num::NonZeroUsize};
 
 use kafka_driver_core::{
-    AuthenticationLimits, BrokerMachine, ConnectionEffect, ConnectionEpoch, ConnectionInput,
-    ConnectionMachine, ConnectionPhase, ConnectionState,
+    AuthenticationLimits, BrokerMachine, ConnectionEpoch, ConnectionInput, ConnectionMachine,
+    ConnectionPhase, ConnectionState,
 };
 use kafka_driver_transport::FrameBody;
 use kafka_wire::OutboundFrameLimits;
@@ -27,12 +27,13 @@ use crate::{
 
 use super::{
     BrokerError, BrokerIds, entropy::BackoffEntropy, failure::transport_failure,
-    limits::BrokerLimits,
+    limits::BrokerLimits, terminal::expect_no_effects,
 };
 
 /// Single-owner adapter for one broker and its replaceable connection epoch.
 #[derive(Debug)]
 pub(in crate::reactor) struct SingleBroker {
+    pub(super) limits: BrokerLimits,
     pub(super) address: SocketAddr,
     pub(super) broker: BrokerMachine,
     pub(super) connection: ConnectionMachine,
@@ -101,6 +102,7 @@ impl SingleBroker {
             limits.authentication(),
         );
         Self {
+            limits,
             address,
             broker: BrokerMachine::new(epoch, limits.backoff()),
             connection,
@@ -228,12 +230,5 @@ impl SingleBroker {
             .close(poller, identity)
             .map(|_| ())
             .map_err(BrokerError::ResourceClose)
-    }
-}
-
-fn expect_no_effects(effects: &[ConnectionEffect]) -> Result<(), BrokerError> {
-    match effects.first().copied() {
-        Some(effect) => Err(BrokerError::UnexpectedEffect(effect)),
-        None => Ok(()),
     }
 }

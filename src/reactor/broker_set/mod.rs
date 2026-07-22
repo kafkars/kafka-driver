@@ -5,6 +5,7 @@ mod child_io;
 mod error;
 mod io;
 mod owner;
+mod replacement;
 mod routing;
 mod seed;
 mod waiting;

@@ -11,6 +11,7 @@ mod negotiation;
 mod owner;
 mod readiness;
 mod reconnect;
+mod replacement;
 mod response;
 mod shutdown;
 mod submission;
@@ -34,6 +35,8 @@ mod limits_test;
 mod negotiation_test;
 #[cfg(test)]
 mod reconnect_test;
+#[cfg(test)]
+mod replacement_test;
 #[cfg(test)]
 mod round_trip_test;
 #[cfg(test)]

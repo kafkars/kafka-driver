@@ -56,6 +56,7 @@ impl BrokerSet {
         for child in self.children.iter_mut().flatten() {
             progress |= child.continue_io(poller, now)?;
         }
+        progress |= self.activate_pending(poller, now)?;
         progress |= self.admit_waiting(poller, now)?;
         Ok(progress)
     }

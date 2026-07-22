@@ -34,6 +34,8 @@ pub(in crate::reactor) enum BrokerError {
     DeadlineOverflow,
     /// An opened resource could not be deregistered after its terminal outcome.
     ResourceClose(io::Error),
+    /// A broker slot attempted replacement before its prior owner became terminal.
+    ReplacementBeforeTerminal,
 }
 
 impl fmt::Display for BrokerError {
@@ -64,6 +66,9 @@ impl fmt::Display for BrokerError {
                 formatter.write_str("negotiation deadline exceeds the driver clock domain")
             }
             Self::ResourceClose(_) => formatter.write_str("failed to close broker transport"),
+            Self::ReplacementBeforeTerminal => {
+                formatter.write_str("broker replacement started before prior terminal state")
+            }
         }
     }
 }
@@ -81,6 +86,7 @@ impl std::error::Error for BrokerError {
             | Self::UnexpectedBrokerEffect(_)
             | Self::MissingEffect
             | Self::DeadlineOverflow
+            | Self::ReplacementBeforeTerminal
             | Self::RequestOwnership { .. } => None,
         }
     }

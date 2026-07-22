@@ -35,7 +35,14 @@ impl BrokerSet {
             request.fail(RequestError::RouteUnavailable);
             return Ok(None);
         };
-        let child = self.child_mut(route.broker_id())?;
+        let child = match self.child_mut(route.broker_id()) {
+            Ok(child) => child,
+            Err(BrokerSetError::ChildCapacityReached) => {
+                request.fail(RequestError::RouteUnavailable);
+                return Ok(None);
+            }
+            Err(error) => return Err(error),
+        };
         child.submit(poller, route, &endpoint, effect_id, request, now)
     }
 
@@ -47,45 +54,32 @@ impl BrokerSet {
         now: Moment,
     ) -> Result<bool, BrokerSetError> {
         let Some(index) = self.child_index(broker_id) else {
-            return Err(BrokerSetError::UnknownBrokerChild);
+            return Ok(false);
         };
         let action = self.children[index]
             .as_mut()
             .ok_or(BrokerSetError::UnknownBrokerChild)?
             .complete(outcome)?;
-        let ChildResolution::Resolved {
-            route,
-            epoch,
-            endpoint,
-            address,
-        } = action
-        else {
+        let ChildResolution::Resolved(pending) = action else {
             return Ok(!matches!(action, ChildResolution::Ignored));
         };
-        let route_is_current = self
-            .directory
-            .as_ref()
-            .and_then(|directory| directory.resolve(route).ok())
-            .is_some_and(|entry| entry.endpoint() == &endpoint);
         let child = self.children[index]
             .as_mut()
             .ok_or(BrokerSetError::UnknownBrokerChild)?;
-        if !route_is_current {
-            child.waiting.fail_all(&RequestError::RouteUnavailable);
-            return Ok(true);
+        child.stage(pending);
+        self.activate_child(index, poller, now).map(|_| true)
+    }
+
+    pub(super) fn activate_pending(
+        &mut self,
+        poller: &Poller,
+        now: Moment,
+    ) -> Result<bool, BrokerSetError> {
+        let mut progress = false;
+        for index in 0..self.children.len() {
+            progress |= self.activate_child(index, poller, now)?;
         }
-        let template = self
-            .broker_template
-            .clone()
-            .ok_or(BrokerSetError::BrokerTemplateMissing)?;
-        child.install(
-            template.at(socket_address(address)),
-            endpoint,
-            epoch,
-            poller,
-            now,
-        )?;
-        Ok(true)
+        Ok(progress)
     }
 
     fn child_mut(&mut self, broker_id: BrokerId) -> Result<&mut BrokerChild, BrokerSetError> {
@@ -106,6 +100,17 @@ impl BrokerSet {
     }
 
     fn allocate_child(&mut self, broker_id: BrokerId) -> Result<usize, BrokerSetError> {
+        if let Some(index) = self
+            .children
+            .iter()
+            .position(|slot| slot.as_ref().is_some_and(BrokerChild::is_reusable))
+        {
+            let child = self.children[index]
+                .as_mut()
+                .ok_or(BrokerSetError::UnknownBrokerChild)?;
+            child.reassign(broker_id);
+            return Ok(index);
+        }
         let index = self
             .children
             .iter()
@@ -121,5 +126,43 @@ impl BrokerSet {
             self.waiting_bytes,
         ));
         Ok(index)
+    }
+
+    fn activate_child(
+        &mut self,
+        index: usize,
+        poller: &Poller,
+        now: Moment,
+    ) -> Result<bool, BrokerSetError> {
+        let pending = self.children[index]
+            .as_mut()
+            .and_then(BrokerChild::take_installable);
+        let Some(pending) = pending else {
+            return Ok(false);
+        };
+        let route_is_current = self
+            .directory
+            .as_ref()
+            .and_then(|directory| directory.resolve(pending.route).ok())
+            .is_some_and(|entry| entry.endpoint() == &pending.endpoint);
+        let child = self.children[index]
+            .as_mut()
+            .ok_or(BrokerSetError::UnknownBrokerChild)?;
+        if !route_is_current || child.retired {
+            child.waiting.fail_all(&RequestError::RouteUnavailable);
+            return Ok(true);
+        }
+        let template = self
+            .broker_template
+            .clone()
+            .ok_or(BrokerSetError::BrokerTemplateMissing)?;
+        child.install(
+            template.at(socket_address(pending.address)),
+            pending.endpoint,
+            pending.epoch,
+            poller,
+            now,
+        )?;
+        Ok(true)
     }
 }

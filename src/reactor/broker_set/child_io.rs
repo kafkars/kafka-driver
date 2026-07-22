@@ -31,11 +31,24 @@ impl BrokerChild {
         poller: &Poller,
         now: Moment,
     ) -> Result<bool, BrokerSetError> {
-        self.connection.as_mut().map_or(Ok(false), |connection| {
+        let mut progress = false;
+        if self.retired && !self.retirement_started {
+            if let Some(connection) = &mut self.connection
+                && !connection.is_terminal()
+            {
+                connection
+                    .begin_drain(poller, now)
+                    .map_err(BrokerSetError::Broker)?;
+            }
+            self.retirement_started = true;
+            progress = true;
+        }
+        progress |= self.connection.as_mut().map_or(Ok(false), |connection| {
             connection
                 .continue_io(poller, now)
                 .map_err(BrokerSetError::Broker)
-        })
+        })?;
+        Ok(progress)
     }
 
     pub(super) fn fire_due(
@@ -64,6 +77,7 @@ impl BrokerChild {
         now: Moment,
     ) -> Result<(), BrokerSetError> {
         self.waiting.fail_all(&draining());
+        self.abandon_pending();
         self.connection.as_mut().map_or(Ok(()), |connection| {
             connection
                 .begin_drain(poller, now)
@@ -82,6 +96,12 @@ impl BrokerChild {
             .as_ref()
             .is_some_and(SingleBroker::has_local_io)
             || (self.is_ready() && !self.waiting.is_empty())
+            || (self.retired
+                && !self.retirement_started
+                && self
+                    .connection
+                    .as_ref()
+                    .is_some_and(|connection| !connection.is_terminal()))
     }
 
     fn is_ready(&self) -> bool {

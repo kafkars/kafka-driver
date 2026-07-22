@@ -68,6 +68,16 @@ impl BrokerSet {
         if self.directory_generation() == Some(directory.generation()) {
             return Ok(false);
         }
+        for child in self.children.iter_mut().flatten() {
+            let Some(route) = directory.route_to(child.broker_id()) else {
+                child.retire();
+                continue;
+            };
+            let entry = directory
+                .resolve(route)
+                .map_err(|_| BrokerSetError::UnexpectedResolutionEffect)?;
+            child.retain_route(route, entry.endpoint());
+        }
         self.directory = Some(directory.clone());
         Ok(true)
     }
@@ -116,5 +126,30 @@ impl BrokerSet {
     #[cfg(test)]
     pub(super) const fn owner_capacity(&self) -> NonZeroUsize {
         self.owner_capacity
+    }
+
+    #[cfg(test)]
+    pub(super) fn child_endpoint(
+        &self,
+        broker_id: kafka_driver_core::BrokerId,
+    ) -> Option<&kafka_driver_core::BrokerEndpoint> {
+        self.children
+            .iter()
+            .filter_map(Option::as_ref)
+            .find(|child| child.broker_id() == broker_id)
+            .and_then(|child| child.endpoint.as_ref())
+    }
+
+    #[cfg(test)]
+    pub(super) fn child_resource_token(
+        &self,
+        broker_id: kafka_driver_core::BrokerId,
+    ) -> Option<usize> {
+        self.children
+            .iter()
+            .filter_map(Option::as_ref)
+            .find(|child| child.broker_id() == broker_id)
+            .and_then(|child| child.connection.as_ref())
+            .and_then(super::super::broker::SingleBroker::resource_token_for_test)
     }
 }

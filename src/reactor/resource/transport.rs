@@ -109,6 +109,10 @@ impl TransportResources {
         deregistration.map(|()| removed)
     }
 
+    pub(in crate::reactor) fn replace_security(&mut self, security: BrokerSecurity) {
+        self.security = security;
+    }
+
     #[cfg(test)]
     pub(in crate::reactor) const fn len(&self) -> usize {
         self.connections.len()

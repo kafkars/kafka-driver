@@ -1,9 +1,9 @@
 //! One broker identity's DNS policy, wait queue, and lazy connection child.
 
 use kafka_driver_core::{
-    BrokerEndpoint, BrokerId, BrokerResolutionEffect, BrokerResolutionInput,
+    BrokerEndpoint, BrokerId, BrokerPhase, BrokerResolutionEffect, BrokerResolutionInput,
     BrokerResolutionMachine, BrokerResolutionState, BrokerRoute, ConnectionEpoch, ConnectionPhase,
-    DnsOutcome, DnsRequest, EffectId, Moment, ResolvedAddress,
+    DnsOutcome, DnsRequest, EffectId, Moment,
 };
 
 use crate::{
@@ -17,7 +17,9 @@ use crate::{
     request::ErasedRequest,
 };
 
-use super::{BrokerSetError, waiting::WaitingCallOutcome, waiting::WaitingCalls};
+use super::{
+    BrokerSetError, replacement::PendingBroker, waiting::WaitingCallOutcome, waiting::WaitingCalls,
+};
 
 pub(super) struct BrokerChild {
     pub(super) broker_id: BrokerId,
@@ -28,6 +30,9 @@ pub(super) struct BrokerChild {
     pub(super) namespace: ResourceNamespace,
     pub(super) limits: BrokerLimits,
     pub(super) next_epoch: Option<u64>,
+    pub(super) pending_install: Option<PendingBroker>,
+    pub(super) retired: bool,
+    pub(super) retirement_started: bool,
 }
 
 impl BrokerChild {
@@ -47,6 +52,9 @@ impl BrokerChild {
             namespace,
             limits,
             next_epoch: Some(1),
+            pending_install: None,
+            retired: false,
+            retirement_started: false,
         }
     }
 
@@ -63,20 +71,33 @@ impl BrokerChild {
         request: Box<dyn ErasedRequest>,
         now: Moment,
     ) -> Result<Option<DnsRequest>, BrokerSetError> {
-        if self.endpoint.as_ref() == Some(endpoint)
-            && let Some(connection) = &mut self.connection
-        {
-            connection
-                .submit(poller, request, now)
-                .map_err(BrokerSetError::Broker)?;
-            return Ok(None);
-        }
-        if self.connection.is_some() {
-            request.fail(RequestError::RouteUnavailable);
-            return Ok(None);
+        if self.endpoint.as_ref() == Some(endpoint) {
+            let Some(connection) = &mut self.connection else {
+                return Err(BrokerSetError::UnexpectedResolutionEffect);
+            };
+            if connection.state().phase() == ConnectionPhase::Ready {
+                connection
+                    .submit(poller, request, now)
+                    .map_err(BrokerSetError::Broker)?;
+                return Ok(None);
+            }
+            if !connection.is_terminal()
+                && connection.broker_state().phase() != BrokerPhase::Draining
+            {
+                self.waiting.admit(request, now);
+                return Ok(None);
+            }
         }
         if !self.waiting.admit(request, now) || self.is_resolving(route, endpoint) {
             return Ok(None);
+        }
+        if let Some(connection) = &mut self.connection
+            && !connection.is_terminal()
+            && connection.broker_state().phase() != BrokerPhase::Draining
+        {
+            connection
+                .begin_drain(poller, now)
+                .map_err(BrokerSetError::Broker)?;
         }
         let epoch = self.reserve_epoch()?;
         let transition = self.resolution.apply(BrokerResolutionInput::Start {
@@ -111,12 +132,12 @@ impl BrokerChild {
                 let Some(address) = addresses.iter().next().copied() else {
                     return Err(BrokerSetError::UnexpectedResolutionEffect);
                 };
-                Ok(ChildResolution::Resolved {
+                Ok(ChildResolution::Resolved(PendingBroker {
                     route: *route,
                     epoch: *epoch,
                     endpoint: endpoint.clone(),
                     address,
-                })
+                }))
             }
             [BrokerResolutionEffect::Failed { failure, .. }] => {
                 self.waiting
@@ -135,12 +156,25 @@ impl BrokerChild {
         poller: &Poller,
         now: Moment,
     ) -> Result<(), BrokerSetError> {
-        let mut connection =
-            SingleBroker::new_configured_in_epoch(config, self.limits, self.namespace, epoch);
+        let connection = match &mut self.connection {
+            Some(connection) => {
+                connection
+                    .reconfigure(config, epoch)
+                    .map_err(BrokerSetError::Broker)?;
+                connection
+            }
+            None => self
+                .connection
+                .insert(SingleBroker::new_configured_in_epoch(
+                    config,
+                    self.limits,
+                    self.namespace,
+                    epoch,
+                )),
+        };
         connection
             .start(poller, now)
             .map_err(BrokerSetError::Broker)?;
-        self.connection = Some(connection);
         self.endpoint = Some(endpoint);
         Ok(())
     }
@@ -191,10 +225,5 @@ impl BrokerChild {
 pub(super) enum ChildResolution {
     Ignored,
     Failed,
-    Resolved {
-        route: BrokerRoute,
-        epoch: ConnectionEpoch,
-        endpoint: BrokerEndpoint,
-        address: ResolvedAddress,
-    },
+    Resolved(PendingBroker),
 }
