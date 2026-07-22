@@ -8,6 +8,9 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_WAITING_CALLS: NonZeroUsize = nonzero(256);
 const DEFAULT_WAITING_BYTES: NonZeroUsize = nonzero(8 * 1024 * 1024);
 const DEFAULT_ADMISSION_BUDGET: NonZeroUsize = nonzero(64);
+const DEFAULT_PARTITION_WAITING_CALLS: NonZeroUsize = nonzero(256);
+const DEFAULT_PARTITION_WAITING_BYTES: NonZeroUsize = nonzero(8 * 1024 * 1024);
+const DEFAULT_PARTITION_ADMISSION_BUDGET: NonZeroUsize = nonzero(64);
 
 /// Resource and wait bounds applied to cluster metadata refreshes.
 #[must_use]
@@ -20,6 +23,9 @@ pub struct MetadataLimits {
     waiting_calls: NonZeroUsize,
     waiting_bytes: NonZeroUsize,
     admission_budget: NonZeroUsize,
+    partition_waiting_calls: NonZeroUsize,
+    partition_waiting_bytes: NonZeroUsize,
+    partition_admission_budget: NonZeroUsize,
 }
 
 impl MetadataLimits {
@@ -33,6 +39,9 @@ impl MetadataLimits {
             waiting_calls: DEFAULT_WAITING_CALLS,
             waiting_bytes: DEFAULT_WAITING_BYTES,
             admission_budget: DEFAULT_ADMISSION_BUDGET,
+            partition_waiting_calls: DEFAULT_PARTITION_WAITING_CALLS,
+            partition_waiting_bytes: DEFAULT_PARTITION_WAITING_BYTES,
+            partition_admission_budget: DEFAULT_PARTITION_ADMISSION_BUDGET,
         }
     }
 
@@ -61,6 +70,19 @@ impl MetadataLimits {
         self.waiting_calls = waiting_calls;
         self.waiting_bytes = waiting_bytes;
         self.admission_budget = admission_budget;
+        self
+    }
+
+    /// Replaces topic-route waiting count, encoded bytes, and turn admission bounds.
+    pub const fn with_partition_waiting_limits(
+        mut self,
+        waiting_calls: NonZeroUsize,
+        waiting_bytes: NonZeroUsize,
+        admission_budget: NonZeroUsize,
+    ) -> Self {
+        self.partition_waiting_calls = waiting_calls;
+        self.partition_waiting_bytes = waiting_bytes;
+        self.partition_admission_budget = admission_budget;
         self
     }
 
@@ -97,6 +119,21 @@ impl MetadataLimits {
     /// Returns maximum waiting calls admitted to a ready broker in one turn.
     pub const fn admission_budget(self) -> NonZeroUsize {
         self.admission_budget
+    }
+
+    /// Returns maximum calls waiting for a topic-partition route.
+    pub const fn partition_waiting_calls(self) -> NonZeroUsize {
+        self.partition_waiting_calls
+    }
+
+    /// Returns maximum encoded request bytes waiting for topic-partition routes.
+    pub const fn partition_waiting_bytes(self) -> NonZeroUsize {
+        self.partition_waiting_bytes
+    }
+
+    /// Returns maximum topic-route waiters examined in one reactor turn.
+    pub const fn partition_admission_budget(self) -> NonZeroUsize {
+        self.partition_admission_budget
     }
 
     pub(super) const fn default_limits() -> Self {

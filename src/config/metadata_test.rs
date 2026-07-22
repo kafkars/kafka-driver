@@ -14,7 +14,8 @@ fn driver_limits_retain_broker_membership_and_request_wait_independently() {
     let metadata = MetadataLimits::new(broker_directory, Duration::from_millis(250))
         .with_partition_leader_limits(partition_leaders)
         .with_query_limits(queries)
-        .with_waiting_limits(nonzero(3), nonzero(4_096), nonzero(2));
+        .with_waiting_limits(nonzero(3), nonzero(4_096), nonzero(2))
+        .with_partition_waiting_limits(nonzero(5), nonzero(8_192), nonzero(4));
 
     let retained = DriverLimits::default()
         .with_metadata_limits(metadata)
@@ -27,6 +28,9 @@ fn driver_limits_retain_broker_membership_and_request_wait_independently() {
     assert_eq!(retained.waiting_calls(), nonzero(3));
     assert_eq!(retained.waiting_bytes(), nonzero(4_096));
     assert_eq!(retained.admission_budget(), nonzero(2));
+    assert_eq!(retained.partition_waiting_calls(), nonzero(5));
+    assert_eq!(retained.partition_waiting_bytes(), nonzero(8_192));
+    assert_eq!(retained.partition_admission_budget(), nonzero(4));
 }
 
 const fn nonzero(value: usize) -> NonZeroUsize {
