@@ -3,6 +3,7 @@
 //! This crate owns Kafka policy but has no operating-system, synchronization,
 //! reactor, or transport capabilities.
 
+mod broker;
 mod capability;
 mod connection;
 mod delivery;
@@ -14,6 +15,11 @@ mod delivery_test;
 #[cfg(test)]
 mod time_test;
 
+pub use broker::{
+    BackoffPolicy, BackoffPolicyError, BrokerCloseReason, BrokerDisposition, BrokerEffect,
+    BrokerInput, BrokerMachine, BrokerPhase, BrokerState, BrokerTransition, JitterSample,
+    ReconnectSchedule, RetryOrdinal,
+};
 pub use capability::{CapabilityError, NegotiatedApi, NegotiatedCapabilities};
 pub use connection::{
     CallFailure, CloseReason, ConnectionEffect, ConnectionInput, ConnectionInputKind,
