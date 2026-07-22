@@ -13,6 +13,7 @@ mod coordinator;
 mod delivery;
 mod directory;
 mod endpoint;
+mod endpoint_dialer;
 mod identity;
 mod metadata;
 mod resolution;
@@ -62,6 +63,9 @@ pub use directory::{
     BrokerRoute, BrokerRouteError,
 };
 pub use endpoint::{BrokerEndpoint, HostName, HostNameError, IpAddress, ResolvedAddress};
+pub use endpoint_dialer::{
+    EndpointDialer, EndpointDialerEffect, EndpointDialerInput, EndpointDialerTransition,
+};
 pub use identity::{
     BrokerId, BrokerIdError, CallId, ConnectionEpoch, CoordinatorEpoch, CoordinatorKey,
     CoordinatorKeyError, CoordinatorKind, EffectId, LeaderEpoch, LeaderEpochError,

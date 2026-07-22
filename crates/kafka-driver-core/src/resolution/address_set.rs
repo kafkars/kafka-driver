@@ -46,4 +46,9 @@ impl ResolvedAddressSet {
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &ResolvedAddress> {
         self.addresses.iter()
     }
+
+    /// Returns one retained address by resolver-order index.
+    pub fn get(&self, index: usize) -> Option<ResolvedAddress> {
+        self.addresses.get(index).copied()
+    }
 }
