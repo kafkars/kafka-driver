@@ -9,6 +9,7 @@ mod broker;
 mod broker_resolution;
 mod capability;
 mod connection;
+mod coordinator;
 mod delivery;
 mod directory;
 mod endpoint;
@@ -50,6 +51,10 @@ pub use connection::{
     ConnectionTransition, CorrelationId, IdentityKind, NegotiationAttempt, NegotiationFailure,
     PendingCall, PendingPhase, ResponseFault, TransitionDisposition, TransitionRecord,
     TransitionSequence, TransportFailure,
+};
+pub use coordinator::{
+    CoordinatorDisposition, CoordinatorEffect, CoordinatorInput, CoordinatorMachine,
+    CoordinatorRoute, CoordinatorState, CoordinatorTransition,
 };
 pub use delivery::Delivery;
 pub use directory::{
