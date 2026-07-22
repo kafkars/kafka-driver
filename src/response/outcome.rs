@@ -2,22 +2,61 @@
 
 use std::{error::Error, fmt};
 
-use kafka_driver_core::{CallId, CorrelationId};
-use kafka_wire_core::DecodeError;
+use kafka_driver_core::{CallFailure, CallId, CorrelationId, Delivery};
+use kafka_wire_core::{ApiVersion, DecodeError, EncodeError};
 
-/// Why a registered typed response could not complete successfully.
+/// Why one generated request could not complete successfully.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ResponseFailure {
+pub enum RequestError {
+    /// The generated request could not be encoded at the selected version.
+    Encode(EncodeError),
     /// The verified response body was malformed or unsupported.
     Decode(DecodeError),
+    /// The generated request or response does not support the selected version.
+    UnsupportedVersion {
+        /// Generated message that rejected the version.
+        message: &'static str,
+        /// Requested API version.
+        version: ApiVersion,
+    },
+    /// The typed FIFO response registry reached its explicit capacity.
+    ResponseCapacityReached {
+        /// Configured pending response maximum.
+        limit: usize,
+    },
+    /// Driver-owned call or correlation identity unexpectedly conflicted.
+    IdentityConflict,
+    /// Deterministic connection policy rejected or failed the call.
+    Rejected {
+        /// Connection-policy reason.
+        failure: CallFailure,
+        /// Whether the broker may have received the request.
+        delivery: Delivery,
+    },
     /// The connection ended before this response completed.
     ConnectionClosed(ResponseCloseReason),
 }
 
-impl fmt::Display for ResponseFailure {
+impl fmt::Display for RequestError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Encode(error) => write!(formatter, "Kafka request encode failed: {error}"),
             Self::Decode(error) => write!(formatter, "Kafka response decode failed: {error}"),
+            Self::UnsupportedVersion { message, version } => {
+                write!(formatter, "{message} does not support version {version}")
+            }
+            Self::ResponseCapacityReached { limit } => {
+                write!(formatter, "typed response capacity {limit} reached")
+            }
+            Self::IdentityConflict => {
+                formatter.write_str("driver-owned request identity unexpectedly conflicted")
+            }
+            Self::Rejected { failure, delivery } => {
+                write!(
+                    formatter,
+                    "connection rejected request ({delivery:?}): {failure:?}"
+                )
+            }
             Self::ConnectionClosed(reason) => {
                 write!(formatter, "connection closed before response: {reason}")
             }
@@ -25,18 +64,25 @@ impl fmt::Display for ResponseFailure {
     }
 }
 
-impl Error for ResponseFailure {
+impl Error for RequestError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::Encode(error) => Some(error),
             Self::Decode(error) => Some(error),
-            Self::ConnectionClosed(_) => None,
+            Self::UnsupportedVersion { .. }
+            | Self::ResponseCapacityReached { .. }
+            | Self::IdentityConflict
+            | Self::Rejected { .. }
+            | Self::ConnectionClosed(_) => None,
         }
     }
 }
 
+pub(crate) type ResponseFailure = RequestError;
+
 /// Sanitized reason all remaining typed response slots were failed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ResponseCloseReason {
+pub enum ResponseCloseReason {
     /// The transport ended or failed.
     TransportClosed,
     /// Connection policy rejected peer behavior.

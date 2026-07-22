@@ -16,5 +16,7 @@ mod end_to_end_test;
 pub(crate) use envelope::ResponseEnvelope;
 pub(crate) use error::{ResponseAdmissionError, ResponseDispatchError, ResponseInspectError};
 pub(crate) use outcome::{
-    CompletionDisposition, FailedResponses, ResponseCloseReason, ResponseDispatch, ResponseFailure,
+    CompletionDisposition, FailedResponses, ResponseDispatch, ResponseFailure,
 };
+pub use outcome::{RequestError, ResponseCloseReason};
+pub(crate) use registry::ResponseRegistry;

@@ -7,6 +7,7 @@ mod protocol;
 mod traffic;
 
 pub use crate::completion::{CancellationRequest, CompletionError};
+pub use crate::response::{RequestError, ResponseCloseReason};
 pub use build::DriverBuildError;
 pub use call::Call;
 pub use driver::{Driver, DriverBuilder, SubmitError};

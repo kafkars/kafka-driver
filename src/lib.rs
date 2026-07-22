@@ -9,13 +9,18 @@ mod config;
 mod reactor;
 #[allow(
     dead_code,
+    reason = "M4 typed request preparation is consumed by mailbox submission next"
+)]
+mod request;
+#[allow(
+    dead_code,
     reason = "M3 locks typed response dispatch before the M4 reactor adapter consumes it"
 )]
 mod response;
 
 pub use api::{
     Call, CancellationRequest, CompletionError, Delivery, Driver, DriverBuildError, DriverBuilder,
-    RequestResponsePair, SubmitError, TrafficClass,
+    RequestError, RequestResponsePair, ResponseCloseReason, SubmitError, TrafficClass,
 };
 pub use config::DriverLimits;
 pub use kafka_driver_core::{CallId, Moment};

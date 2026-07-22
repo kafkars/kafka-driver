@@ -7,6 +7,7 @@ use kafka_driver_transport::FrameBody;
 use kafka_wire::{KafkaMessage, RequestResponsePair, ResponseHeader, response_header_version_for};
 use kafka_wire_core::{ApiVersion, DecodeLimits, Decoder, KafkaDecode};
 
+use crate::completion::CompletionSender;
 use crate::{api::Call, completion::completion_pair};
 
 use super::{
@@ -46,6 +47,21 @@ impl ResponseRegistry {
     {
         self.validate_admission::<R>(call_id, correlation_id, version)?;
         let (receiver, completion) = completion_pair();
+        self.insert_validated::<R>(call_id, correlation_id, version, completion);
+        Ok(Call::new(receiver))
+    }
+
+    /// Inserts a caller-owned completion after single-owner validation.
+    pub(crate) fn insert_validated<R>(
+        &mut self,
+        call_id: CallId,
+        correlation_id: CorrelationId,
+        version: ApiVersion,
+        completion: CompletionSender<Result<R::Response, ResponseFailure>>,
+    ) where
+        R: RequestResponsePair,
+        R::Response: 'static,
+    {
         let header_version = ApiVersion::new(response_header_version_for::<R>(version));
         self.slots.push_back(Box::new(TypedSlot::<R::Response>::new(
             call_id,
@@ -54,7 +70,6 @@ impl ResponseRegistry {
             header_version,
             completion,
         )));
-        Ok(Call::new(receiver))
     }
 
     /// Decodes only the FIFO front's response header, retaining typed ownership.
@@ -138,7 +153,7 @@ impl ResponseRegistry {
         self.slots.len()
     }
 
-    fn validate_admission<R>(
+    pub(crate) fn validate_admission<R>(
         &self,
         call_id: CallId,
         correlation_id: CorrelationId,

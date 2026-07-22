@@ -42,6 +42,7 @@ description = "A deterministic, runtime-neutral Kafka broker and cluster RPC eng
 publish = false
 
 [dependencies]
+bytes.workspace = true
 kafka-driver-core.workspace = true
 kafka-driver-transport.workspace = true
 kafka-wire = { path = "../kafka-protocol/crates/kafka-wire" }
@@ -49,7 +50,6 @@ kafka-wire-core.workspace = true
 mio.workspace = true
 
 [dev-dependencies]
-bytes.workspace = true
 kafka-driver-sim.workspace = true
 serde.workspace = true
 syn.workspace = true
