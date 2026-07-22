@@ -10,14 +10,14 @@ use kafka_wire_core::Bytes;
 use mio::{Registry, Token, event::Source, net::TcpStream};
 
 use super::{
-    CompletedWrite, PlaintextError, PlaintextLimits, ReadBudget, ReadProgress, ReadState,
-    WriteBudget, WriteDrive, WriteState,
+    CompletedWrite, ConnectProgress, PlaintextError, PlaintextLimits, ReadBudget, ReadProgress,
+    ReadState, WriteBudget, WriteDrive, WriteState, socket::PlaintextSocket,
 };
 
 /// One reactor-owned plaintext socket and its ordered byte progress.
 #[derive(Debug)]
 pub(in crate::reactor) struct PlaintextConnection {
-    socket: TcpStream,
+    socket: PlaintextSocket,
     frames: FrameDecoder,
     writes: WriteQueue,
     read_buffer: Box<[u8]>,
@@ -29,10 +29,14 @@ impl PlaintextConnection {
         address: SocketAddr,
         limits: PlaintextLimits,
     ) -> io::Result<Self> {
-        TcpStream::connect(address).map(|socket| Self::new(socket, limits))
+        PlaintextSocket::connect(address).map(|socket| Self::with_socket(socket, limits))
     }
 
     pub(in crate::reactor) fn new(socket: TcpStream, limits: PlaintextLimits) -> Self {
+        Self::with_socket(PlaintextSocket::open(socket), limits)
+    }
+
+    fn with_socket(socket: PlaintextSocket, limits: PlaintextLimits) -> Self {
         Self {
             socket,
             frames: FrameDecoder::new(limits.frame()),
@@ -40,6 +44,12 @@ impl PlaintextConnection {
             read_buffer: vec![0; limits.read_chunk_bytes().get()].into_boxed_slice(),
             max_buffered_read_bytes: limits.frame().max_buffered_bytes(),
         }
+    }
+
+    pub(in crate::reactor) fn finish_connect(&mut self) -> Result<ConnectProgress, PlaintextError> {
+        self.socket
+            .finish_connect()
+            .map_err(PlaintextError::Connect)
     }
 
     pub(in crate::reactor) fn admit_write(

@@ -13,7 +13,7 @@ use kafka_wire_core::Bytes;
 use mio::net::TcpStream;
 
 use super::{
-    PlaintextLimits, ReadBudget, ReadState, WriteBudget, WriteState,
+    ConnectProgress, PlaintextLimits, ReadBudget, ReadState, WriteBudget, WriteState,
     connection::PlaintextConnection,
 };
 use crate::reactor::{PollEvent, Poller, poller::PollInterest, resource::ResourceToken};
@@ -125,6 +125,30 @@ fn idle_socket_reports_blocked_without_consuming_a_budget() {
     assert_eq!(connection.queued_write_frames(), 0);
 }
 
+#[test]
+fn nonblocking_connect_opens_only_after_real_readiness_verification() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind loopback listener: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read loopback address: {error}"));
+    let mut connection = PlaintextConnection::connect(address, limits())
+        .unwrap_or_else(|error| panic!("start nonblocking connect: {error}"));
+    let (_peer, _) = listener
+        .accept()
+        .unwrap_or_else(|error| panic!("accept loopback connection: {error}"));
+    await_interest(&mut connection, PollInterest::ReadWrite);
+
+    let Ok(opened) = connection.finish_connect() else {
+        panic!("ready connect must verify open");
+    };
+    let Ok(already_open) = connection.finish_connect() else {
+        panic!("open connect verification must be idempotent");
+    };
+    assert_eq!(opened, ConnectProgress::Opened);
+    assert_eq!(already_open, ConnectProgress::AlreadyOpen);
+}
+
 fn connection_pair() -> (PlaintextConnection, StandardStream) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .unwrap_or_else(|error| panic!("bind loopback listener: {error}"));
@@ -144,29 +168,39 @@ fn connection_pair() -> (PlaintextConnection, StandardStream) {
 }
 
 fn await_readable(connection: &mut PlaintextConnection) {
+    await_interest(connection, PollInterest::Readable);
+}
+
+fn await_interest(connection: &mut PlaintextConnection, interest: PollInterest) {
     let Ok(mut poller) = Poller::new(NonZeroUsize::MIN) else {
         panic!("host must provide a Mio selector");
     };
     let Some(token) = ResourceToken::from_poll(1) else {
         panic!("nonzero poll token must name a resource");
     };
-    assert!(
-        poller
-            .register(connection, token, PollInterest::Readable)
-            .is_ok()
-    );
+    assert!(poller.register(connection, token, interest).is_ok());
     let mut events = Vec::with_capacity(1);
     let Ok(observed) = poller.poll_into(Some(Duration::from_secs(1)), &mut events) else {
         panic!("loopback readiness poll must succeed");
     };
     assert_eq!(observed, 1);
-    assert!(matches!(
-        events.as_slice(),
-        [PollEvent::Resource {
+    let [
+        PollEvent::Resource {
             token: observed,
             readiness,
-        }] if *observed == token && readiness.is_readable()
-    ));
+        },
+    ] = events.as_slice()
+    else {
+        panic!("one resource readiness event must be observed");
+    };
+    assert_eq!(*observed, token);
+    match interest {
+        PollInterest::Readable => assert!(readiness.is_readable()),
+        PollInterest::Writable => assert!(readiness.is_writable()),
+        PollInterest::ReadWrite => {
+            assert!(readiness.is_readable() || readiness.is_writable());
+        }
+    }
     assert!(poller.deregister(connection).is_ok());
 }
 
