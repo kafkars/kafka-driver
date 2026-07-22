@@ -71,4 +71,16 @@ impl MetadataMachine {
             MetadataState::Ready { snapshot } => Some(snapshot),
         }
     }
+
+    /// Returns whether an active or queued fetch owns the exact query.
+    pub fn query_pending(&self, query: &crate::MetadataQuery) -> bool {
+        matches!(
+            &self.state,
+            MetadataState::Refreshing {
+                query: active,
+                queued,
+                ..
+            } if active == query || queued.contains(query)
+        )
+    }
 }

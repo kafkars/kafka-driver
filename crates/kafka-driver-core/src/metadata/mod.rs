@@ -16,6 +16,8 @@ mod transition;
 #[cfg(test)]
 mod machine_test;
 #[cfg(test)]
+mod query_test;
+#[cfg(test)]
 mod snapshot_test;
 
 pub use effect::MetadataEffect;
