@@ -8,11 +8,14 @@ mod broker;
 mod capability;
 mod connection;
 mod delivery;
+mod endpoint;
 mod identity;
 mod time;
 
 #[cfg(test)]
 mod delivery_test;
+#[cfg(test)]
+mod endpoint_test;
 #[cfg(test)]
 mod time_test;
 
@@ -36,6 +39,7 @@ pub use connection::{
     TransitionSequence, TransportFailure,
 };
 pub use delivery::Delivery;
+pub use endpoint::{BrokerEndpoint, HostName, HostNameError, IpAddress, ResolvedAddress};
 pub use identity::{CallId, ConnectionEpoch, EffectId, OperationId, TimerId, TransportId};
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use time::Moment;

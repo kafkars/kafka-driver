@@ -1,14 +1,11 @@
-//! Scripted broker resolution and logical address vocabulary.
+//! Scripted broker resolution over shared socket-free endpoint vocabulary.
 
-mod address;
 mod plan;
 mod script;
 
 #[cfg(test)]
-mod address_test;
-#[cfg(test)]
 mod script_test;
 
-pub use address::{BrokerEndpoint, HostName, HostNameError, IpAddress, ResolvedAddress};
+pub use kafka_driver_core::{BrokerEndpoint, HostName, HostNameError, IpAddress, ResolvedAddress};
 pub use plan::{DnsFailure, DnsOutcome, DnsRequest, DnsStep};
 pub use script::{DnsScriptError, ScriptedDns};
