@@ -4,9 +4,10 @@ use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
 
 use kafka_driver_core::{ConnectionEpoch, TransportId};
 
-use crate::reactor::{PollEvent, Poller, plaintext::PlaintextLimits, tcp::ConnectProgress};
+use crate::config::BrokerSecurity;
+use crate::reactor::{PollEvent, Poller, tcp::ConnectProgress, transport::TransportLimits};
 
-use super::{ResourceIdentity, plaintext::PlaintextResources};
+use super::{ResourceIdentity, transport::TransportResources};
 
 #[test]
 fn opened_resource_is_registered_and_found_by_readiness_token() {
@@ -16,7 +17,11 @@ fn opened_resource_is_registered_and_found_by_readiness_token() {
         .local_addr()
         .unwrap_or_else(|error| panic!("read loopback address: {error}"));
     let mut poller = poller();
-    let mut resources = PlaintextResources::new(NonZeroUsize::MIN, PlaintextLimits::default());
+    let mut resources = TransportResources::new(
+        NonZeroUsize::MIN,
+        TransportLimits::default(),
+        BrokerSecurity::Plaintext,
+    );
     let expected = identity(1, 10);
 
     let token = resources
@@ -55,7 +60,11 @@ fn close_deregisters_and_releases_the_exact_identity() {
         .local_addr()
         .unwrap_or_else(|error| panic!("read loopback address: {error}"));
     let poller = poller();
-    let mut resources = PlaintextResources::new(NonZeroUsize::MIN, PlaintextLimits::default());
+    let mut resources = TransportResources::new(
+        NonZeroUsize::MIN,
+        TransportLimits::default(),
+        BrokerSecurity::Plaintext,
+    );
     let expected = identity(1, 10);
     let token = resources
         .open(&poller, expected, address)

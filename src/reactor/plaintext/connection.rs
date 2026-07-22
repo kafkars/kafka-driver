@@ -11,11 +11,14 @@ use kafka_wire_core::Bytes;
 use mio::net::TcpStream;
 use mio::{Registry, Token, event::Source};
 
-use super::{
-    CompletedWrite, PlaintextError, PlaintextLimits, ReadBudget, ReadProgress, ReadState,
-    WriteBudget, WriteDrive, WriteState,
+use super::PlaintextError;
+use crate::reactor::{
+    tcp::{ConnectProgress, TcpSocket},
+    transport::{
+        CompletedWrite, ReadBudget, ReadProgress, ReadState, TransportLimits, WriteBudget,
+        WriteDrive, WriteState,
+    },
 };
-use crate::reactor::tcp::{ConnectProgress, TcpSocket};
 
 /// One reactor-owned plaintext socket and its ordered byte progress.
 #[derive(Debug)]
@@ -30,17 +33,17 @@ pub(in crate::reactor) struct PlaintextConnection {
 impl PlaintextConnection {
     pub(in crate::reactor) fn connect(
         address: SocketAddr,
-        limits: PlaintextLimits,
+        limits: TransportLimits,
     ) -> io::Result<Self> {
         TcpSocket::connect(address).map(|socket| Self::with_socket(socket, limits))
     }
 
     #[cfg(test)]
-    pub(in crate::reactor) fn new(socket: TcpStream, limits: PlaintextLimits) -> Self {
+    pub(in crate::reactor) fn new(socket: TcpStream, limits: TransportLimits) -> Self {
         Self::with_socket(TcpSocket::open(socket), limits)
     }
 
-    fn with_socket(socket: TcpSocket, limits: PlaintextLimits) -> Self {
+    fn with_socket(socket: TcpSocket, limits: TransportLimits) -> Self {
         Self {
             socket,
             frames: FrameDecoder::new(limits.frame()),
@@ -81,7 +84,12 @@ impl PlaintextConnection {
                 frames += 1;
             }
             if frames == budget.frames() || bytes == budget.bytes() {
-                return Ok(ReadProgress::new(bytes, frames, ReadState::BudgetExhausted));
+                return Ok(ReadProgress::new(
+                    bytes,
+                    frames,
+                    ReadState::BudgetExhausted,
+                    false,
+                ));
             }
 
             let decoder_space = self
@@ -93,21 +101,36 @@ impl PlaintextConnection {
                 .min(budget.bytes() - bytes)
                 .min(decoder_space);
             if read_bytes == 0 {
-                return Ok(ReadProgress::new(bytes, frames, ReadState::BudgetExhausted));
+                return Ok(ReadProgress::new(
+                    bytes,
+                    frames,
+                    ReadState::BudgetExhausted,
+                    false,
+                ));
             }
             match self.socket.read(&mut self.read_buffer[..read_bytes]) {
                 Ok(0) => {
-                    return Ok(ReadProgress::new(bytes, frames, ReadState::PeerClosed));
+                    return Ok(ReadProgress::new(
+                        bytes,
+                        frames,
+                        ReadState::PeerClosed,
+                        false,
+                    ));
                 }
                 Ok(read) => {
                     self.frames.feed(&self.read_buffer[..read])?;
                     bytes += read;
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    return Ok(ReadProgress::new(bytes, frames, ReadState::Blocked));
+                    return Ok(ReadProgress::new(bytes, frames, ReadState::Blocked, false));
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {
-                    return Ok(ReadProgress::new(bytes, frames, ReadState::Interrupted));
+                    return Ok(ReadProgress::new(
+                        bytes,
+                        frames,
+                        ReadState::Interrupted,
+                        false,
+                    ));
                 }
                 Err(error) => return Err(PlaintextError::Read(error)),
             }

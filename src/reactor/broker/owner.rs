@@ -10,18 +10,19 @@ use kafka_driver_transport::FrameBody;
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::DecodeLimits;
 
+use crate::config::BrokerConfig;
 use crate::negotiation::{NegotiationExchange, NegotiationLimits};
 use crate::reactor::{
     PollEvent, Poller,
-    plaintext::{CompletedWrite, ReadBudget, WriteBudget},
-    resource::{PlaintextResources, ResourceIdentity, ResourceToken},
+    resource::{ResourceIdentity, ResourceToken, TransportResources},
     tcp::ConnectProgress,
     timer::{DeadlineTimer, TimerHeap},
+    transport::{CompletedWrite, ReadBudget, WriteBudget},
 };
 use crate::response::ResponseRegistry;
 
 use super::{
-    BrokerError, BrokerIds, entropy::BackoffEntropy, failure::plaintext_failure,
+    BrokerError, BrokerIds, entropy::BackoffEntropy, failure::transport_failure,
     limits::BrokerLimits,
 };
 
@@ -34,7 +35,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) connection_limits: kafka_driver_core::ConnectionLimits,
     pub(super) ids: BrokerIds,
     pub(super) entropy: BackoffEntropy,
-    pub(super) resources: PlaintextResources,
+    pub(super) resources: TransportResources,
     pub(super) resource_token: Option<ResourceToken>,
     pub(super) responses: ResponseRegistry,
     pub(super) timers: TimerHeap,
@@ -53,7 +54,15 @@ pub(in crate::reactor) struct SingleBroker {
 }
 
 impl SingleBroker {
+    #[cfg(test)]
     pub(in crate::reactor) fn new(address: SocketAddr, limits: BrokerLimits) -> Self {
+        Self::new_configured(BrokerConfig::plaintext(address), limits)
+    }
+
+    pub(in crate::reactor) fn new_configured(config: BrokerConfig, limits: BrokerLimits) -> Self {
+        let (address, security) = config.into_parts();
+        let resources =
+            TransportResources::new(limits.resource_capacity(), limits.transport(), security);
         Self {
             address,
             broker: BrokerMachine::new(ConnectionEpoch::from_raw(1), limits.backoff()),
@@ -61,7 +70,7 @@ impl SingleBroker {
             connection_limits: limits.connection(),
             ids: BrokerIds::new(),
             entropy: BackoffEntropy::for_broker(address),
-            resources: PlaintextResources::new(limits.resource_capacity(), limits.plaintext()),
+            resources,
             resource_token: None,
             responses: ResponseRegistry::new(limits.response_capacity(), DecodeLimits::default()),
             timers: TimerHeap::new(limits.timer_capacity()),
@@ -130,7 +139,7 @@ impl SingleBroker {
                     identity.epoch(),
                     effect_id,
                     identity.transport_id(),
-                    plaintext_failure(&error),
+                    transport_failure(&error),
                 )?;
                 self.close_resource(poller, identity)?;
                 Ok(true)

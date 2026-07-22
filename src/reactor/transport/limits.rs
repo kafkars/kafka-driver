@@ -1,4 +1,4 @@
-//! Construction bounds and per-turn progress budgets for one plaintext socket.
+//! Shared framing, buffering, scratch, and per-turn byte-progress bounds.
 
 use std::num::NonZeroUsize;
 
@@ -8,13 +8,13 @@ const DEFAULT_READ_CHUNK_BYTES: NonZeroUsize = nonzero(64 * 1_024);
 
 /// Persistent decoder, writer, and scratch-buffer bounds for one connection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(in crate::reactor) struct PlaintextLimits {
+pub(in crate::reactor) struct TransportLimits {
     frame: FrameLimits,
     write: WriteQueueLimits,
     read_chunk_bytes: NonZeroUsize,
 }
 
-impl PlaintextLimits {
+impl TransportLimits {
     pub(in crate::reactor) const fn new(
         frame: FrameLimits,
         write: WriteQueueLimits,
@@ -27,11 +27,11 @@ impl PlaintextLimits {
         }
     }
 
-    pub(super) const fn frame(self) -> FrameLimits {
+    pub(in crate::reactor) const fn frame(self) -> FrameLimits {
         self.frame
     }
 
-    pub(super) const fn write(self) -> WriteQueueLimits {
+    pub(in crate::reactor) const fn write(self) -> WriteQueueLimits {
         self.write
     }
 
@@ -41,12 +41,12 @@ impl PlaintextLimits {
             .saturating_sub(size_of::<i32>())
     }
 
-    pub(super) const fn read_chunk_bytes(self) -> NonZeroUsize {
+    pub(in crate::reactor) const fn read_chunk_bytes(self) -> NonZeroUsize {
         self.read_chunk_bytes
     }
 }
 
-impl Default for PlaintextLimits {
+impl Default for TransportLimits {
     fn default() -> Self {
         Self::new(
             FrameLimits::default(),
@@ -68,16 +68,16 @@ impl ReadBudget {
         Self { bytes, frames }
     }
 
-    pub(super) const fn bytes(self) -> usize {
+    pub(in crate::reactor) const fn bytes(self) -> usize {
         self.bytes.get()
     }
 
-    pub(super) const fn frames(self) -> usize {
+    pub(in crate::reactor) const fn frames(self) -> usize {
         self.frames.get()
     }
 }
 
-/// Maximum bytes handed to the socket by one write drive.
+/// Maximum bytes handed to one selected transport by one write drive.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) struct WriteBudget(NonZeroUsize);
@@ -87,14 +87,14 @@ impl WriteBudget {
         Self(bytes)
     }
 
-    pub(super) const fn bytes(self) -> usize {
+    pub(in crate::reactor) const fn bytes(self) -> usize {
         self.0.get()
     }
 }
 
 const fn nonzero(value: usize) -> NonZeroUsize {
     let Some(value) = NonZeroUsize::new(value) else {
-        panic!("plaintext defaults must be nonzero");
+        panic!("transport defaults must be nonzero");
     };
     value
 }

@@ -3,9 +3,9 @@
 mod commands;
 mod state;
 
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
-use crate::config::DriverLimits;
+use crate::config::{BrokerConfig, DriverLimits};
 
 use super::{
     Command, MailboxSender, PollEvent, Poller, ReactorError, WakeHandle,
@@ -52,15 +52,15 @@ pub struct Reactor {
 impl Reactor {
     pub(crate) fn new(
         limits: DriverLimits,
-        broker_address: Option<SocketAddr>,
+        broker_config: Option<BrokerConfig>,
     ) -> std::io::Result<(MailboxSender<Command>, Self)> {
         let poller = Poller::new(limits.poll_event_budget())?;
         let wake = WakeHandle::new(poller.wake_handle());
         let (sender, commands) = mailbox(limits.mailbox_capacity(), wake);
         let clock = ReactorClock::new();
         let now = clock.now().map_err(std::io::Error::other)?;
-        let mut broker =
-            broker_address.map(|address| SingleBroker::new(address, BrokerLimits::default()));
+        let mut broker = broker_config
+            .map(|config| SingleBroker::new_configured(config, BrokerLimits::default()));
         if let Some(broker) = &mut broker {
             broker.start(&poller, now).map_err(std::io::Error::other)?;
         }

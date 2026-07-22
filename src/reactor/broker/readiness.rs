@@ -4,11 +4,11 @@ use kafka_driver_core::TransportFailure;
 
 use crate::reactor::{
     PollInterest, Poller, Readiness,
-    plaintext::{ReadState, WriteState},
     resource::{ResourceIdentity, ResourceToken},
+    transport::{ReadState, WriteState},
 };
 
-use super::{BrokerError, failure::plaintext_failure, owner::SingleBroker};
+use super::{BrokerError, failure::transport_failure, owner::SingleBroker};
 
 impl SingleBroker {
     pub(super) fn drive_io(
@@ -89,7 +89,7 @@ impl SingleBroker {
         let progress = match result {
             Ok(progress) => progress,
             Err(error) => {
-                self.transport_lost(poller, identity, plaintext_failure(&error))?;
+                self.transport_lost(poller, identity, transport_failure(&error))?;
                 return Ok(true);
             }
         };
@@ -100,6 +100,16 @@ impl SingleBroker {
         );
         if self.resource_token == Some(token) && progress.state() == ReadState::PeerClosed {
             self.transport_lost(poller, identity, TransportFailure::Reset)?;
+        } else if self.resource_token == Some(token) && progress.write_pending() {
+            if self
+                .resources
+                .reregister(poller, token, PollInterest::ReadWrite)
+                .is_err()
+            {
+                self.transport_lost(poller, identity, TransportFailure::Other)?;
+                return Ok(true);
+            }
+            self.retry_write = true;
         }
         Ok(progress.bytes() != 0 || processed || progress.state() == ReadState::PeerClosed)
     }
@@ -123,7 +133,7 @@ impl SingleBroker {
         let progress = match result {
             Ok(progress) => progress,
             Err(error) => {
-                self.transport_lost(poller, identity, plaintext_failure(&error))?;
+                self.transport_lost(poller, identity, transport_failure(&error))?;
                 return Ok(true);
             }
         };

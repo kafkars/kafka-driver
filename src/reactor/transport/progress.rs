@@ -1,4 +1,4 @@
-//! Exact read and write progress returned without deciding connection policy.
+//! Exact byte-stream progress returned without deciding connection policy.
 
 use kafka_driver_core::{CallId, EffectId};
 
@@ -21,14 +21,21 @@ pub(in crate::reactor) struct ReadProgress {
     bytes: usize,
     frames: usize,
     state: ReadState,
+    write_pending: bool,
 }
 
 impl ReadProgress {
-    pub(super) const fn new(bytes: usize, frames: usize, state: ReadState) -> Self {
+    pub(in crate::reactor) const fn new(
+        bytes: usize,
+        frames: usize,
+        state: ReadState,
+        write_pending: bool,
+    ) -> Self {
         Self {
             bytes,
             frames,
             state,
+            write_pending,
         }
     }
 
@@ -44,6 +51,10 @@ impl ReadProgress {
     pub(in crate::reactor) const fn state(self) -> ReadState {
         self.state
     }
+
+    pub(in crate::reactor) const fn write_pending(self) -> bool {
+        self.write_pending
+    }
 }
 
 /// One complete encoded request removed from the ordered writer.
@@ -55,7 +66,11 @@ pub(in crate::reactor) struct CompletedWrite {
 }
 
 impl CompletedWrite {
-    pub(super) const fn new(call_id: CallId, effect_id: EffectId, frame_bytes: usize) -> Self {
+    pub(in crate::reactor) const fn new(
+        call_id: CallId,
+        effect_id: EffectId,
+        frame_bytes: usize,
+    ) -> Self {
         Self {
             call_id,
             effect_id,
@@ -101,7 +116,7 @@ pub(in crate::reactor) struct WriteDrive {
 }
 
 impl WriteDrive {
-    pub(super) const fn new(bytes: usize, completed: usize, state: WriteState) -> Self {
+    pub(in crate::reactor) const fn new(bytes: usize, completed: usize, state: WriteState) -> Self {
         Self {
             bytes,
             completed,

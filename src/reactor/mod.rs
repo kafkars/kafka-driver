@@ -11,6 +11,9 @@ mod poller;
 mod resource;
 mod tcp;
 mod timer;
+#[cfg(feature = "tls-rustls")]
+mod tls;
+mod transport;
 mod wake;
 
 #[cfg(test)]

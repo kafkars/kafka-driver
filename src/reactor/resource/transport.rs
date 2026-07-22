@@ -1,28 +1,37 @@
-//! Atomic connect, generational admission, Mio registration, and release.
+//! Atomic transport selection, generational registration, and release.
 
 use std::{fmt, io, net::SocketAddr, num::NonZeroUsize};
 
-use crate::reactor::{
-    PollInterest, Poller,
-    plaintext::{PlaintextConnection, PlaintextLimits},
+use crate::{
+    config::BrokerSecurity,
+    reactor::{
+        PollInterest, Poller,
+        transport::{TransportConnectError, TransportConnection, TransportLimits},
+    },
 };
 
 use super::{
     ResourceAdmissionFailure, ResourceIdentity, ResourceToken, registry::ResourceRegistry,
 };
 
-/// Reactor-owned set of registered plaintext transport resources.
+/// Reactor-owned set of registered broker transport resources.
 #[derive(Debug)]
-pub(in crate::reactor) struct PlaintextResources {
-    connections: ResourceRegistry<PlaintextConnection>,
-    limits: PlaintextLimits,
+pub(in crate::reactor) struct TransportResources {
+    connections: ResourceRegistry<TransportConnection>,
+    limits: TransportLimits,
+    security: BrokerSecurity,
 }
 
-impl PlaintextResources {
-    pub(in crate::reactor) fn new(capacity: NonZeroUsize, limits: PlaintextLimits) -> Self {
+impl TransportResources {
+    pub(in crate::reactor) fn new(
+        capacity: NonZeroUsize,
+        limits: TransportLimits,
+        security: BrokerSecurity,
+    ) -> Self {
         Self {
             connections: ResourceRegistry::new(capacity),
             limits,
+            security,
         }
     }
 
@@ -31,23 +40,23 @@ impl PlaintextResources {
         poller: &Poller,
         identity: ResourceIdentity,
         address: SocketAddr,
-    ) -> Result<ResourceToken, ResourceOpenError> {
-        let connection = PlaintextConnection::connect(address, self.limits)
-            .map_err(ResourceOpenError::Connect)?;
+    ) -> Result<ResourceToken, TransportOpenError> {
+        let connection = TransportConnection::connect(address, self.limits, &self.security)
+            .map_err(TransportOpenError::Connect)?;
         let token = self
             .connections
             .admit(identity, connection)
             .map_err(|error| {
                 let failure = error.failure();
                 drop(error.into_resource());
-                ResourceOpenError::Admission(failure)
+                TransportOpenError::Admission(failure)
             })?;
         let Some((_, connection)) = self.connections.get_mut(token) else {
-            return Err(ResourceOpenError::RegistryInvariant);
+            return Err(TransportOpenError::RegistryInvariant);
         };
         if let Err(source) = poller.register(connection, token, PollInterest::ReadWrite) {
             drop(self.connections.remove(token));
-            return Err(ResourceOpenError::Register(source));
+            return Err(TransportOpenError::Register(source));
         }
         Ok(token)
     }
@@ -55,7 +64,7 @@ impl PlaintextResources {
     pub(in crate::reactor) fn get_mut(
         &mut self,
         token: ResourceToken,
-    ) -> Option<(ResourceIdentity, &mut PlaintextConnection)> {
+    ) -> Option<(ResourceIdentity, &mut TransportConnection)> {
         self.connections.get_mut(token)
     }
 
@@ -95,37 +104,34 @@ impl PlaintextResources {
     }
 }
 
-/// Why a plaintext transport did not become a registered reactor resource.
+/// Why a selected broker transport did not become a registered resource.
 #[derive(Debug)]
-pub(in crate::reactor) enum ResourceOpenError {
-    /// The OS rejected creation of the nonblocking connect attempt.
-    Connect(io::Error),
-    /// The bounded generational registry rejected resource admission.
+pub(in crate::reactor) enum TransportOpenError {
+    Connect(TransportConnectError),
     Admission(ResourceAdmissionFailure),
-    /// Mio rejected registration and the admitted resource was rolled back.
     Register(io::Error),
-    /// Internal registry admission could not be observed immediately afterward.
     RegistryInvariant,
 }
 
-impl fmt::Display for ResourceOpenError {
+impl fmt::Display for TransportOpenError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Connect(_) => formatter.write_str("plaintext connect creation failed"),
+            Self::Connect(error) => error.fmt(formatter),
             Self::Admission(failure) => write!(formatter, "resource admission failed: {failure}"),
-            Self::Register(_) => formatter.write_str("plaintext poll registration failed"),
+            Self::Register(_) => formatter.write_str("transport poll registration failed"),
             Self::RegistryInvariant => {
-                formatter.write_str("admitted plaintext resource could not be recovered")
+                formatter.write_str("admitted transport resource could not be recovered")
             }
         }
     }
 }
 
-impl std::error::Error for ResourceOpenError {
+impl std::error::Error for TransportOpenError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Connect(source) | Self::Register(source) => Some(source),
+            Self::Connect(source) => Some(source),
             Self::Admission(source) => Some(source),
+            Self::Register(source) => Some(source),
             Self::RegistryInvariant => None,
         }
     }

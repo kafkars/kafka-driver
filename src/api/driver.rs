@@ -6,7 +6,7 @@ use kafka_wire::RequestResponsePair;
 
 use crate::{
     completion::completion_pair,
-    config::DriverLimits,
+    config::{BrokerConfig, DriverLimits},
     reactor::{Command, MailboxSender, Reactor, TrySendError},
     request::erased_request,
 };
@@ -57,10 +57,10 @@ impl Driver {
 }
 
 /// Builder for one command handle and embedded reactor pair.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriverBuilder {
     limits: DriverLimits,
-    broker: Option<SocketAddr>,
+    broker: Option<BrokerConfig>,
 }
 
 impl DriverBuilder {
@@ -73,8 +73,16 @@ impl DriverBuilder {
 
     /// Configures the single plaintext broker endpoint owned by this reactor.
     #[must_use]
-    pub const fn broker(mut self, address: SocketAddr) -> Self {
-        self.broker = Some(address);
+    pub fn broker(mut self, address: SocketAddr) -> Self {
+        self.broker = Some(BrokerConfig::plaintext(address));
+        self
+    }
+
+    /// Configures one broker protected by the supplied rustls client policy.
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn rustls_broker(mut self, address: SocketAddr, tls: crate::TlsClientConfig) -> Self {
+        self.broker = Some(BrokerConfig::rustls(address, tls));
         self
     }
 

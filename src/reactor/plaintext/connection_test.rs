@@ -12,12 +12,13 @@ use kafka_driver_transport::{FrameLimits, WriteQueueLimits};
 use kafka_wire_core::Bytes;
 use mio::net::TcpStream;
 
-use super::{
-    PlaintextLimits, ReadBudget, ReadState, WriteBudget, WriteState,
-    connection::PlaintextConnection,
-};
+use super::connection::PlaintextConnection;
 use crate::reactor::{
-    PollEvent, Poller, poller::PollInterest, resource::ResourceToken, tcp::ConnectProgress,
+    PollEvent, Poller,
+    poller::PollInterest,
+    resource::ResourceToken,
+    tcp::ConnectProgress,
+    transport::{ReadBudget, ReadState, TransportLimits, WriteBudget, WriteState},
 };
 
 #[test]
@@ -205,11 +206,11 @@ fn await_interest(connection: &mut PlaintextConnection, interest: PollInterest) 
     assert!(poller.deregister(connection).is_ok());
 }
 
-fn limits() -> PlaintextLimits {
+fn limits() -> TransportLimits {
     let Ok(frame) = FrameLimits::new(nonzero(60), nonzero(64)) else {
         panic!("test frame limits must be valid");
     };
-    PlaintextLimits::new(
+    TransportLimits::new(
         frame,
         WriteQueueLimits::new(nonzero(4), nonzero(64)),
         nonzero(16),

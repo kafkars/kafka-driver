@@ -41,6 +41,10 @@ repository.workspace = true
 description = "A deterministic, runtime-neutral Kafka broker and cluster RPC engine"
 publish = false
 
+[features]
+default = ["tls-rustls"]
+tls-rustls = ["dep:rustls"]
+
 [dependencies]
 bytes.workspace = true
 kafka-driver-core.workspace = true
@@ -48,6 +52,7 @@ kafka-driver-transport.workspace = true
 kafka-wire = { path = "../kafka-protocol/crates/kafka-wire" }
 kafka-wire-core.workspace = true
 mio.workspace = true
+rustls = { version = "0.23.42", default-features = false, features = ["ring", "std"], optional = true }
 
 [dev-dependencies]
 kafka-driver-sim.workspace = true

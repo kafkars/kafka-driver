@@ -4,26 +4,44 @@ use std::io;
 
 use kafka_driver_core::TransportFailure;
 
+#[cfg(feature = "tls-rustls")]
+use crate::reactor::tls::{TlsConnectError, TlsError};
 use crate::reactor::{
     plaintext::PlaintextError,
-    resource::{ResourceAdmissionFailure, ResourceOpenError},
+    resource::{ResourceAdmissionFailure, TransportOpenError},
+    transport::{TransportConnectError, TransportError},
 };
 
-pub(super) fn open_failure(error: &ResourceOpenError) -> TransportFailure {
+pub(super) fn open_failure(error: &TransportOpenError) -> TransportFailure {
     match error {
-        ResourceOpenError::Connect(source) | ResourceOpenError::Register(source) => {
-            io_failure(source)
-        }
-        ResourceOpenError::Admission(
+        TransportOpenError::Connect(source) => connect_failure(source),
+        TransportOpenError::Register(source) => io_failure(source),
+        TransportOpenError::Admission(
             ResourceAdmissionFailure::IdentityInUse { .. }
             | ResourceAdmissionFailure::CapacityReached { .. }
             | ResourceAdmissionFailure::TokenSpaceExhausted,
         )
-        | ResourceOpenError::RegistryInvariant => TransportFailure::Other,
+        | TransportOpenError::RegistryInvariant => TransportFailure::Other,
     }
 }
 
-pub(super) fn plaintext_failure(error: &PlaintextError) -> TransportFailure {
+fn connect_failure(error: &TransportConnectError) -> TransportFailure {
+    match error {
+        TransportConnectError::Plaintext(source) => io_failure(source),
+        #[cfg(feature = "tls-rustls")]
+        TransportConnectError::Rustls(source) => tls_connect_failure(source),
+    }
+}
+
+pub(super) fn transport_failure(error: &TransportError) -> TransportFailure {
+    match error {
+        TransportError::Plaintext(source) => plaintext_failure(source),
+        #[cfg(feature = "tls-rustls")]
+        TransportError::Rustls(source) => tls_failure(source),
+    }
+}
+
+fn plaintext_failure(error: &PlaintextError) -> TransportFailure {
     match error {
         PlaintextError::Connect(source)
         | PlaintextError::Read(source)
@@ -31,6 +49,29 @@ pub(super) fn plaintext_failure(error: &PlaintextError) -> TransportFailure {
         PlaintextError::WriteZero | PlaintextError::Frame(_) | PlaintextError::WriteProgress(_) => {
             TransportFailure::Other
         }
+    }
+}
+
+#[cfg(feature = "tls-rustls")]
+fn tls_connect_failure(error: &TlsConnectError) -> TransportFailure {
+    match error {
+        TlsConnectError::Tcp(source) => io_failure(source),
+        TlsConnectError::Session(_) => TransportFailure::Other,
+    }
+}
+
+#[cfg(feature = "tls-rustls")]
+fn tls_failure(error: &TlsError) -> TransportFailure {
+    match error {
+        TlsError::TcpConnect(source) | TlsError::TlsRead(source) | TlsError::TlsWrite(source) => {
+            io_failure(source)
+        }
+        TlsError::PlaintextRead(_)
+        | TlsError::PlaintextWrite(_)
+        | TlsError::Protocol(_)
+        | TlsError::WriteZero
+        | TlsError::Frame(_)
+        | TlsError::WriteProgress(_) => TransportFailure::Other,
     }
 }
 

@@ -6,7 +6,7 @@ use kafka_driver_core::{BackoffPolicy, ConnectionLimits};
 use kafka_wire::OutboundFrameLimits;
 
 use crate::negotiation::NegotiationLimits;
-use crate::reactor::plaintext::{PlaintextLimits, ReadBudget, WriteBudget};
+use crate::reactor::transport::{ReadBudget, TransportLimits, WriteBudget};
 
 const CONNECTION_CAPACITY: NonZeroUsize = nonzero(256);
 const RESOURCE_CAPACITY: NonZeroUsize = nonzero(1);
@@ -24,7 +24,7 @@ pub(in crate::reactor) struct BrokerLimits {
     resource_capacity: NonZeroUsize,
     timer_capacity: NonZeroUsize,
     timer_budget: NonZeroUsize,
-    plaintext: PlaintextLimits,
+    transport: TransportLimits,
     read_budget: ReadBudget,
     write_budget: WriteBudget,
     negotiation: NegotiationLimits,
@@ -53,12 +53,12 @@ impl BrokerLimits {
         self.timer_budget
     }
 
-    pub(in crate::reactor) const fn plaintext(self) -> PlaintextLimits {
-        self.plaintext
+    pub(in crate::reactor) const fn transport(self) -> TransportLimits {
+        self.transport
     }
 
     pub(in crate::reactor) const fn outbound_frame(self) -> OutboundFrameLimits {
-        OutboundFrameLimits::new(self.plaintext.outbound_frame_bytes())
+        OutboundFrameLimits::new(self.transport.outbound_frame_bytes())
     }
 
     pub(in crate::reactor) const fn read_budget(self) -> ReadBudget {
@@ -91,7 +91,7 @@ impl Default for BrokerLimits {
             resource_capacity: RESOURCE_CAPACITY,
             timer_capacity: connection.max_in_flight(),
             timer_budget: TIMER_BUDGET,
-            plaintext: PlaintextLimits::default(),
+            transport: TransportLimits::default(),
             read_budget: ReadBudget::new(READ_BYTES, READ_FRAMES),
             write_budget: WriteBudget::new(WRITE_BYTES),
             negotiation: NegotiationLimits::default(),
