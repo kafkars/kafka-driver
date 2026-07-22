@@ -11,6 +11,7 @@ mod plan;
 mod poller;
 mod schedule;
 mod simulation;
+mod transport;
 
 #[cfg(test)]
 mod clock_test;
@@ -33,3 +34,8 @@ pub use poller::{
     PollInterest, PollRequest, PollScriptError, PollStep, Readiness, ReadinessEvent, ScriptedPoller,
 };
 pub use simulation::{SimulationError, Simulator};
+pub use transport::{
+    FaultPlan, ReadRequest, ReadResult, ReadStep, ScriptedTransport, TransportFault,
+    TransportIdentity, TransportOperationKind, TransportOutcome, TransportPlanError,
+    TransportScriptError, TransportStep, WriteRequest, WriteResult, WriteStep,
+};
