@@ -4,7 +4,14 @@
 mod broker;
 mod support;
 
-use std::{io::Write, net::TcpListener, time::Duration};
+use std::{
+    future::Future,
+    io::Write,
+    net::TcpListener,
+    pin::Pin,
+    task::{Context, Poll, Waker},
+    time::Duration,
+};
 
 use kafka_driver::{Driver, Reactor, Route, RouteReceipt, TrafficClass};
 use kafka_wire::{
@@ -32,8 +39,7 @@ fn controller_call_opens_the_advertised_broker_and_completes_there() {
     complete_negotiation(&mut controller, &mut reactor);
     let response = reply(&mut controller, &mut reactor);
 
-    let outcome = call
-        .wait()
+    let outcome = await_call(call, &mut reactor, "settle tracked controller call")
         .unwrap_or_else(|error| panic!("observe tracked controller call: {error}"));
     assert_eq!(outcome.result(), &Ok(response));
     assert!(matches!(
@@ -70,8 +76,14 @@ fn control_and_long_poll_calls_to_one_broker_use_independent_connections() {
     let control_response = reply(&mut control_peer, &mut reactor);
     let long_poll_response = reply(&mut long_poll_peer, &mut reactor);
 
-    assert_eq!(control.wait(), Ok(Ok(control_response)));
-    assert_eq!(long_poll.wait(), Ok(Ok(long_poll_response)));
+    assert_eq!(
+        await_call(control, &mut reactor, "settle control call"),
+        Ok(Ok(control_response))
+    );
+    assert_eq!(
+        await_call(long_poll, &mut reactor, "settle long-poll call"),
+        Ok(Ok(long_poll_response))
+    );
 }
 
 fn ready_cluster() -> (Driver, Reactor, TcpListener) {
@@ -105,4 +117,18 @@ fn reply(peer: &mut std::net::TcpStream, reactor: &mut Reactor) -> ApiVersionsRe
         .unwrap_or_else(|error| panic!("write controller response: {error}"));
     drive(reactor, Duration::from_secs(1), "read controller response");
     response
+}
+
+fn await_call<F>(mut call: F, reactor: &mut Reactor, phase: &str) -> F::Output
+where
+    F: Future + Unpin,
+{
+    let mut context = Context::from_waker(Waker::noop());
+    for _ in 0..16 {
+        if let Poll::Ready(outcome) = Pin::new(&mut call).poll(&mut context) {
+            return outcome;
+        }
+        drive(reactor, Duration::from_millis(100), phase);
+    }
+    panic!("{phase} did not complete: {reactor:?}");
 }

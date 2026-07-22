@@ -1,7 +1,7 @@
 //! One broker traffic lane's wait queue and lazy connection child.
 
 use kafka_driver_core::{
-    BrokerEndpoint, BrokerId, BrokerResolutionMachine, BrokerRoute, ConnectionEpoch,
+    BrokerEndpoint, BrokerId, BrokerPhase, BrokerResolutionMachine, BrokerRoute, ConnectionEpoch,
     ConnectionPhase, Moment,
 };
 
@@ -110,7 +110,9 @@ impl BrokerChild {
         let Some(connection) = &mut self.connection else {
             return Ok(false);
         };
-        if connection.state().phase() != ConnectionPhase::Ready {
+        if connection.state().phase() != ConnectionPhase::Ready
+            || connection.broker_state().phase() != BrokerPhase::Available
+        {
             return Ok(false);
         }
         match self.waiting.pop(now) {

@@ -84,6 +84,15 @@ impl BrokerChild {
         terminal.then(|| self.pending_install.take()).flatten()
     }
 
+    pub(super) fn replacement_in_flight(&self) -> bool {
+        self.pending_install.is_some()
+            || (!self.refresh_in_flight
+                && matches!(
+                    self.resolution.state(),
+                    BrokerResolutionState::Resolving { .. }
+                ))
+    }
+
     pub(super) fn abandon_pending(&mut self) {
         self.pending_install = None;
     }

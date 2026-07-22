@@ -122,6 +122,7 @@ impl BrokerChild {
     fn is_ready(&self) -> bool {
         self.connection.as_ref().is_some_and(|connection| {
             connection.state().phase() == kafka_driver_core::ConnectionPhase::Ready
+                && connection.broker_state().phase() == kafka_driver_core::BrokerPhase::Available
         })
     }
 
@@ -132,6 +133,9 @@ impl BrokerChild {
             return false;
         };
         if self.waiting.is_empty() {
+            return false;
+        }
+        if reason == BrokerCloseReason::Requested && self.replacement_in_flight() {
             return false;
         }
         self.waiting.fail_all(&terminal(reason));
