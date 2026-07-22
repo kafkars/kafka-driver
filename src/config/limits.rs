@@ -2,6 +2,8 @@
 
 use std::num::NonZeroUsize;
 
+use super::ResolverLimits;
+
 const DEFAULT_MAILBOX_CAPACITY: NonZeroUsize = nonzero(1_024);
 const DEFAULT_COMMAND_BUDGET: NonZeroUsize = nonzero(256);
 const DEFAULT_POLL_EVENT_BUDGET: NonZeroUsize = nonzero(256);
@@ -13,6 +15,7 @@ pub struct DriverLimits {
     mailbox_capacity: NonZeroUsize,
     command_budget: NonZeroUsize,
     poll_event_budget: NonZeroUsize,
+    resolver: ResolverLimits,
 }
 
 impl DriverLimits {
@@ -22,12 +25,19 @@ impl DriverLimits {
             mailbox_capacity,
             command_budget,
             poll_event_budget: DEFAULT_POLL_EVENT_BUDGET,
+            resolver: ResolverLimits::defaults(),
         }
     }
 
     /// Replaces the maximum readiness events returned by one OS poll.
     pub const fn with_poll_event_budget(mut self, poll_event_budget: NonZeroUsize) -> Self {
         self.poll_event_budget = poll_event_budget;
+        self
+    }
+
+    /// Replaces bounded resolver admission, retention, and fairness policy.
+    pub const fn with_resolver_limits(mut self, resolver: ResolverLimits) -> Self {
+        self.resolver = resolver;
         self
     }
 
@@ -44,6 +54,11 @@ impl DriverLimits {
     /// Returns the maximum readiness events returned by one OS poll.
     pub const fn poll_event_budget(self) -> NonZeroUsize {
         self.poll_event_budget
+    }
+
+    /// Returns bounded resolver admission, retention, and fairness policy.
+    pub const fn resolver(self) -> ResolverLimits {
+        self.resolver
     }
 }
 
