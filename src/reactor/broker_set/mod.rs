@@ -6,6 +6,7 @@ mod child_resolution;
 mod error;
 mod io;
 mod lane;
+mod observation;
 mod owner;
 mod proof;
 mod replacement;

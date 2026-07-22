@@ -39,4 +39,8 @@ impl BrokerLane {
     pub(in crate::reactor) const fn broker_id(self) -> BrokerId {
         self.broker_id
     }
+
+    pub(in crate::reactor) const fn traffic_class(self) -> TrafficClass {
+        self.traffic_class
+    }
 }

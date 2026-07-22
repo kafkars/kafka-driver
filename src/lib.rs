@@ -16,9 +16,10 @@ mod request;
 mod response;
 
 pub use api::{
-    Call, CompletionError, Delivery, Driver, DriverBuildError, DriverBuilder,
-    InvalidationDisposition, RequestError, RequestResponsePair, ResponseCloseReason, Route,
-    RouteReceipt, RoutedCall, RoutedOutcome, SubmitError, TrafficClass,
+    BrokerLanePhase, BrokerLaneSnapshot, Call, CompletionError, Delivery, Driver, DriverBuildError,
+    DriverBuilder, DriverSnapshot, InvalidationDisposition, MailboxSnapshot, RequestError,
+    RequestResponsePair, ResponseCloseReason, Route, RouteReceipt, RoutedCall, RoutedOutcome,
+    SeedSnapshot, SnapshotError, SubmitError, TrafficClass,
 };
 pub use config::{
     CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits, SaslConfig, SaslConfigError,
@@ -29,10 +30,11 @@ pub use config::{TlsClientConfig, TlsClientPolicy};
 pub use host::{DriverHost, DriverHostError};
 pub use kafka_driver_core::{
     AuthenticationFailure, BootstrapError, BootstrapLimits, BootstrapSet, BrokerDirectoryLimits,
-    BrokerEndpoint, BrokerRoute, CallFailure, CallId, CloseReason as ConnectionCloseReason,
-    CoordinatorKey, CoordinatorKeyError, CoordinatorKind, CoordinatorRoute, HostName,
-    HostNameError, Moment, NegotiationFailure, PartitionId, PartitionIdError, PartitionRoute,
-    TopicName, TopicNameError, TransportFailure,
+    BrokerEndpoint, BrokerRoute, BrokerState, CallFailure, CallId,
+    CloseReason as ConnectionCloseReason, ConnectionPhase, CoordinatorKey, CoordinatorKeyError,
+    CoordinatorKind, CoordinatorRoute, HostName, HostNameError, MetadataGeneration, Moment,
+    NegotiationFailure, PartitionId, PartitionIdError, PartitionRoute, TopicName, TopicNameError,
+    TransportFailure,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use reactor::{Reactor, ReactorError, TurnOutcome, WakeHandle};

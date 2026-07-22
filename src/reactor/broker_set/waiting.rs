@@ -112,6 +112,10 @@ impl WaitingCalls {
         self.calls.len()
     }
 
+    pub(super) const fn retained_bytes(&self) -> usize {
+        self.retained_bytes
+    }
+
     fn reject_capacity(&self, request: Box<dyn ErasedRequest>) {
         request.fail(RequestError::RouteCapacityReached {
             call_limit: self.call_limit.get(),

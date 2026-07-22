@@ -7,6 +7,7 @@ mod coordinator;
 mod debug;
 mod invalidation;
 mod metadata;
+mod observation;
 mod resolution;
 mod resolution_error;
 mod resolution_progress;

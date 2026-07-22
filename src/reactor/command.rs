@@ -3,8 +3,8 @@
 use std::time::Instant;
 
 use crate::{
-    InvalidationDisposition, Route, RouteReceipt, completion::CompletionSender,
-    request::ErasedRequest,
+    DriverSnapshot, InvalidationDisposition, Route, RouteReceipt, SnapshotError,
+    completion::CompletionSender, request::ErasedRequest,
 };
 
 pub(crate) enum Command {
@@ -16,6 +16,9 @@ pub(crate) enum Command {
     Invalidate {
         receipt: RouteReceipt,
         completion: CompletionSender<InvalidationDisposition>,
+    },
+    Snapshot {
+        completion: CompletionSender<Result<DriverSnapshot, SnapshotError>>,
     },
     Shutdown {
         completion: CompletionSender<()>,

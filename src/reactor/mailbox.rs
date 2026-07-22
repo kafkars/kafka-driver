@@ -4,7 +4,10 @@ use std::{
     collections::VecDeque,
     fmt,
     num::NonZeroUsize,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use super::WakeHandle;
@@ -21,6 +24,10 @@ pub(crate) fn mailbox<T>(
             receiver_alive: true,
             senders: 1,
         }),
+        work_full: AtomicU64::new(0),
+        control_full: AtomicU64::new(0),
+        closed_rejections: AtomicU64::new(0),
+        wake_failures: AtomicU64::new(0),
         wake,
     });
     (
@@ -68,14 +75,20 @@ impl<T> MailboxSender<T> {
     fn try_send_to(&self, lane: MailboxLane, command: T) -> Result<(), TrySendError<T>> {
         let mut state = self.shared.lock();
         if !state.receiver_alive {
+            increment(&self.shared.closed_rejections);
             return Err(TrySendError::Closed(command));
         }
         if state.queue(lane).len() >= self.shared.capacity {
+            increment(match lane {
+                MailboxLane::Control => &self.shared.control_full,
+                MailboxLane::Work => &self.shared.work_full,
+            });
             return Err(TrySendError::Full(command));
         }
         // The state lock prevents the reactor from observing this wake until
         // publication below either succeeds or the command is returned.
         if let Err(source) = self.shared.wake.wake() {
+            increment(&self.shared.wake_failures);
             return Err(TrySendError::Wake { command, source });
         }
         state.queue_mut(lane).push_back(command);
@@ -126,6 +139,19 @@ impl<T> MailboxReceiver<T> {
         commands.extend(state.queue.drain(..));
         commands
     }
+
+    pub(crate) fn snapshot(&self) -> crate::MailboxSnapshot {
+        let state = self.shared.lock();
+        crate::MailboxSnapshot::new(
+            self.shared.capacity,
+            state.queue.len(),
+            state.controls.len(),
+            self.shared.work_full.load(Ordering::Relaxed),
+            self.shared.control_full.load(Ordering::Relaxed),
+            self.shared.closed_rejections.load(Ordering::Relaxed),
+            self.shared.wake_failures.load(Ordering::Relaxed),
+        )
+    }
 }
 
 impl<T> Drop for MailboxReceiver<T> {
@@ -150,6 +176,10 @@ pub(crate) enum DrainStatus {
 struct Shared<T> {
     capacity: usize,
     state: Mutex<State<T>>,
+    work_full: AtomicU64,
+    control_full: AtomicU64,
+    closed_rejections: AtomicU64,
+    wake_failures: AtomicU64,
     wake: WakeHandle,
 }
 
@@ -192,4 +222,10 @@ impl<T> State<T> {
 enum MailboxLane {
     Control,
     Work,
+}
+
+fn increment(counter: &AtomicU64) {
+    let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+        Some(value.saturating_add(1))
+    });
 }

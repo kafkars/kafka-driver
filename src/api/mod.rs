@@ -6,6 +6,7 @@ mod call;
 mod driver;
 mod identity;
 mod invalidation;
+mod observation;
 mod protocol;
 mod route;
 mod tracked;
@@ -24,6 +25,10 @@ pub use call::Call;
 pub use driver::{Driver, SubmitError};
 pub use invalidation::InvalidationDisposition;
 pub use kafka_driver_core::Delivery;
+pub use observation::{
+    BrokerLanePhase, BrokerLaneSnapshot, DriverSnapshot, MailboxSnapshot, SeedSnapshot,
+    SnapshotError,
+};
 pub use protocol::RequestResponsePair;
 pub use route::Route;
 pub use tracked::{RouteReceipt, RoutedCall, RoutedOutcome};
