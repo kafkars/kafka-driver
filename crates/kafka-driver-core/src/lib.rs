@@ -58,7 +58,10 @@ pub use identity::{
     TopicNameError, TransportId,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
-pub use metadata::{MetadataSnapshot, MetadataSnapshotError};
+pub use metadata::{
+    MetadataDisposition, MetadataEffect, MetadataInput, MetadataMachine, MetadataSnapshot,
+    MetadataSnapshotError, MetadataState, MetadataTransition,
+};
 pub use resolution::{
     DnsFailure, DnsOutcome, DnsRequest, ResolutionLimits, ResolvedAddressSet,
     ResolvedAddressSetError,
