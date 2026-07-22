@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
 
 #[cfg(feature = "tls-rustls")]
-use super::TlsClientConfig;
+use super::{TlsClientConfig, TlsClientPolicy, TlsConnectionConfig};
 
 use super::SaslConfig;
 
@@ -13,14 +13,16 @@ use super::SaslConfig;
 #[derive(Clone, Debug)]
 pub(crate) struct BrokerConfig {
     addresses: BrokerAddresses,
-    template: BrokerTemplate,
+    security: BrokerSecurity,
+    sasl: Option<SaslConfig>,
 }
 
 impl BrokerConfig {
     pub(crate) const fn plaintext(address: SocketAddr) -> Self {
         Self {
             addresses: BrokerAddresses::Direct(address),
-            template: BrokerTemplate::plaintext(),
+            security: BrokerSecurity::Plaintext,
+            sasl: None,
         }
     }
 
@@ -28,18 +30,18 @@ impl BrokerConfig {
     pub(crate) const fn rustls(address: SocketAddr, tls: TlsClientConfig) -> Self {
         Self {
             addresses: BrokerAddresses::Direct(address),
-            template: BrokerTemplate::rustls(tls),
+            security: BrokerSecurity::Rustls(TlsConnectionConfig::configured(tls)),
+            sasl: None,
         }
     }
 
     pub(crate) fn with_sasl(mut self, sasl: Option<SaslConfig>) -> Self {
-        self.template = self.template.with_sasl(sasl);
+        self.sasl = sasl;
         self
     }
 
     pub(crate) fn into_parts(self) -> (BrokerAddresses, BrokerSecurity, Option<SaslConfig>) {
-        let (security, sasl) = self.template.into_parts();
-        (self.addresses, security, sasl)
+        (self.addresses, self.security, self.sasl)
     }
 
     pub(crate) fn into_addresses(self) -> BrokerAddresses {
@@ -47,29 +49,31 @@ impl BrokerConfig {
     }
 
     pub(crate) fn requires_proof_worker(&self) -> bool {
-        self.template.requires_proof_worker()
+        self.sasl
+            .as_ref()
+            .is_some_and(SaslConfig::requires_proof_worker)
     }
 }
 
 /// Reusable transport and authentication policy applied after address selection.
 #[derive(Clone, Debug)]
 pub(crate) struct BrokerTemplate {
-    security: BrokerSecurity,
+    security: BrokerSecurityTemplate,
     sasl: Option<SaslConfig>,
 }
 
 impl BrokerTemplate {
     pub(crate) const fn plaintext() -> Self {
         Self {
-            security: BrokerSecurity::Plaintext,
+            security: BrokerSecurityTemplate::Plaintext,
             sasl: None,
         }
     }
 
     #[cfg(feature = "tls-rustls")]
-    pub(crate) const fn rustls(tls: TlsClientConfig) -> Self {
+    pub(crate) const fn rustls(tls: TlsClientPolicy) -> Self {
         Self {
-            security: BrokerSecurity::Rustls(tls),
+            security: BrokerSecurityTemplate::EndpointRustls(tls),
             sasl: None,
         }
     }
@@ -84,12 +88,20 @@ impl BrokerTemplate {
         endpoint: BrokerEndpoint,
         addresses: ResolvedAddressSet,
     ) -> BrokerConfig {
+        let security = match self.security {
+            BrokerSecurityTemplate::Plaintext => BrokerSecurity::Plaintext,
+            #[cfg(feature = "tls-rustls")]
+            BrokerSecurityTemplate::EndpointRustls(policy) => {
+                BrokerSecurity::Rustls(TlsConnectionConfig::endpoint(policy, endpoint.clone()))
+            }
+        };
         BrokerConfig {
             addresses: BrokerAddresses::Resolved {
                 endpoint,
                 addresses,
             },
-            template: self,
+            security,
+            sasl: self.sasl,
         }
     }
 
@@ -98,10 +110,13 @@ impl BrokerTemplate {
             .as_ref()
             .is_some_and(SaslConfig::requires_proof_worker)
     }
+}
 
-    fn into_parts(self) -> (BrokerSecurity, Option<SaslConfig>) {
-        (self.security, self.sasl)
-    }
+#[derive(Clone, Debug)]
+enum BrokerSecurityTemplate {
+    Plaintext,
+    #[cfg(feature = "tls-rustls")]
+    EndpointRustls(TlsClientPolicy),
 }
 
 /// Nonempty address ownership before reactor-side socket selection.
@@ -123,5 +138,5 @@ pub(crate) enum BrokerAddresses {
 pub(crate) enum BrokerSecurity {
     Plaintext,
     #[cfg(feature = "tls-rustls")]
-    Rustls(TlsClientConfig),
+    Rustls(TlsConnectionConfig),
 }

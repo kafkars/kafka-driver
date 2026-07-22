@@ -52,6 +52,20 @@ impl DriverBuilder {
         self
     }
 
+    /// Configures bounded TLS bootstrap with identity derived per logical endpoint.
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn rustls_bootstrap(
+        mut self,
+        endpoints: BootstrapSet,
+        tls: crate::TlsClientPolicy,
+    ) -> Self {
+        self.target = Some(DriverTarget::Bootstrap(BootstrapConfig::rustls(
+            endpoints, tls,
+        )));
+        self
+    }
+
     /// Requires the configured broker endpoint to complete SASL authentication.
     #[must_use]
     pub fn sasl(mut self, sasl: crate::SaslConfig) -> Self {

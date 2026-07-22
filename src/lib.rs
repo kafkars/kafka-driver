@@ -19,12 +19,12 @@ pub use api::{
     Call, CompletionError, Delivery, Driver, DriverBuildError, DriverBuilder, RequestError,
     RequestResponsePair, ResponseCloseReason, Route, SubmitError, TrafficClass,
 };
-#[cfg(feature = "tls-rustls")]
-pub use config::TlsClientConfig;
 pub use config::{
     CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits, SaslConfig, SaslConfigError,
     ScramProofLimits,
 };
+#[cfg(feature = "tls-rustls")]
+pub use config::{TlsClientConfig, TlsClientPolicy};
 pub use host::{DriverHost, DriverHostError};
 pub use kafka_driver_core::{
     AuthenticationFailure, BootstrapError, BootstrapLimits, BootstrapSet, BrokerDirectoryLimits,

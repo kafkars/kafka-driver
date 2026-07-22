@@ -8,7 +8,7 @@ use kafka_wire_core::Bytes;
 use mio::{Interest, Registry, Token, event::Source};
 
 use crate::{
-    config::TlsClientConfig,
+    config::TlsConnectionConfig,
     reactor::{
         tcp::{ConnectProgress, TcpSocket},
         transport::TransportLimits,
@@ -31,7 +31,7 @@ impl TlsConnection {
     pub(in crate::reactor) fn connect(
         address: SocketAddr,
         limits: TransportLimits,
-        config: &TlsClientConfig,
+        config: &TlsConnectionConfig,
     ) -> Result<Self, TlsConnectError> {
         let mut tls = config
             .start_connection()

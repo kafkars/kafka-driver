@@ -4,10 +4,12 @@ use std::{fmt, io};
 
 use kafka_driver_transport::{FrameDecodeError, WriteProgressError};
 
+use crate::config::TlsSessionError;
+
 #[derive(Debug)]
 pub(in crate::reactor) enum TlsConnectError {
     Tcp(io::Error),
-    Session(rustls::Error),
+    Session(TlsSessionError),
 }
 
 impl fmt::Display for TlsConnectError {

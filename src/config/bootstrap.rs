@@ -2,6 +2,8 @@
 
 use kafka_driver_core::BootstrapSet;
 
+#[cfg(feature = "tls-rustls")]
+use super::TlsClientPolicy;
 use super::{BrokerTemplate, SaslConfig};
 
 /// Configured endpoints and security policy retained through bootstrap resolution.
@@ -16,6 +18,14 @@ impl BootstrapConfig {
         Self {
             endpoints,
             broker: BrokerTemplate::plaintext(),
+        }
+    }
+
+    #[cfg(feature = "tls-rustls")]
+    pub(crate) fn rustls(endpoints: BootstrapSet, tls: TlsClientPolicy) -> Self {
+        Self {
+            endpoints,
+            broker: BrokerTemplate::rustls(tls),
         }
     }
 

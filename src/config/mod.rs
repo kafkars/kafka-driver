@@ -22,6 +22,8 @@ mod resolver_test;
 mod sasl_test;
 #[cfg(test)]
 mod scram_proof_test;
+#[cfg(all(test, feature = "tls-rustls"))]
+mod tls_test;
 
 pub use coordinator::CoordinatorLimits;
 pub use limits::DriverLimits;
@@ -30,8 +32,10 @@ pub use resolver::ResolverLimits;
 pub use sasl::{SaslConfig, SaslConfigError};
 pub use scram_proof::ScramProofLimits;
 #[cfg(feature = "tls-rustls")]
-pub use tls::TlsClientConfig;
+pub use tls::{TlsClientConfig, TlsClientPolicy};
 
 pub(crate) use bootstrap::BootstrapConfig;
 pub(crate) use broker::{BrokerAddresses, BrokerConfig, BrokerSecurity, BrokerTemplate};
 pub(crate) use target::DriverTarget;
+#[cfg(feature = "tls-rustls")]
+pub(crate) use tls::{TlsConnectionConfig, TlsSessionError};
