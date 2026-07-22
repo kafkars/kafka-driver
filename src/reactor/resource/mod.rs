@@ -2,8 +2,11 @@
 
 mod error;
 mod identity;
+mod plaintext;
 mod registry;
 
+#[cfg(test)]
+mod plaintext_test;
 #[cfg(test)]
 mod registry_test;
 
