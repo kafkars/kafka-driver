@@ -4,9 +4,11 @@
 mod broker;
 mod support;
 
-use std::{io::Write, time::Duration};
+use std::{io::Write, net::TcpStream, time::Duration};
 
-use kafka_driver::{CoordinatorKey, CoordinatorKind, Driver, Route, RouteReceipt};
+use kafka_driver::{
+    CoordinatorKey, CoordinatorKind, Driver, InvalidationDisposition, Route, RouteReceipt,
+};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
 };
@@ -97,5 +99,118 @@ fn exact_group_key_discovers_then_routes_to_the_advertised_coordinator() {
     assert!(matches!(
         outcome.receipt(),
         Some(RouteReceipt::Coordinator { route }) if route.key() == &key
+    ));
+}
+
+#[test]
+fn exact_coordinator_receipt_refreshes_once_and_then_becomes_stale() {
+    let seed_listener = listener();
+    let coordinator_listener = listener();
+    let seed_port = local_port(&seed_listener);
+    let coordinator_port = local_port(&coordinator_listener);
+    let (driver, mut reactor) = Driver::builder()
+        .bootstrap(bootstrap(seed_port))
+        .build_reactor()
+        .unwrap_or_else(|error| panic!("build cluster reactor: {error}"));
+
+    drive(&mut reactor, Duration::from_secs(1), "resolve seed");
+    let mut seed = accept(&seed_listener, "seed");
+    complete_negotiation(&mut seed, &mut reactor);
+    drive(
+        &mut reactor,
+        Duration::from_secs(1),
+        "write cluster Metadata",
+    );
+    let cluster = read_request(&mut seed);
+    seed.write_all(&metadata_response(
+        cluster.correlation_id,
+        seed_port,
+        coordinator_port,
+    ))
+    .unwrap_or_else(|error| panic!("write cluster Metadata response: {error}"));
+    drive(
+        &mut reactor,
+        Duration::from_secs(1),
+        "install cluster Metadata",
+    );
+
+    let key = CoordinatorKey::new(CoordinatorKind::Group, "orders-readers")
+        .unwrap_or_else(|error| panic!("valid coordinator key rejected: {error}"));
+    let call = driver
+        .request_tracked(
+            Route::Coordinator { key: key.clone() },
+            ApiVersionsRequest::default(),
+            Duration::from_secs(10),
+        )
+        .unwrap_or_else(|error| panic!("admit coordinator request: {error}"));
+    answer_discovery(&mut seed, &mut reactor, "orders-readers", coordinator_port);
+    let mut coordinator = accept_after_driving(&coordinator_listener, &mut reactor);
+    complete_negotiation(&mut coordinator, &mut reactor);
+    wait_for_frame(&coordinator, &mut reactor);
+    let request = read_request(&mut coordinator);
+    let response = ApiVersionsResponse::default();
+    coordinator
+        .write_all(&api_versions_response(request.correlation_id, &response))
+        .unwrap_or_else(|error| panic!("write coordinator response: {error}"));
+    drive(
+        &mut reactor,
+        Duration::from_secs(1),
+        "read coordinator response",
+    );
+    let outcome = call
+        .wait()
+        .unwrap_or_else(|error| panic!("observe tracked coordinator call: {error}"));
+    let receipt = outcome
+        .receipt()
+        .cloned()
+        .unwrap_or_else(|| panic!("coordinator call must retain its exact route"));
+
+    let invalidation = driver
+        .invalidate(receipt.clone())
+        .unwrap_or_else(|error| panic!("admit coordinator invalidation: {error}"));
+    drive(
+        &mut reactor,
+        Duration::ZERO,
+        "interpret coordinator invalidation",
+    );
+    assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
+    answer_discovery(&mut seed, &mut reactor, "orders-readers", coordinator_port);
+
+    let stale = driver
+        .invalidate(receipt)
+        .unwrap_or_else(|error| panic!("admit stale coordinator invalidation: {error}"));
+    drive(
+        &mut reactor,
+        Duration::ZERO,
+        "interpret stale coordinator invalidation",
+    );
+    assert_eq!(stale.wait(), Ok(InvalidationDisposition::IgnoredStale));
+    assert_no_frame(&seed);
+}
+
+fn answer_discovery(
+    seed: &mut TcpStream,
+    reactor: &mut kafka_driver::Reactor,
+    expected_key: &str,
+    coordinator_port: u16,
+) {
+    wait_for_frame(seed, reactor);
+    let discovery = read_find_coordinator_request(seed);
+    assert_eq!(discovery.request.key.as_str(), expected_key);
+    seed.write_all(&find_coordinator_response(
+        discovery.correlation_id,
+        coordinator_port,
+    ))
+    .unwrap_or_else(|error| panic!("write FindCoordinator response: {error}"));
+    drive(reactor, Duration::from_secs(1), "install coordinator route");
+}
+
+fn assert_no_frame(peer: &TcpStream) {
+    peer.set_nonblocking(true)
+        .unwrap_or_else(|error| panic!("make seed peer nonblocking: {error}"));
+    let mut byte = [0; 1];
+    assert!(matches!(
+        peer.peek(&mut byte),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
     ));
 }
