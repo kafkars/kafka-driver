@@ -11,6 +11,11 @@ pub struct BrokerDirectoryLimits {
 }
 
 impl BrokerDirectoryLimits {
+    /// Returns the reference default broker-membership bound.
+    pub const fn defaults() -> Self {
+        Self::new(DEFAULT_MAX_BROKERS)
+    }
+
     /// Creates directory limits from an explicit broker count.
     pub const fn new(max_brokers: NonZeroUsize) -> Self {
         Self { max_brokers }
@@ -24,7 +29,7 @@ impl BrokerDirectoryLimits {
 
 impl Default for BrokerDirectoryLimits {
     fn default() -> Self {
-        Self::new(DEFAULT_MAX_BROKERS)
+        Self::defaults()
     }
 }
 
