@@ -51,6 +51,10 @@ impl ResourceToken {
         Some((encoded % capacity, encoded / capacity))
     }
 
+    pub(in crate::reactor) const fn from_poll(raw: usize) -> Option<Self> {
+        if raw == 0 { None } else { Some(Self(raw)) }
+    }
+
     #[cfg(test)]
     pub(super) const fn from_raw(raw: usize) -> Self {
         Self(raw)

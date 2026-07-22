@@ -30,7 +30,7 @@ kafka_wire_path = "../kafka-protocol/crates/kafka-wire"
 kafka_wire_core_path = "../kafka-protocol/crates/kafka-wire-core"
 kafka_wire_repository = "kafkars/kafka-wire"
 kafka_wire_revision = "857d58a84094e79ae15dfffc2e4773313bcd4c31"
-driver_allowed = ["kafka-driver-core", "kafka-driver-transport", "kafka-wire", "kafka-wire-core"]
+driver_allowed = ["kafka-driver-core", "kafka-driver-transport", "kafka-wire", "kafka-wire-core", "mio"]
 core_allowed = ["kafka-wire"]
 transport_allowed = ["bytes", "kafka-driver-core", "kafka-wire-core"]
 
