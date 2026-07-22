@@ -3,6 +3,7 @@
 use std::num::NonZeroUsize;
 
 use kafka_driver_core::ConnectionLimits;
+use kafka_wire::OutboundFrameLimits;
 
 use crate::reactor::plaintext::{PlaintextLimits, ReadBudget, WriteBudget};
 
@@ -49,6 +50,10 @@ impl BrokerLimits {
 
     pub(in crate::reactor) const fn plaintext(self) -> PlaintextLimits {
         self.plaintext
+    }
+
+    pub(in crate::reactor) const fn outbound_frame(self) -> OutboundFrameLimits {
+        OutboundFrameLimits::new(self.plaintext.outbound_frame_bytes())
     }
 
     pub(in crate::reactor) const fn read_budget(self) -> ReadBudget {

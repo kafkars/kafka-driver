@@ -7,6 +7,7 @@ use kafka_driver_core::{
     ConnectionState,
 };
 use kafka_driver_transport::FrameBody;
+use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::DecodeLimits;
 
 use crate::reactor::{
@@ -37,6 +38,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) due_timers: Vec<DeadlineTimer>,
     pub(super) read_budget: ReadBudget,
     pub(super) write_budget: WriteBudget,
+    pub(super) outbound_frame: OutboundFrameLimits,
     pub(super) frames: Vec<FrameBody>,
     pub(super) completed_writes: Vec<CompletedWrite>,
     pub(super) retry_read: bool,
@@ -57,6 +59,7 @@ impl SingleBroker {
             due_timers: Vec::new(),
             read_budget: limits.read_budget(),
             write_budget: limits.write_budget(),
+            outbound_frame: limits.outbound_frame(),
             frames: Vec::new(),
             completed_writes: Vec::new(),
             retry_read: false,

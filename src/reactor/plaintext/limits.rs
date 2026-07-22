@@ -35,6 +35,12 @@ impl PlaintextLimits {
         self.write
     }
 
+    pub(in crate::reactor) const fn outbound_frame_bytes(self) -> usize {
+        self.write
+            .max_buffered_bytes()
+            .saturating_sub(size_of::<i32>())
+    }
+
     pub(super) const fn read_chunk_bytes(self) -> NonZeroUsize {
         self.read_chunk_bytes
     }

@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use kafka_driver_core::{CallId, CorrelationId};
+use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::Bytes;
 
 use crate::{RequestError, response::ResponseRegistry};
@@ -19,6 +20,7 @@ pub(crate) trait ErasedRequest: Send {
     fn prepare(
         self: Box<Self>,
         correlation_id: CorrelationId,
+        outbound_limits: OutboundFrameLimits,
         responses: &mut ResponseRegistry,
     ) -> Result<Bytes, RequestError>;
 

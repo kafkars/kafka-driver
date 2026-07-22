@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use bytes::BytesMut;
 use kafka_driver_core::{CallId, CorrelationId};
-use kafka_wire::{RequestResponsePair, encode_request};
+use kafka_wire::{OutboundFrameLimits, RequestResponsePair, encode_request};
 use kafka_wire_core::{ApiVersion, Bytes};
 
 use crate::{
@@ -65,6 +65,7 @@ where
     fn prepare(
         self: Box<Self>,
         correlation_id: CorrelationId,
+        outbound_limits: OutboundFrameLimits,
         responses: &mut ResponseRegistry,
     ) -> Result<Bytes, RequestError> {
         let Self {
@@ -74,16 +75,29 @@ where
             completion,
             ..
         } = *self;
-        if let Err(source) = responses.validate_admission::<R>(call_id, correlation_id, version) {
-            return fail(completion, admission_failure(source));
-        }
+        let header_version =
+            match responses.validate_admission::<R>(call_id, correlation_id, version) {
+                Ok(header_version) => header_version,
+                Err(source) => return fail(completion, admission_failure(source)),
+            };
         let mut frame = BytesMut::new();
-        if let Err(source) =
-            encode_request(&mut frame, correlation_id.get(), None, &request, version)
-        {
+        if let Err(source) = encode_request(
+            &mut frame,
+            correlation_id.get(),
+            None,
+            &request,
+            version,
+            outbound_limits,
+        ) {
             return fail(completion, RequestError::Encode(source));
         }
-        responses.insert_validated::<R>(call_id, correlation_id, version, completion);
+        responses.insert_validated::<R>(
+            call_id,
+            correlation_id,
+            version,
+            header_version,
+            completion,
+        );
         Ok(frame.freeze())
     }
 

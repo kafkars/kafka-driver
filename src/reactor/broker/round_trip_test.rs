@@ -98,8 +98,10 @@ fn encoded_response(response: &ApiVersionsResponse) -> Vec<u8> {
     let mut body = BytesMut::new();
     let mut header = ResponseHeader::default();
     header.correlation_id = 0;
-    let header_version =
-        ApiVersion::new(response_header_version_for::<ApiVersionsRequest>(version()));
+    let Ok(header_version) = response_header_version_for::<ApiVersionsRequest>(version()) else {
+        panic!("supported test response must have header policy");
+    };
+    let header_version = ApiVersion::new(header_version);
     assert!(header.encode_into(&mut body, header_version).is_ok());
     assert!(response.encode_into(&mut body, version()).is_ok());
     let Ok(length) = i32::try_from(body.len()) else {

@@ -80,7 +80,9 @@ impl SingleBroker {
                     let Some(owned) = request.take() else {
                         return Err(BrokerError::MissingEffect);
                     };
-                    let Ok(frame) = owned.prepare(correlation_id, &mut self.responses) else {
+                    let Ok(frame) =
+                        owned.prepare(correlation_id, self.outbound_frame, &mut self.responses)
+                    else {
                         self.abort_write(poller, effect_id, Some(call_id))?;
                         return Ok(());
                     };

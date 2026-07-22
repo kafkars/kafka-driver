@@ -16,7 +16,7 @@ use kafka_driver_transport::{
     FrameDecoder, FrameLimits, WriteProgress, WriteQueue, WriteQueueLimits,
 };
 use kafka_wire::{
-    ApiVersionsRequest, ApiVersionsResponse, ResponseHeader, encode_request,
+    ApiVersionsRequest, ApiVersionsResponse, OutboundFrameLimits, ResponseHeader, encode_request,
     response_header_version_for,
 };
 use kafka_wire_core::{ApiVersion, DecodeLimits, KafkaEncode};
@@ -231,6 +231,7 @@ fn encode_generated_request(correlation: CorrelationId) -> Bytes {
             None,
             &ApiVersionsRequest::default(),
             version(),
+            OutboundFrameLimits::new(4_092),
         )
         .is_ok(),
         "generated request must encode at its supported version"
@@ -245,8 +246,10 @@ fn encode_generated_response(
     let mut body = BytesMut::new();
     let mut header = ResponseHeader::default();
     header.correlation_id = correlation.get();
-    let header_version =
-        ApiVersion::new(response_header_version_for::<ApiVersionsRequest>(version()));
+    let Ok(header_version) = response_header_version_for::<ApiVersionsRequest>(version()) else {
+        panic!("supported test response must have header policy");
+    };
+    let header_version = ApiVersion::new(header_version);
     assert!(header.encode_into(&mut body, header_version).is_ok());
     assert!(response.encode_into(&mut body, version()).is_ok());
     let Ok(length) = i32::try_from(body.len()) else {
