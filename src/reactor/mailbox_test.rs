@@ -1,0 +1,69 @@
+//! Scenarios for bounded admission, FIFO draining, closure, and wake coalescing.
+
+use std::{num::NonZeroUsize, time::Duration};
+
+use super::mailbox::{DrainStatus, TrySendError, mailbox};
+
+#[test]
+fn capacity_rejection_returns_the_unadmitted_command() {
+    let (sender, _receiver) = mailbox(NonZeroUsize::MIN);
+    assert!(sender.try_send("admitted").is_ok());
+
+    let result = sender.try_send("rejected");
+
+    assert!(matches!(result, Err(TrySendError::Full("rejected"))));
+}
+
+#[test]
+fn bounded_drains_preserve_fifo_and_report_remaining_work() {
+    let (sender, receiver) = mailbox(nonzero(3));
+    assert!(sender.try_send(1).is_ok());
+    assert!(sender.try_send(2).is_ok());
+    assert!(sender.try_send(3).is_ok());
+    let mut batch = Vec::new();
+
+    let first = receiver.drain_into(&mut batch, NonZeroUsize::MIN);
+
+    assert_eq!(first, DrainStatus::MorePending);
+    assert_eq!(batch, vec![1]);
+    assert!(receiver.wake_handle().is_requested());
+    batch.clear();
+    let second = receiver.drain_into(&mut batch, nonzero(2));
+    assert_eq!(second, DrainStatus::Idle);
+    assert_eq!(batch, vec![2, 3]);
+    assert!(!receiver.wake_handle().is_requested());
+}
+
+#[test]
+fn receiver_closure_rejects_future_admission() {
+    let (sender, receiver) = mailbox(NonZeroUsize::MIN);
+    drop(receiver);
+
+    let result = sender.try_send(9);
+
+    assert!(matches!(result, Err(TrySendError::Closed(9))));
+}
+
+#[test]
+fn repeated_wakes_coalesce_until_the_mailbox_is_drained() {
+    let (sender, receiver) = mailbox(nonzero(2));
+    assert!(sender.try_send(1).is_ok());
+    assert!(sender.try_send(2).is_ok());
+    let wake = receiver.wake_handle();
+    assert!(wake.is_requested());
+    let mut batch = Vec::new();
+
+    let status = receiver.drain_into(&mut batch, nonzero(2));
+
+    assert_eq!(status, DrainStatus::Idle);
+    assert!(!wake.is_requested());
+    wake.wake();
+    assert!(receiver.wait(Duration::ZERO));
+}
+
+fn nonzero(value: usize) -> NonZeroUsize {
+    let Some(value) = NonZeroUsize::new(value) else {
+        panic!("test values are nonzero");
+    };
+    value
+}
