@@ -9,7 +9,7 @@ pub enum BootstrapDisposition {
     Applied,
     /// Returned identities did not match current external work.
     IgnoredStale,
-    /// A start command arrived while resolution was already in flight.
+    /// A duplicate start command named the already-owned generation.
     IgnoredBusy,
 }
 

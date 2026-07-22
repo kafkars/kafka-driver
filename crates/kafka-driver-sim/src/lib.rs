@@ -16,6 +16,8 @@ mod transport;
 #[cfg(test)]
 mod authentication_scenario_test;
 #[cfg(test)]
+mod bootstrap_scenario_test;
+#[cfg(test)]
 mod broker_scenario_test;
 #[cfg(test)]
 mod clock_test;

@@ -85,6 +85,29 @@ fn stale_resolution_does_not_rotate_or_consume_current_ownership() {
 }
 
 #[test]
+fn newer_generation_supersedes_resolution_and_fences_its_delayed_outcome() {
+    let mut machine = started_machine();
+    let next_epoch = ConnectionEpoch::from_raw(8);
+
+    let replacement = machine.apply(BootstrapInput::Start {
+        epoch: next_epoch,
+        effect_id: RETRY_EFFECT,
+    });
+    let delayed = machine.apply(completed(EPOCH, FIRST_EFFECT, Err(DnsFailure::Temporary)));
+
+    assert_eq!(resolve_host(replacement.effects()), Some("two.test"));
+    assert_eq!(delayed.disposition(), BootstrapDisposition::IgnoredStale);
+    assert!(matches!(
+        machine.state(),
+        BootstrapState::Resolving {
+            epoch,
+            effect_id: RETRY_EFFECT,
+            ..
+        } if *epoch == next_epoch
+    ));
+}
+
+#[test]
 fn matching_success_transfers_only_a_bounded_nonempty_address_set() {
     let mut machine = started_machine();
     let address = ResolvedAddress::new(IpAddress::V4([127, 0, 0, 1]), port());

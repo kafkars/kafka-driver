@@ -48,8 +48,14 @@ impl BootstrapMachine {
         epoch: crate::ConnectionEpoch,
         effect_id: crate::EffectId,
     ) -> BootstrapTransition {
-        if matches!(self.state, BootstrapState::Resolving { .. }) {
-            return BootstrapTransition::new(Vec::new(), BootstrapDisposition::IgnoredBusy);
+        match current_epoch(&self.state) {
+            Some(current) if epoch < current => {
+                return BootstrapTransition::new(Vec::new(), BootstrapDisposition::IgnoredStale);
+            }
+            Some(current) if epoch == current => {
+                return BootstrapTransition::new(Vec::new(), BootstrapDisposition::IgnoredBusy);
+            }
+            Some(_) | None => {}
         }
         let endpoint = self.cursor.select_next(&self.endpoints).clone();
         self.state = BootstrapState::Resolving {
@@ -134,5 +140,14 @@ impl BootstrapMachine {
             }],
             BootstrapDisposition::Applied,
         )
+    }
+}
+
+const fn current_epoch(state: &BootstrapState) -> Option<crate::ConnectionEpoch> {
+    match state {
+        BootstrapState::Dormant => None,
+        BootstrapState::Resolving { epoch, .. }
+        | BootstrapState::Resolved { epoch }
+        | BootstrapState::Exhausted { epoch, .. } => Some(*epoch),
     }
 }
