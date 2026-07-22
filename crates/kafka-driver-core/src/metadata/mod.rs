@@ -14,6 +14,8 @@ mod state;
 mod transition;
 
 #[cfg(test)]
+mod epoch_test;
+#[cfg(test)]
 mod machine_test;
 #[cfg(test)]
 mod query_test;

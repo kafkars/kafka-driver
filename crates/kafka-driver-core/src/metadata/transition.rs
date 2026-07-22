@@ -13,6 +13,8 @@ pub enum MetadataDisposition {
     Queued,
     /// The bounded distinct-query queue could not admit more work.
     QueryCapacityReached,
+    /// A topic response regressed a known epoch or changed broker at the same epoch.
+    RejectedLeaderEpochRegression,
     /// Returned work or invalidation belonged to an older identity or generation.
     IgnoredStale,
 }

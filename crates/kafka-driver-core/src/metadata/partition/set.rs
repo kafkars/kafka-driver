@@ -79,6 +79,24 @@ impl PartitionLeaderSet {
             .ok()
             .map(|index| &self.entries[index])
     }
+
+    pub(in crate::metadata) fn regresses_from(&self, previous: &Self) -> bool {
+        self.entries.iter().any(|current| {
+            previous
+                .find(current.topic(), current.partition())
+                .is_some_and(|previous| assignment_regresses(previous, current))
+        })
+    }
+}
+
+fn assignment_regresses(previous: &PartitionLeader, current: &PartitionLeader) -> bool {
+    match (previous.leader_epoch(), current.leader_epoch()) {
+        (Some(previous_epoch), Some(current_epoch)) => {
+            current_epoch < previous_epoch
+                || (current_epoch == previous_epoch && current.broker_id() != previous.broker_id())
+        }
+        _ => false,
+    }
 }
 
 fn compare_entries(left: &PartitionLeader, right: &PartitionLeader) -> std::cmp::Ordering {

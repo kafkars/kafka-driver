@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use crate::{MetadataGeneration, MetadataQuery, MetadataSnapshot, OperationId};
 
 use super::{
-    MetadataMachine, MetadataState, MetadataTransition,
+    MetadataDisposition, MetadataMachine, MetadataState, MetadataTransition,
     decision::{applied, exhausted, fetch, stale},
 };
 
@@ -16,16 +16,34 @@ impl MetadataMachine {
         snapshot: MetadataSnapshot,
         followup_operation_id: OperationId,
     ) -> MetadataTransition {
-        let (expected, target_generation) = match &self.state {
+        let (expected, target_generation, regresses) = match &self.state {
             MetadataState::Refreshing {
                 operation_id,
                 target_generation,
+                current,
+                query,
                 ..
-            } => (*operation_id, *target_generation),
+            } => (
+                *operation_id,
+                *target_generation,
+                matches!(query, MetadataQuery::Topic(_))
+                    && current.as_ref().is_some_and(|previous| {
+                        snapshot
+                            .partition_leaders()
+                            .regresses_from(previous.partition_leaders())
+                    }),
+            ),
             MetadataState::Empty { .. } | MetadataState::Ready { .. } => return stale(),
         };
         if operation_id != expected || snapshot.generation() != target_generation {
             return stale();
+        }
+        if regresses {
+            let failed = self.fail(operation_id, followup_operation_id);
+            return MetadataTransition::new(
+                failed.into_effects(),
+                MetadataDisposition::RejectedLeaderEpochRegression,
+            );
         }
         let next_query = match &mut self.state {
             MetadataState::Refreshing { queued, .. } => queued.pop_front(),
