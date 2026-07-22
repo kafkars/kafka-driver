@@ -16,6 +16,7 @@ pub(crate) fn mailbox<T>(
     let shared = Arc::new(Shared {
         capacity: capacity.get(),
         state: Mutex::new(State {
+            controls: VecDeque::with_capacity(capacity.get()),
             queue: VecDeque::with_capacity(capacity.get()),
             receiver_alive: true,
             senders: 1,
@@ -57,11 +58,19 @@ impl<T> Drop for MailboxSender<T> {
 
 impl<T> MailboxSender<T> {
     pub(crate) fn try_send(&self, command: T) -> Result<(), TrySendError<T>> {
+        self.try_send_to(MailboxLane::Work, command)
+    }
+
+    pub(crate) fn try_send_control(&self, command: T) -> Result<(), TrySendError<T>> {
+        self.try_send_to(MailboxLane::Control, command)
+    }
+
+    fn try_send_to(&self, lane: MailboxLane, command: T) -> Result<(), TrySendError<T>> {
         let mut state = self.shared.lock();
         if !state.receiver_alive {
             return Err(TrySendError::Closed(command));
         }
-        if state.queue.len() >= self.shared.capacity {
+        if state.queue(lane).len() >= self.shared.capacity {
             return Err(TrySendError::Full(command));
         }
         // The state lock prevents the reactor from observing this wake until
@@ -69,7 +78,7 @@ impl<T> MailboxSender<T> {
         if let Err(source) = self.shared.wake.wake() {
             return Err(TrySendError::Wake { command, source });
         }
-        state.queue.push_back(command);
+        state.queue_mut(lane).push_back(command);
         Ok(())
     }
 }
@@ -90,12 +99,14 @@ pub(crate) struct MailboxReceiver<T> {
 impl<T> MailboxReceiver<T> {
     pub(crate) fn drain_into(&self, destination: &mut Vec<T>, limit: NonZeroUsize) -> DrainStatus {
         let mut state = self.shared.lock();
-        let count = limit.get().min(state.queue.len());
-        destination.extend(state.queue.drain(..count));
-        if state.queue.is_empty() && state.senders == 0 {
+        let controls = limit.get().min(state.controls.len());
+        destination.extend(state.controls.drain(..controls));
+        let work = (limit.get() - controls).min(state.queue.len());
+        destination.extend(state.queue.drain(..work));
+        if state.is_empty() && state.senders == 0 {
             self.shared.wake.acknowledge();
             DrainStatus::Closed
-        } else if state.queue.is_empty() {
+        } else if state.is_empty() {
             self.shared.wake.acknowledge();
             DrainStatus::Idle
         } else {
@@ -111,7 +122,9 @@ impl<T> MailboxReceiver<T> {
         let mut state = self.shared.lock();
         state.receiver_alive = false;
         self.shared.wake.acknowledge();
-        state.queue.drain(..).collect()
+        let mut commands: Vec<T> = state.controls.drain(..).collect();
+        commands.extend(state.queue.drain(..));
+        commands
     }
 }
 
@@ -149,7 +162,34 @@ impl<T> Shared<T> {
 }
 
 struct State<T> {
+    controls: VecDeque<T>,
     queue: VecDeque<T>,
     receiver_alive: bool,
     senders: usize,
+}
+
+impl<T> State<T> {
+    fn queue(&self, lane: MailboxLane) -> &VecDeque<T> {
+        match lane {
+            MailboxLane::Control => &self.controls,
+            MailboxLane::Work => &self.queue,
+        }
+    }
+
+    fn queue_mut(&mut self, lane: MailboxLane) -> &mut VecDeque<T> {
+        match lane {
+            MailboxLane::Control => &mut self.controls,
+            MailboxLane::Work => &mut self.queue,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.controls.is_empty() && self.queue.is_empty()
+    }
+}
+
+#[derive(Clone, Copy)]
+enum MailboxLane {
+    Control,
+    Work,
 }

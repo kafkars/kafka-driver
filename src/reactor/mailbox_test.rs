@@ -38,6 +38,30 @@ fn bounded_drains_preserve_fifo_and_report_remaining_work() {
 }
 
 #[test]
+fn full_work_lane_cannot_reject_or_overtake_shutdown_control() {
+    let (sender, receiver, _poller) = test_mailbox(NonZeroUsize::MIN);
+    assert!(sender.try_send("work").is_ok());
+
+    let control = sender.try_send_control("shutdown");
+    let mut batch = Vec::new();
+    let first = receiver.drain_into(&mut batch, NonZeroUsize::MIN);
+
+    assert!(control.is_ok());
+    assert_eq!(first, DrainStatus::MorePending);
+    assert_eq!(batch, vec!["shutdown"]);
+}
+
+#[test]
+fn control_admission_has_its_own_explicit_bound() {
+    let (sender, _receiver, _poller) = test_mailbox(NonZeroUsize::MIN);
+    assert!(sender.try_send_control("first").is_ok());
+
+    let result = sender.try_send_control("second");
+
+    assert!(matches!(result, Err(TrySendError::Full("second"))));
+}
+
+#[test]
 fn receiver_closure_rejects_future_admission() {
     let (sender, receiver, _poller) = test_mailbox(NonZeroUsize::MIN);
     drop(receiver);

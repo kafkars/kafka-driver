@@ -60,6 +60,31 @@ fn mailbox_capacity_rejects_a_second_pending_shutdown() {
 }
 
 #[test]
+fn full_request_mailbox_cannot_reject_or_delay_shutdown() {
+    let limits = DriverLimits::new(NonZeroUsize::MIN, NonZeroUsize::MIN);
+    let (driver, mut reactor) = build_reactor(limits);
+    let request = driver
+        .call(ApiVersionsRequest::default(), Duration::from_secs(1))
+        .unwrap_or_else(|error| panic!("fill request mailbox: {error}"));
+
+    let shutdown = driver.shutdown();
+    let outcome = reactor
+        .turn(Duration::ZERO)
+        .unwrap_or_else(|error| panic!("drive priority shutdown: {error}"));
+
+    assert_eq!(outcome, TurnOutcome::Shutdown { commands: 1 });
+    let shutdown = shutdown.unwrap_or_else(|error| panic!("admit shutdown control: {error}"));
+    assert_eq!(shutdown.wait(), Ok(()));
+    assert_eq!(
+        request.wait(),
+        Ok(Err(RequestError::Rejected {
+            failure: CallFailure::Draining,
+            delivery: Delivery::NotSent,
+        }))
+    );
+}
+
+#[test]
 fn cross_thread_admission_wakes_a_blocked_reactor_turn() {
     let (driver, mut reactor) = build_reactor(DriverLimits::default());
     let owner = thread::spawn(move || reactor.turn(Duration::from_secs(30)));

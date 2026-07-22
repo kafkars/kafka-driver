@@ -38,7 +38,9 @@ impl Driver {
         let (completion, sender) = completion_pair();
         let call = Call::new(completion);
         let command = Command::Shutdown { completion: sender };
-        self.commands.try_send(command).map_err(SubmitError::from)?;
+        self.commands
+            .try_send_control(command)
+            .map_err(SubmitError::from)?;
         Ok(call)
     }
 
