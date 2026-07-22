@@ -9,8 +9,8 @@ use std::{
 use bytes::BytesMut;
 use kafka_driver::Reactor;
 use kafka_wire::{
-    API_VERSIONS_API_DESCRIPTOR, ApiVersionsResponse, METADATA_API_DESCRIPTOR, ResponseHeader,
-    api_versions_response::ApiVersion as AdvertisedApi,
+    API_VERSIONS_API_DESCRIPTOR, ApiVersionsResponse, FIND_COORDINATOR_API_DESCRIPTOR,
+    METADATA_API_DESCRIPTOR, ResponseHeader, api_versions_response::ApiVersion as AdvertisedApi,
 };
 use kafka_wire_core::{ApiVersion, KafkaEncode};
 
@@ -39,6 +39,10 @@ fn negotiation_response() -> Vec<u8> {
     response.api_keys.push(advertisement(
         API_VERSIONS_API_DESCRIPTOR.api_key.value(),
         0,
+    ));
+    response.api_keys.push(advertisement(
+        FIND_COORDINATOR_API_DESCRIPTOR.api_key.value(),
+        3,
     ));
 
     let mut body = BytesMut::new();
