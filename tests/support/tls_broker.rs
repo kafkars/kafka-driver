@@ -9,7 +9,7 @@ use std::{
 };
 
 use bytes::BytesMut;
-use kafka_driver::{ApiVersion, TlsClientConfig};
+use kafka_driver::{ApiVersion, TlsClientConfig, TlsClientPolicy};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, ResponseHeader,
     api_versions_response::ApiVersion as AdvertisedApi, response_header_version_for,
@@ -69,10 +69,22 @@ impl TlsBroker {
             .unwrap_or_else(|error| panic!("read TLS loopback address: {error}"))
     }
 
+    #[allow(
+        dead_code,
+        reason = "shared fixture method is selected by the direct-TLS integration scenario"
+    )]
     pub(crate) fn client_config(&self) -> TlsClientConfig {
         let server_name = ServerName::try_from("localhost")
             .unwrap_or_else(|error| panic!("construct TLS server name: {error}"));
-        TlsClientConfig::new(Arc::clone(&self.client), server_name)
+        self.client_policy().for_server(server_name)
+    }
+
+    #[allow(
+        dead_code,
+        reason = "shared fixture method is selected by the bootstrap-TLS integration scenario"
+    )]
+    pub(crate) fn client_policy(&self) -> TlsClientPolicy {
+        TlsClientPolicy::new(Arc::clone(&self.client))
     }
 
     pub(crate) fn spawn(self) -> (mpsc::Receiver<BrokerStep>, thread::JoinHandle<()>) {
