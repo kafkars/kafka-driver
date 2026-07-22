@@ -73,3 +73,16 @@ forbidden = [
   "std::time::Instant",
   "std::time::SystemTime",
 ]
+
+[[capabilities]]
+root = "src/negotiation"
+forbidden = [
+  "mio",
+  "rustls",
+  "std::fs",
+  "std::net",
+  "std::process",
+  "std::thread",
+  "std::time::Instant",
+  "std::time::SystemTime",
+]

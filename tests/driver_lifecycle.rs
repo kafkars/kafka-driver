@@ -1,5 +1,7 @@
 //! Public scenarios for bounded shutdown, wake, and terminal reactor ownership.
 
+mod support;
+
 use std::{
     future::Future,
     net::TcpListener,
@@ -12,10 +14,12 @@ use std::{
 };
 
 use kafka_driver::{
-    ApiVersion, Delivery, Driver, DriverLimits, Reactor, RequestError, SubmitError, TurnOutcome,
+    Delivery, Driver, DriverLimits, Reactor, RequestError, SubmitError, TurnOutcome,
 };
 use kafka_driver_core::CallFailure;
 use kafka_wire::ApiVersionsRequest;
+
+use support::complete_negotiation;
 
 #[test]
 fn embedded_shutdown_completes_once_and_closes_admission() {
@@ -98,11 +102,7 @@ fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
 #[test]
 fn generated_call_before_broker_configuration_is_not_sent_or_left_pending() {
     let (driver, mut reactor) = build_reactor(DriverLimits::default());
-    let call = driver.call(
-        ApiVersionsRequest::default(),
-        ApiVersion::new(0),
-        Duration::from_secs(1),
-    );
+    let call = driver.call(ApiVersionsRequest::default(), Duration::from_secs(1));
     let Ok(call) = call else {
         panic!("request command must enter the mailbox");
     };
@@ -137,24 +137,11 @@ fn generated_call_reaches_a_ready_configured_broker_owner() {
     let Ok((driver, mut reactor)) = Driver::builder().broker(address).build_reactor() else {
         panic!("host must create a configured broker reactor");
     };
-    let (_peer, _) = listener
+    let (mut peer, _) = listener
         .accept()
         .unwrap_or_else(|error| panic!("accept broker connection: {error}"));
-    let Ok(opened) = reactor.turn(Duration::from_secs(1)) else {
-        panic!("reactor must observe broker readiness");
-    };
-    assert_eq!(
-        opened,
-        TurnOutcome::Progress {
-            commands: 0,
-            more_work: false,
-        }
-    );
-    let Ok(mut call) = driver.call(
-        ApiVersionsRequest::default(),
-        ApiVersion::new(0),
-        Duration::from_secs(1),
-    ) else {
+    complete_negotiation(&mut peer, &mut reactor);
+    let Ok(mut call) = driver.call(ApiVersionsRequest::default(), Duration::from_secs(1)) else {
         panic!("generated call must enter the configured mailbox");
     };
 

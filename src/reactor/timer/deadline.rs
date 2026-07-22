@@ -2,17 +2,26 @@
 
 use kafka_driver_core::{CallId, ConnectionEpoch, Moment, TimerId};
 
+/// Machine work whose deadline is represented by one timer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::reactor) enum DeadlineSubject {
+    /// One public RPC call.
+    Call(CallId),
+    /// Initial API version negotiation.
+    Negotiation,
+}
+
 /// One scheduled connection deadline and the identities its event must echo.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) struct DeadlineTimer {
     timer_id: TimerId,
     epoch: ConnectionEpoch,
-    call_id: CallId,
+    subject: DeadlineSubject,
     at: Moment,
 }
 
 impl DeadlineTimer {
-    pub(in crate::reactor) const fn new(
+    pub(in crate::reactor) const fn for_call(
         timer_id: TimerId,
         epoch: ConnectionEpoch,
         call_id: CallId,
@@ -21,7 +30,20 @@ impl DeadlineTimer {
         Self {
             timer_id,
             epoch,
-            call_id,
+            subject: DeadlineSubject::Call(call_id),
+            at,
+        }
+    }
+
+    pub(in crate::reactor) const fn for_negotiation(
+        timer_id: TimerId,
+        epoch: ConnectionEpoch,
+        at: Moment,
+    ) -> Self {
+        Self {
+            timer_id,
+            epoch,
+            subject: DeadlineSubject::Negotiation,
             at,
         }
     }
@@ -34,9 +56,8 @@ impl DeadlineTimer {
         self.epoch
     }
 
-    #[cfg(test)]
-    pub(in crate::reactor) const fn call_id(self) -> CallId {
-        self.call_id
+    pub(in crate::reactor) const fn subject(self) -> DeadlineSubject {
+        self.subject
     }
 
     pub(in crate::reactor) const fn at(self) -> Moment {

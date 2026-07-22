@@ -6,6 +6,7 @@
 mod api;
 mod completion;
 mod config;
+mod negotiation;
 mod reactor;
 mod request;
 mod response;
@@ -16,5 +17,5 @@ pub use api::{
 };
 pub use config::DriverLimits;
 pub use kafka_driver_core::{CallId, Moment};
-pub use kafka_wire_core::ApiVersion;
+pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use reactor::{Reactor, ReactorError, TurnOutcome, WakeHandle};

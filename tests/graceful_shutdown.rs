@@ -1,5 +1,7 @@
 //! Public scenario proving shutdown drains one in-flight generated call.
 
+mod support;
+
 use std::{
     future::Future,
     io::{Read, Write},
@@ -17,6 +19,8 @@ use kafka_wire::{
 };
 use kafka_wire_core::KafkaEncode;
 
+use support::complete_negotiation;
+
 #[test]
 fn shutdown_waits_for_an_in_flight_call_and_closes_after_its_response() {
     // Given
@@ -31,15 +35,9 @@ fn shutdown_waits_for_an_in_flight_call_and_closes_after_its_response() {
     let (mut peer, _) = listener
         .accept()
         .unwrap_or_else(|error| panic!("accept driver connection: {error}"));
-    peer.set_read_timeout(Some(Duration::from_secs(1)))
-        .unwrap_or_else(|error| panic!("bound broker read wait: {error}"));
-    drive_progress(&mut reactor, Duration::from_secs(1), 0);
+    complete_negotiation(&mut peer, &mut reactor);
     let response = ApiVersionsResponse::default();
-    let Ok(call) = driver.call(
-        ApiVersionsRequest::default(),
-        version(),
-        Duration::from_secs(1),
-    ) else {
+    let Ok(call) = driver.call(ApiVersionsRequest::default(), Duration::from_secs(1)) else {
         panic!("admit generated call command");
     };
     drive_progress(&mut reactor, Duration::ZERO, 1);

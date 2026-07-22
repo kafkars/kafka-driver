@@ -20,7 +20,6 @@ pub(crate) type ErasedRequestPair<T> = (Call<Result<T, RequestError>>, Box<dyn E
 pub(crate) fn erased_request<R>(
     call_id: CallId,
     request: R,
-    version: ApiVersion,
     timeout: Duration,
 ) -> ErasedRequestPair<R::Response>
 where
@@ -31,7 +30,6 @@ where
     let request = TypedRequest {
         call_id,
         request,
-        version,
         timeout,
         completion,
     };
@@ -44,7 +42,6 @@ where
 {
     call_id: CallId,
     request: R,
-    version: ApiVersion,
     timeout: Duration,
     completion: CompletionSender<Result<R::Response, RequestError>>,
 }
@@ -58,6 +55,10 @@ where
         self.call_id
     }
 
+    fn api_key(&self) -> kafka_wire_core::ApiKey {
+        R::API_KEY
+    }
+
     fn timeout(&self) -> Duration {
         self.timeout
     }
@@ -65,13 +66,13 @@ where
     fn prepare(
         self: Box<Self>,
         correlation_id: CorrelationId,
+        version: ApiVersion,
         outbound_limits: OutboundFrameLimits,
         responses: &mut ResponseRegistry,
     ) -> Result<Bytes, RequestError> {
         let Self {
             call_id,
             request,
-            version,
             completion,
             ..
         } = *self;

@@ -2,7 +2,10 @@
 
 use kafka_driver_core::{ConnectionEffect, ConnectionInput, Moment};
 
-use crate::reactor::{Poller, timer::DeadlineTimer};
+use crate::reactor::{
+    Poller,
+    timer::{DeadlineSubject, DeadlineTimer},
+};
 
 use super::{BrokerError, owner::SingleBroker};
 
@@ -66,18 +69,33 @@ impl SingleBroker {
             now,
         })?;
         let effects = transition.into_effects();
-        if let [
-            ConnectionEffect::ScheduleDeadline {
-                epoch,
-                call_id,
-                timer_id,
-                at,
-            },
-        ] = effects.as_slice()
+        if matches!(deadline.subject(), DeadlineSubject::Call(_))
+            && let [
+                ConnectionEffect::ScheduleDeadline {
+                    epoch,
+                    call_id,
+                    timer_id,
+                    at,
+                },
+            ] = effects.as_slice()
         {
             return self
                 .timers
-                .schedule(DeadlineTimer::new(*timer_id, *epoch, *call_id, *at))
+                .schedule(DeadlineTimer::for_call(*timer_id, *epoch, *call_id, *at))
+                .map_err(Into::into);
+        }
+        if deadline.subject() == DeadlineSubject::Negotiation
+            && let [
+                ConnectionEffect::ScheduleNegotiationDeadline {
+                    epoch,
+                    timer_id,
+                    at,
+                },
+            ] = effects.as_slice()
+        {
+            return self
+                .timers
+                .schedule(DeadlineTimer::for_negotiation(*timer_id, *epoch, *at))
                 .map_err(Into::into);
         }
         self.interpret_close(poller, effects, None)

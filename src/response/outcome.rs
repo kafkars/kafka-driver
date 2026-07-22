@@ -3,7 +3,7 @@
 use std::{error::Error, fmt};
 
 use kafka_driver_core::{CallFailure, CallId, CorrelationId, Delivery};
-use kafka_wire_core::{ApiVersion, DecodeError, EncodeError};
+use kafka_wire_core::{ApiKey, ApiVersion, DecodeError, EncodeError};
 
 /// Why one generated request could not complete successfully.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -18,6 +18,11 @@ pub enum RequestError {
         message: &'static str,
         /// Requested API version.
         version: ApiVersion,
+    },
+    /// The broker and driver share no usable version of this API.
+    ApiUnavailable {
+        /// Generated Kafka API key requested by the call.
+        api_key: ApiKey,
     },
     /// The typed FIFO response registry reached its explicit capacity.
     ResponseCapacityReached {
@@ -47,6 +52,9 @@ impl fmt::Display for RequestError {
             Self::UnsupportedVersion { message, version } => {
                 write!(formatter, "{message} does not support version {version}")
             }
+            Self::ApiUnavailable { api_key } => {
+                write!(formatter, "Kafka API {api_key} has no negotiated version")
+            }
             Self::ResponseCapacityReached { limit } => {
                 write!(formatter, "typed response capacity {limit} reached")
             }
@@ -75,6 +83,7 @@ impl Error for RequestError {
             Self::Encode(error) => Some(error),
             Self::Decode(error) => Some(error),
             Self::UnsupportedVersion { .. }
+            | Self::ApiUnavailable { .. }
             | Self::ResponseCapacityReached { .. }
             | Self::IdentityConflict
             | Self::DeadlineOverflow

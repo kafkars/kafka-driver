@@ -13,6 +13,9 @@ fn given_fresh_sources_when_work_is_reserved_then_each_domain_advances_independe
     let Some(open) = ids.reserve_open() else {
         panic!("fresh open identities must exist");
     };
+    let Some(negotiation) = ids.reserve_negotiation() else {
+        panic!("fresh negotiation identities must exist");
+    };
     let Some(submission) = ids.reserve_submission() else {
         panic!("fresh submission identities must exist");
     };
@@ -20,8 +23,10 @@ fn given_fresh_sources_when_work_is_reserved_then_each_domain_advances_independe
     // Then
     assert_eq!(open.effect_id, EffectId::from_raw(1));
     assert_eq!(open.transport_id, TransportId::from_raw(1));
-    assert_eq!(submission.write_effect, EffectId::from_raw(2));
-    assert_eq!(submission.deadline_timer, TimerId::from_raw(1));
+    assert_eq!(negotiation.effect_id, EffectId::from_raw(2));
+    assert_eq!(negotiation.deadline_timer, TimerId::from_raw(1));
+    assert_eq!(submission.write_effect, EffectId::from_raw(3));
+    assert_eq!(submission.deadline_timer, TimerId::from_raw(2));
 }
 
 #[test]

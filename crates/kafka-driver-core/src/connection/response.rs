@@ -4,7 +4,7 @@ use crate::{ConnectionEpoch, Moment, TimerId, TransportId};
 
 use super::{
     ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, CorrelationId,
-    Decision, PendingPhase, ResponseFault, StateData,
+    Decision, NegotiationFailure, PendingPhase, ResponseFault, StateData,
 };
 
 impl ConnectionMachine {
@@ -99,6 +99,36 @@ impl ConnectionMachine {
         timer_id: TimerId,
         now: Moment,
     ) -> Decision {
+        if let StateData::Negotiating {
+            epoch: expected_epoch,
+            transport_id,
+            deadline_timer,
+            deadline,
+            ..
+        } = self.state
+        {
+            if epoch != expected_epoch || timer_id != deadline_timer {
+                return Decision::stale();
+            }
+            if now < deadline {
+                return Decision::applied(vec![ConnectionEffect::ScheduleNegotiationDeadline {
+                    epoch,
+                    timer_id,
+                    at: deadline,
+                }]);
+            }
+            let reason = CloseReason::NegotiationFailed(NegotiationFailure::Timeout);
+            self.state = StateData::Closing {
+                epoch,
+                transport_id,
+                reason,
+            };
+            return Decision::applied(vec![ConnectionEffect::CloseTransport {
+                epoch,
+                transport_id,
+                reason,
+            }]);
+        }
         let StateData::Active { connection, .. } = &self.state else {
             return Decision::stale();
         };

@@ -19,7 +19,10 @@ use crate::{
     request::erased_request,
 };
 
-use super::owner::SingleBroker;
+use super::{
+    owner::SingleBroker,
+    scenario_support_test::{complete_negotiation, observe_once},
+};
 
 #[test]
 fn given_a_generated_call_when_plaintext_bytes_round_trip_then_the_typed_call_completes() {
@@ -38,14 +41,11 @@ fn given_a_generated_call_when_plaintext_bytes_round_trip_then_the_typed_call_co
     let (mut peer, _) = listener
         .accept()
         .unwrap_or_else(|error| panic!("accept broker connection: {error}"));
-    peer.set_read_timeout(Some(Duration::from_secs(1)))
-        .unwrap_or_else(|error| panic!("bound broker read wait: {error}"));
-    observe_once(&mut poller, &mut broker);
+    complete_negotiation(&mut poller, &mut broker, &mut peer);
     let response = ApiVersionsResponse::default();
     let (call, request) = erased_request(
         CallId::from_raw(7),
         ApiVersionsRequest::default(),
-        version(),
         Duration::from_secs(1),
     );
 
@@ -62,22 +62,6 @@ fn given_a_generated_call_when_plaintext_bytes_round_trip_then_the_typed_call_co
     // Then
     assert_eq!(call.wait(), Ok(Ok(response)));
     assert_eq!(broker.admitted_counts(), (0, 0, 0));
-}
-
-fn observe_once(poller: &mut Poller, broker: &mut SingleBroker) {
-    let mut events = Vec::with_capacity(2);
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
-        .unwrap_or_else(|error| panic!("poll broker readiness: {error}"));
-    assert!(
-        !events.is_empty(),
-        "expected broker readiness before timeout"
-    );
-    for event in events {
-        broker
-            .observe(poller, event)
-            .unwrap_or_else(|error| panic!("observe broker readiness: {error}"));
-    }
 }
 
 fn read_request_frame(peer: &mut TcpStream) {

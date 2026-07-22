@@ -1,7 +1,8 @@
 //! Ordered interpretation of one call admission and its emitted effects.
 
 use kafka_driver_core::{
-    CallId, ConnectionEffect, ConnectionInput, ConnectionState, Moment, TransportFailure,
+    CallId, ConnectionEffect, ConnectionInput, ConnectionPhase, ConnectionState, Moment,
+    TransportFailure,
 };
 
 use crate::{
@@ -20,6 +21,12 @@ impl SingleBroker {
         now: Moment,
     ) -> Result<(), BrokerError> {
         let call_id = request.call_id();
+        let api_key = request.api_key();
+        let version = self.machine.negotiated_version(api_key);
+        if self.machine.state().phase() == ConnectionPhase::Ready && version.is_none() {
+            request.fail(RequestError::ApiUnavailable { api_key });
+            return Ok(());
+        }
         let Some(deadline) = now.checked_add(request.timeout()) else {
             request.fail(RequestError::DeadlineOverflow);
             return Ok(());
@@ -35,13 +42,14 @@ impl SingleBroker {
             now,
             deadline,
         })?;
-        self.interpret_submission(poller, request, transition.into_effects())
+        self.interpret_submission(poller, request, version, transition.into_effects())
     }
 
     fn interpret_submission(
         &mut self,
         poller: &Poller,
         request: Box<dyn ErasedRequest>,
+        version: Option<kafka_wire_core::ApiVersion>,
         effects: Vec<ConnectionEffect>,
     ) -> Result<(), BrokerError> {
         let submitted_call = request.call_id();
@@ -57,7 +65,7 @@ impl SingleBroker {
                     if call_id != submitted_call {
                         return Err(ownership_error(submitted_call, call_id));
                     }
-                    let deadline = DeadlineTimer::new(timer_id, epoch, call_id, at);
+                    let deadline = DeadlineTimer::for_call(timer_id, epoch, call_id, at);
                     if self.timers.schedule(deadline).is_err() {
                         fail_unprepared(&mut request, RequestError::IdentityConflict);
                         let Some(pending) = self.machine.pending_call(call_id) else {
@@ -80,9 +88,15 @@ impl SingleBroker {
                     let Some(owned) = request.take() else {
                         return Err(BrokerError::MissingEffect);
                     };
-                    let Ok(frame) =
-                        owned.prepare(correlation_id, self.outbound_frame, &mut self.responses)
-                    else {
+                    let Some(version) = version else {
+                        return Err(BrokerError::MissingEffect);
+                    };
+                    let Ok(frame) = owned.prepare(
+                        correlation_id,
+                        version,
+                        self.outbound_frame,
+                        &mut self.responses,
+                    ) else {
                         self.abort_write(poller, effect_id, Some(call_id))?;
                         return Ok(());
                     };

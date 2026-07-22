@@ -16,6 +16,26 @@ pub enum ConnectionEffect {
         /// Reserved transport resource identity.
         transport_id: TransportId,
     },
+    /// Registers the deadline for initial API version negotiation.
+    ScheduleNegotiationDeadline {
+        /// Connection epoch owning the deadline.
+        epoch: ConnectionEpoch,
+        /// Timer identity to echo when firing.
+        timer_id: TimerId,
+        /// Absolute driver-relative negotiation deadline.
+        at: Moment,
+    },
+    /// Exchanges `ApiVersions` before ordinary calls may enter the connection.
+    NegotiateApiVersions {
+        /// Connection epoch owning the exchange.
+        epoch: ConnectionEpoch,
+        /// Opened transport resource.
+        transport_id: TransportId,
+        /// External negotiation effect identity.
+        effect_id: EffectId,
+        /// Correlation reserved for this bootstrap exchange.
+        correlation_id: CorrelationId,
+    },
     /// Registers a call deadline before its frame is written.
     ScheduleDeadline {
         /// Connection epoch owning the deadline.

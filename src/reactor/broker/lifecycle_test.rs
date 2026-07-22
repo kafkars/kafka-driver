@@ -1,12 +1,12 @@
 //! Real-loop scenarios for effect-owned nonblocking broker connection setup.
 
-use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
+use std::{net::TcpListener, num::NonZeroUsize};
 
 use kafka_driver_core::ConnectionState;
 
 use crate::reactor::{Poller, broker::limits::BrokerLimits};
 
-use super::owner::SingleBroker;
+use super::{owner::SingleBroker, scenario_support_test::complete_negotiation};
 
 #[test]
 fn given_a_loopback_broker_when_readiness_is_reported_then_the_machine_becomes_ready() {
@@ -23,20 +23,12 @@ fn given_a_loopback_broker_when_readiness_is_reported_then_the_machine_becomes_r
         .start(&poller)
         .unwrap_or_else(|error| panic!("start broker connection: {error}"));
     assert!(matches!(broker.state(), ConnectionState::Opening { .. }));
-    let (_peer, _) = listener
+    let (mut peer, _) = listener
         .accept()
         .unwrap_or_else(|error| panic!("accept broker connection: {error}"));
 
     // When
-    let mut events = Vec::with_capacity(1);
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
-        .unwrap_or_else(|error| panic!("poll broker readiness: {error}"));
-    for event in events {
-        broker
-            .observe(&poller, event)
-            .unwrap_or_else(|error| panic!("observe broker readiness: {error}"));
-    }
+    complete_negotiation(&mut poller, &mut broker, &mut peer);
 
     // Then
     assert!(matches!(

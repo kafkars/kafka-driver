@@ -28,6 +28,8 @@ pub(in crate::reactor) enum BrokerError {
     ResourceInterest(io::Error),
     /// A machine-requested deadline contradicted bounded timer ownership.
     TimerSchedule(TimerScheduleError),
+    /// A driver-relative negotiation deadline could not fit the clock domain.
+    DeadlineOverflow,
     /// An opened resource could not be deregistered after its terminal outcome.
     ResourceClose(io::Error),
 }
@@ -53,6 +55,9 @@ impl fmt::Display for BrokerError {
                 formatter.write_str("failed to update broker readiness interests")
             }
             Self::TimerSchedule(error) => error.fmt(formatter),
+            Self::DeadlineOverflow => {
+                formatter.write_str("negotiation deadline exceeds the driver clock domain")
+            }
             Self::ResourceClose(_) => formatter.write_str("failed to close broker transport"),
         }
     }
@@ -69,6 +74,7 @@ impl std::error::Error for BrokerError {
             | Self::Machine(_)
             | Self::UnexpectedEffect(_)
             | Self::MissingEffect
+            | Self::DeadlineOverflow
             | Self::RequestOwnership { .. } => None,
         }
     }

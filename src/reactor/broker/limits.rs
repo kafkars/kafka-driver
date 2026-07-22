@@ -1,10 +1,11 @@
 //! Persistent resource bounds and per-turn budgets for one broker owner.
 
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, time::Duration};
 
 use kafka_driver_core::ConnectionLimits;
 use kafka_wire::OutboundFrameLimits;
 
+use crate::negotiation::NegotiationLimits;
 use crate::reactor::plaintext::{PlaintextLimits, ReadBudget, WriteBudget};
 
 const CONNECTION_CAPACITY: NonZeroUsize = nonzero(256);
@@ -13,6 +14,7 @@ const TIMER_BUDGET: NonZeroUsize = nonzero(256);
 const READ_BYTES: NonZeroUsize = nonzero(1024 * 1024);
 const READ_FRAMES: NonZeroUsize = nonzero(64);
 const WRITE_BYTES: NonZeroUsize = nonzero(1024 * 1024);
+const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Coherent limits shared by machine, response, timer, and transport ownership.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,6 +27,8 @@ pub(in crate::reactor) struct BrokerLimits {
     plaintext: PlaintextLimits,
     read_budget: ReadBudget,
     write_budget: WriteBudget,
+    negotiation: NegotiationLimits,
+    negotiation_timeout: Duration,
 }
 
 impl BrokerLimits {
@@ -63,6 +67,14 @@ impl BrokerLimits {
     pub(in crate::reactor) const fn write_budget(self) -> WriteBudget {
         self.write_budget
     }
+
+    pub(in crate::reactor) const fn negotiation(self) -> NegotiationLimits {
+        self.negotiation
+    }
+
+    pub(in crate::reactor) const fn negotiation_timeout(self) -> Duration {
+        self.negotiation_timeout
+    }
 }
 
 impl Default for BrokerLimits {
@@ -77,6 +89,8 @@ impl Default for BrokerLimits {
             plaintext: PlaintextLimits::default(),
             read_budget: ReadBudget::new(READ_BYTES, READ_FRAMES),
             write_budget: WriteBudget::new(WRITE_BYTES),
+            negotiation: NegotiationLimits::default(),
+            negotiation_timeout: NEGOTIATION_TIMEOUT,
         }
     }
 }

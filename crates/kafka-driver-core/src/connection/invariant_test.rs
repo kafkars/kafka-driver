@@ -41,7 +41,7 @@ fn bounded_trace_retains_only_the_newest_sanitized_records() {
         .map(|record| record.sequence().get())
         .collect();
 
-    assert_eq!(sequences, vec![3, 4, 5]);
+    assert_eq!(sequences, vec![4, 5, 6]);
     assert!(
         machine
             .recent_transitions()
@@ -77,7 +77,7 @@ fn invalid_identity_input_mutates_neither_state_nor_sequence() {
     );
     assert_eq!(machine.state(), before);
     assert_eq!(machine.pending_count(), 1);
-    assert_eq!(next.record().sequence().get(), 3);
+    assert_eq!(next.record().sequence().get(), 4);
 }
 
 #[test]

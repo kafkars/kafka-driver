@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use kafka_driver_core::{CallId, CorrelationId};
 use kafka_wire::OutboundFrameLimits;
-use kafka_wire_core::Bytes;
+use kafka_wire_core::{ApiKey, ApiVersion, Bytes};
 
 use crate::{RequestError, response::ResponseRegistry};
 
@@ -13,6 +13,9 @@ pub(crate) trait ErasedRequest: Send {
     /// Returns the public logical call identity allocated before mailbox admission.
     fn call_id(&self) -> CallId;
 
+    /// Returns the generated Kafka API key whose version must be negotiated.
+    fn api_key(&self) -> ApiKey;
+
     /// Returns the relative timeout to map onto the reactor clock at admission.
     fn timeout(&self) -> Duration;
 
@@ -20,6 +23,7 @@ pub(crate) trait ErasedRequest: Send {
     fn prepare(
         self: Box<Self>,
         correlation_id: CorrelationId,
+        version: ApiVersion,
         outbound_limits: OutboundFrameLimits,
         responses: &mut ResponseRegistry,
     ) -> Result<Bytes, RequestError>;

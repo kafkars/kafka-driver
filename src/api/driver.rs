@@ -3,7 +3,6 @@
 use std::{fmt, io, net::SocketAddr, sync::Arc, time::Duration};
 
 use kafka_wire::RequestResponsePair;
-use kafka_wire_core::ApiVersion;
 
 use crate::{
     completion::completion_pair,
@@ -36,11 +35,10 @@ impl Driver {
         Ok(call)
     }
 
-    /// Submits one generated request to the configured broker connection.
+    /// Submits one generated request using that connection's negotiated version.
     pub fn call<R>(
         &self,
         request: R,
-        version: ApiVersion,
         timeout: Duration,
     ) -> Result<Call<Result<R::Response, RequestError>>, SubmitError>
     where
@@ -50,7 +48,7 @@ impl Driver {
         let Some(call_id) = self.call_ids.allocate() else {
             return Err(SubmitError::IdentityExhausted);
         };
-        let (call, request) = erased_request(call_id, request, version, timeout);
+        let (call, request) = erased_request(call_id, request, timeout);
         self.commands
             .try_send(Command::Submit { request })
             .map_err(SubmitError::from)?;
@@ -73,7 +71,7 @@ impl DriverBuilder {
         self
     }
 
-    /// Configures the single plaintext broker endpoint owned by this M4 reactor.
+    /// Configures the single plaintext broker endpoint owned by this reactor.
     #[must_use]
     pub const fn broker(mut self, address: SocketAddr) -> Self {
         self.broker = Some(address);

@@ -18,13 +18,13 @@ fn preparation_encodes_and_transfers_typed_completion_to_fifo_ownership() {
     let (call, request) = erased_request(
         CallId::from_raw(1),
         ApiVersionsRequest::default(),
-        version(0),
         Duration::from_secs(1),
     );
     let mut responses = registry();
 
     let encoded = request.prepare(
         CorrelationId::from_raw(7),
+        version(0),
         outbound_limit(1_024),
         &mut responses,
     );
@@ -49,13 +49,13 @@ fn unsupported_version_settles_the_call_without_creating_a_fifo_slot() {
     let (call, request) = erased_request(
         CallId::from_raw(1),
         ApiVersionsRequest::default(),
-        unsupported,
         Duration::from_secs(1),
     );
     let mut responses = registry();
 
     let result = request.prepare(
         CorrelationId::from_raw(7),
+        unsupported,
         outbound_limit(1_024),
         &mut responses,
     );
@@ -76,13 +76,13 @@ fn outbound_frame_limit_settles_the_call_before_fifo_ownership() {
     let (call, request) = erased_request(
         CallId::from_raw(1),
         ApiVersionsRequest::default(),
-        version(0),
         Duration::from_secs(1),
     );
     let mut responses = registry();
 
     let result = request.prepare(
         CorrelationId::from_raw(7),
+        version(0),
         outbound_limit(0),
         &mut responses,
     );

@@ -1,5 +1,7 @@
 //! Public embedded-host smoke scenario for one generated plaintext broker RPC.
 
+mod support;
+
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -12,6 +14,8 @@ use kafka_wire::{
     ApiVersionsRequest, ApiVersionsResponse, ResponseHeader, response_header_version_for,
 };
 use kafka_wire_core::KafkaEncode;
+
+use support::complete_negotiation;
 
 #[test]
 fn generated_call_round_trips_through_the_public_embedded_host() {
@@ -27,15 +31,9 @@ fn generated_call_round_trips_through_the_public_embedded_host() {
     let (mut peer, _) = listener
         .accept()
         .unwrap_or_else(|error| panic!("accept driver connection: {error}"));
-    peer.set_read_timeout(Some(Duration::from_secs(1)))
-        .unwrap_or_else(|error| panic!("bound broker read wait: {error}"));
-    assert_progress(&reactor.turn(Duration::from_secs(1)), 0);
+    complete_negotiation(&mut peer, &mut reactor);
     let response = ApiVersionsResponse::default();
-    let Ok(call) = driver.call(
-        ApiVersionsRequest::default(),
-        version(),
-        Duration::from_secs(1),
-    ) else {
+    let Ok(call) = driver.call(ApiVersionsRequest::default(), Duration::from_secs(1)) else {
         panic!("admit generated call command");
     };
 

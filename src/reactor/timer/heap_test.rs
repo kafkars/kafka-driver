@@ -64,7 +64,7 @@ fn duplicate_identity_is_rejected_without_mutation() {
     schedule(&mut timers, original);
 
     assert_eq!(
-        timers.schedule(DeadlineTimer::new(
+        timers.schedule(DeadlineTimer::for_call(
             timer(1),
             ConnectionEpoch::from_raw(99),
             CallId::from_raw(99),
@@ -117,7 +117,7 @@ fn due_deadline_retains_the_epoch_and_call_identity() {
     };
     assert_eq!(fired.timer_id(), expected.timer_id());
     assert_eq!(fired.epoch(), expected.epoch());
-    assert_eq!(fired.call_id(), expected.call_id());
+    assert_eq!(fired.subject(), expected.subject());
     assert_eq!(fired.at(), expected.at());
 }
 
@@ -130,7 +130,7 @@ fn schedule(timers: &mut TimerHeap, deadline: DeadlineTimer) {
 }
 
 fn deadline(raw: u64, at: u64) -> DeadlineTimer {
-    DeadlineTimer::new(
+    DeadlineTimer::for_call(
         timer(raw),
         ConnectionEpoch::from_raw(10),
         CallId::from_raw(raw),

@@ -18,6 +18,19 @@ pub enum TransportFailure {
     Other,
 }
 
+/// Sanitized reason initial API negotiation could not make the epoch usable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NegotiationFailure {
+    /// The broker rejected the `ApiVersions` exchange.
+    Broker,
+    /// The broker returned malformed or contradictory negotiation data.
+    Malformed,
+    /// Negotiation exceeded a configured count or byte bound.
+    Capacity,
+    /// Negotiation did not finish before its driver-relative deadline.
+    Timeout,
+}
+
 /// Why one connection epoch is closing or closed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CloseReason {
@@ -29,6 +42,8 @@ pub enum CloseReason {
     OpenFailed(TransportFailure),
     /// An established transport was lost.
     TransportLost(TransportFailure),
+    /// Initial API negotiation failed after the transport opened.
+    NegotiationFailed(NegotiationFailure),
     /// A response did not match the FIFO queue front.
     CorrelationMismatch {
         /// Correlation required by the queue front.

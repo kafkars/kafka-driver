@@ -2,10 +2,13 @@
 
 use crate::{CallId, ConnectionEpoch, EffectId, Moment, TimerId, TransportId};
 
-use super::{CorrelationId, ResponseFault, TransportFailure};
+use super::{
+    CorrelationId, NegotiationAttempt, NegotiationFailure, ResponseFault, TransportFailure,
+};
+use crate::NegotiatedCapabilities;
 
 /// One internal command or external outcome applied to the machine.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ConnectionInput {
     /// Starts opening the epoch's transport resource.
     Start {
@@ -22,6 +25,8 @@ pub enum ConnectionInput {
         effect_id: EffectId,
         /// Opened transport resource.
         transport_id: TransportId,
+        /// Reserved identities and bounded timing for the `ApiVersions` exchange.
+        negotiation: NegotiationAttempt,
     },
     /// Reports that the requested transport could not open.
     TransportOpenFailed {
@@ -33,6 +38,28 @@ pub enum ConnectionInput {
         transport_id: TransportId,
         /// Sanitized external failure category.
         failure: TransportFailure,
+    },
+    /// Reports the mutually supported APIs selected from `ApiVersions`.
+    ApiVersionsNegotiated {
+        /// Epoch echoed from the negotiation effect.
+        epoch: ConnectionEpoch,
+        /// Transport echoed from the negotiation effect.
+        transport_id: TransportId,
+        /// Negotiation effect being completed.
+        effect_id: EffectId,
+        /// Immutable capability set for this connection epoch.
+        capabilities: NegotiatedCapabilities,
+    },
+    /// Reports terminal failure of the initial `ApiVersions` exchange.
+    ApiVersionsFailed {
+        /// Epoch echoed from the negotiation effect.
+        epoch: ConnectionEpoch,
+        /// Transport echoed from the negotiation effect.
+        transport_id: TransportId,
+        /// Negotiation effect being failed.
+        effect_id: EffectId,
+        /// Sanitized negotiation failure category.
+        failure: NegotiationFailure,
     },
     /// Admits one call for ordered write and response tracking.
     Submit {
@@ -108,11 +135,13 @@ pub enum ConnectionInput {
 }
 
 impl ConnectionInput {
-    pub(super) const fn kind(self) -> ConnectionInputKind {
+    pub(super) const fn kind(&self) -> ConnectionInputKind {
         match self {
             Self::Start { .. } => ConnectionInputKind::Start,
             Self::TransportOpened { .. } => ConnectionInputKind::TransportOpened,
             Self::TransportOpenFailed { .. } => ConnectionInputKind::TransportOpenFailed,
+            Self::ApiVersionsNegotiated { .. } => ConnectionInputKind::ApiVersionsNegotiated,
+            Self::ApiVersionsFailed { .. } => ConnectionInputKind::ApiVersionsFailed,
             Self::Submit { .. } => ConnectionInputKind::Submit,
             Self::WriteSubmitted { .. } => ConnectionInputKind::WriteSubmitted,
             Self::WriteFailed { .. } => ConnectionInputKind::WriteFailed,
@@ -134,6 +163,10 @@ pub enum ConnectionInputKind {
     TransportOpened,
     /// `ConnectionInput::TransportOpenFailed`.
     TransportOpenFailed,
+    /// `ConnectionInput::ApiVersionsNegotiated`.
+    ApiVersionsNegotiated,
+    /// `ConnectionInput::ApiVersionsFailed`.
+    ApiVersionsFailed,
     /// `ConnectionInput::Submit`.
     Submit,
     /// `ConnectionInput::WriteSubmitted`.

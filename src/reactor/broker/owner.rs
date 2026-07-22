@@ -10,8 +10,9 @@ use kafka_driver_transport::FrameBody;
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::DecodeLimits;
 
+use crate::negotiation::{NegotiationExchange, NegotiationLimits};
 use crate::reactor::{
-    PollEvent, PollInterest, Poller,
+    PollEvent, Poller,
     plaintext::{CompletedWrite, ConnectProgress, ReadBudget, WriteBudget},
     resource::{PlaintextResources, ResourceIdentity, ResourceToken},
     timer::{DeadlineTimer, TimerHeap},
@@ -39,6 +40,9 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) read_budget: ReadBudget,
     pub(super) write_budget: WriteBudget,
     pub(super) outbound_frame: OutboundFrameLimits,
+    pub(super) negotiation_exchange: Option<NegotiationExchange>,
+    pub(super) negotiation_limits: NegotiationLimits,
+    pub(super) negotiation_timeout: std::time::Duration,
     pub(super) frames: Vec<FrameBody>,
     pub(super) completed_writes: Vec<CompletedWrite>,
     pub(super) retry_read: bool,
@@ -60,6 +64,9 @@ impl SingleBroker {
             read_budget: limits.read_budget(),
             write_budget: limits.write_budget(),
             outbound_frame: limits.outbound_frame(),
+            negotiation_exchange: None,
+            negotiation_limits: limits.negotiation(),
+            negotiation_timeout: limits.negotiation_timeout(),
             frames: Vec::new(),
             completed_writes: Vec::new(),
             retry_read: false,
@@ -101,6 +108,7 @@ impl SingleBroker {
         &mut self,
         poller: &Poller,
         event: PollEvent,
+        now: kafka_driver_core::Moment,
     ) -> Result<bool, BrokerError> {
         let PollEvent::Resource { token, readiness } = event else {
             return Ok(false);
@@ -110,7 +118,7 @@ impl SingleBroker {
         }
         if matches!(
             self.machine.state().phase(),
-            ConnectionPhase::Ready | ConnectionPhase::Draining
+            ConnectionPhase::Negotiating | ConnectionPhase::Ready | ConnectionPhase::Draining
         ) {
             return self.drive_io(poller, token, readiness);
         }
@@ -123,10 +131,7 @@ impl SingleBroker {
                 let ConnectionState::Opening { effect_id, .. } = self.machine.state() else {
                     return Ok(false);
                 };
-                self.apply_opened(identity, effect_id)?;
-                self.resources
-                    .reregister(poller, token, PollInterest::Readable)
-                    .map_err(BrokerError::ResourceInterest)?;
+                self.begin_negotiation(poller, identity, effect_id, now)?;
                 Ok(true)
             }
             Ok(ConnectProgress::Pending) => Ok(false),
@@ -148,19 +153,6 @@ impl SingleBroker {
 
     pub(in crate::reactor) fn state(&self) -> ConnectionState {
         self.machine.state()
-    }
-
-    fn apply_opened(
-        &mut self,
-        identity: ResourceIdentity,
-        effect_id: kafka_driver_core::EffectId,
-    ) -> Result<(), BrokerError> {
-        let transition = self.machine.apply(ConnectionInput::TransportOpened {
-            epoch: identity.epoch(),
-            effect_id,
-            transport_id: identity.transport_id(),
-        })?;
-        expect_no_effects(&transition.into_effects())
     }
 
     fn apply_open_failed(

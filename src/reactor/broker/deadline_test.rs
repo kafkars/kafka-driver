@@ -4,7 +4,6 @@ use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
 
 use kafka_driver_core::{CallFailure, CallId, ConnectionPhase, Delivery, Moment};
 use kafka_wire::ApiVersionsRequest;
-use kafka_wire_core::ApiVersion;
 
 use crate::{
     RequestError,
@@ -12,7 +11,7 @@ use crate::{
     request::erased_request,
 };
 
-use super::owner::SingleBroker;
+use super::{owner::SingleBroker, scenario_support_test::complete_negotiation};
 
 #[test]
 fn given_an_in_flight_call_when_virtual_deadline_fires_then_the_epoch_closes() {
@@ -28,22 +27,13 @@ fn given_an_in_flight_call_when_virtual_deadline_fires_then_the_epoch_closes() {
     broker
         .start(&poller)
         .unwrap_or_else(|error| panic!("start broker connection: {error}"));
-    let (_peer, _) = listener
+    let (mut peer, _) = listener
         .accept()
         .unwrap_or_else(|error| panic!("accept broker connection: {error}"));
-    let mut events = Vec::with_capacity(1);
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
-        .unwrap_or_else(|error| panic!("poll broker readiness: {error}"));
-    for event in events {
-        broker
-            .observe(&poller, event)
-            .unwrap_or_else(|error| panic!("observe broker readiness: {error}"));
-    }
+    complete_negotiation(&mut poller, &mut broker, &mut peer);
     let (call, request) = erased_request(
         CallId::from_raw(7),
         ApiVersionsRequest::default(),
-        ApiVersion::new(0),
         Duration::from_nanos(10),
     );
     broker

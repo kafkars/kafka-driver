@@ -1,9 +1,11 @@
 //! End-to-end virtual-time scenarios for the pure connection machine.
 
+use std::num::NonZeroUsize;
+
 use kafka_driver_core::{
     CallFailure, CallId, CloseReason, ConnectionEffect, ConnectionEpoch, ConnectionInput,
-    ConnectionLimits, ConnectionMachine, ConnectionPhase, Delivery, EffectId, Moment, TimerId,
-    TransitionDisposition, TransportId,
+    ConnectionLimits, ConnectionMachine, ConnectionPhase, Delivery, EffectId, Moment,
+    NegotiatedCapabilities, NegotiationAttempt, TimerId, TransitionDisposition, TransportId,
 };
 
 use crate::Simulator;
@@ -12,6 +14,8 @@ const EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(1);
 const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(0);
 const TRANSPORT: TransportId = TransportId::from_raw(2);
 const OPEN_EFFECT: EffectId = EffectId::from_raw(3);
+const NEGOTIATION_EFFECT: EffectId = EffectId::from_raw(7);
+const NEGOTIATION_TIMER: TimerId = TimerId::from_raw(8);
 const CALL: CallId = CallId::from_raw(4);
 const WRITE_EFFECT: EffectId = EffectId::from_raw(5);
 const DEADLINE_TIMER: TimerId = TimerId::from_raw(6);
@@ -28,29 +32,31 @@ fn virtual_deadline_closes_a_possibly_delivered_call() {
             transport_id: TRANSPORT,
         },
     );
-    schedule(
-        &mut simulator,
-        1,
-        ConnectionInput::TransportOpened {
-            epoch: EPOCH,
-            effect_id: OPEN_EFFECT,
-            transport_id: TRANSPORT,
-        },
-    );
+    schedule(&mut simulator, 1, transport_opened(EPOCH));
     schedule(
         &mut simulator,
         2,
-        ConnectionInput::Submit {
-            call_id: CALL,
-            write_effect: WRITE_EFFECT,
-            deadline_timer: DEADLINE_TIMER,
-            now: Moment::from_nanos(2),
-            deadline: Moment::from_nanos(10),
+        ConnectionInput::ApiVersionsNegotiated {
+            epoch: EPOCH,
+            transport_id: TRANSPORT,
+            effect_id: NEGOTIATION_EFFECT,
+            capabilities: capabilities(),
         },
     );
     schedule(
         &mut simulator,
         3,
+        ConnectionInput::Submit {
+            call_id: CALL,
+            write_effect: WRITE_EFFECT,
+            deadline_timer: DEADLINE_TIMER,
+            now: Moment::from_nanos(3),
+            deadline: Moment::from_nanos(10),
+        },
+    );
+    schedule(
+        &mut simulator,
+        4,
         ConnectionInput::WriteSubmitted {
             epoch: EPOCH,
             transport_id: TRANSPORT,
@@ -67,7 +73,7 @@ fn virtual_deadline_closes_a_possibly_delivered_call() {
         },
     );
 
-    let transitions = drive(&mut simulator, &mut machine, 5);
+    let transitions = drive(&mut simulator, &mut machine, 6);
     let Some(deadline) = transitions.last() else {
         panic!("the deadline transition must be retained by the scenario");
     };
@@ -107,32 +113,45 @@ fn delayed_old_epoch_result_is_ordinary_stale_data() {
             transport_id: TRANSPORT,
         },
     );
+    schedule(&mut simulator, 1, transport_opened(STALE_EPOCH));
+    schedule(&mut simulator, 2, transport_opened(EPOCH));
     schedule(
         &mut simulator,
-        1,
-        ConnectionInput::TransportOpened {
-            epoch: STALE_EPOCH,
-            effect_id: OPEN_EFFECT,
-            transport_id: TRANSPORT,
-        },
-    );
-    schedule(
-        &mut simulator,
-        2,
-        ConnectionInput::TransportOpened {
+        3,
+        ConnectionInput::ApiVersionsNegotiated {
             epoch: EPOCH,
-            effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            effect_id: NEGOTIATION_EFFECT,
+            capabilities: capabilities(),
         },
     );
 
-    let transitions = drive(&mut simulator, &mut machine, 3);
+    let transitions = drive(&mut simulator, &mut machine, 4);
 
     assert_eq!(
         transitions[1].record().disposition(),
         TransitionDisposition::IgnoredStale
     );
     assert_eq!(machine.state().phase(), ConnectionPhase::Ready);
+}
+
+const fn transport_opened(epoch: ConnectionEpoch) -> ConnectionInput {
+    ConnectionInput::TransportOpened {
+        epoch,
+        effect_id: OPEN_EFFECT,
+        transport_id: TRANSPORT,
+        negotiation: NegotiationAttempt::new(
+            NEGOTIATION_EFFECT,
+            NEGOTIATION_TIMER,
+            Moment::ORIGIN,
+            Moment::from_nanos(100),
+        ),
+    }
+}
+
+fn capabilities() -> NegotiatedCapabilities {
+    NegotiatedCapabilities::try_from_iter([], NonZeroUsize::MIN)
+        .unwrap_or_else(|error| panic!("scenario capabilities must be valid: {error}"))
 }
 
 fn schedule(simulator: &mut Simulator<ConnectionInput>, at: u64, input: ConnectionInput) {

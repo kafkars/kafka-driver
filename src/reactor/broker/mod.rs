@@ -5,6 +5,7 @@ mod error;
 mod failure;
 mod identity;
 mod limits;
+mod negotiation;
 mod owner;
 mod readiness;
 mod response;
@@ -21,7 +22,11 @@ mod lifecycle_test;
 #[cfg(test)]
 mod limits_test;
 #[cfg(test)]
+mod negotiation_test;
+#[cfg(test)]
 mod round_trip_test;
+#[cfg(test)]
+mod scenario_support_test;
 #[cfg(test)]
 mod submission_test;
 

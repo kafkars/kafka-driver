@@ -36,6 +36,9 @@ impl SingleBroker {
         identity: ResourceIdentity,
         frame: FrameBody,
     ) -> Result<(), BrokerError> {
+        if self.machine.state().phase() == kafka_driver_core::ConnectionPhase::Negotiating {
+            return self.process_negotiation_frame(poller, identity, frame);
+        }
         let envelope = match self.responses.inspect_front(frame) {
             Ok(envelope) => envelope,
             Err(ResponseInspectError::NoPendingResponse { .. }) => {

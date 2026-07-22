@@ -1,8 +1,8 @@
 //! Valid lifecycle states and connection-local active-session ownership.
 
-use crate::{ConnectionEpoch, EffectId, TransportId};
+use crate::{ConnectionEpoch, EffectId, Moment, TimerId, TransportId};
 
-use super::{CloseReason, ConnectionLimits, CorrelationAllocator, PendingCall, PendingQueue};
+use super::{ActiveConnection, ActiveMode, CloseReason};
 
 /// Stable lifecycle name used by diagnostics and state inspection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -11,6 +11,8 @@ pub enum ConnectionPhase {
     Dormant,
     /// An open-transport effect is outstanding.
     Opening,
+    /// Initial API version negotiation is outstanding.
+    Negotiating,
     /// Calls may be admitted and responses are tracked in FIFO order.
     Ready,
     /// Existing calls may complete but new calls are rejected.
@@ -38,6 +40,19 @@ pub enum ConnectionState {
         /// Reserved transport resource.
         transport_id: TransportId,
     },
+    /// The transport is open and initial API negotiation is outstanding.
+    Negotiating {
+        /// Epoch being negotiated.
+        epoch: ConnectionEpoch,
+        /// Opened transport resource.
+        transport_id: TransportId,
+        /// Negotiation effect identity.
+        effect_id: EffectId,
+        /// Negotiation deadline timer.
+        deadline_timer: TimerId,
+        /// Absolute driver-relative negotiation deadline.
+        deadline: Moment,
+    },
     /// The transport accepts new calls.
     Ready {
         /// Active connection epoch.
@@ -46,6 +61,8 @@ pub enum ConnectionState {
         transport_id: TransportId,
         /// Calls currently awaiting write acceptance or a response.
         pending: usize,
+        /// Mutually supported APIs retained for this epoch.
+        capabilities: usize,
     },
     /// The transport is finishing already admitted calls.
     Draining {
@@ -55,6 +72,8 @@ pub enum ConnectionState {
         transport_id: TransportId,
         /// Calls that must finish before transport closure.
         pending: usize,
+        /// Mutually supported APIs retained for this epoch.
+        capabilities: usize,
     },
     /// A close-transport effect is outstanding.
     Closing {
@@ -80,6 +99,7 @@ impl ConnectionState {
         match self {
             Self::Dormant { .. } => ConnectionPhase::Dormant,
             Self::Opening { .. } => ConnectionPhase::Opening,
+            Self::Negotiating { .. } => ConnectionPhase::Negotiating,
             Self::Ready { .. } => ConnectionPhase::Ready,
             Self::Draining { .. } => ConnectionPhase::Draining,
             Self::Closing { .. } => ConnectionPhase::Closing,
@@ -96,6 +116,13 @@ pub(super) enum StateData {
         epoch: ConnectionEpoch,
         effect_id: EffectId,
         transport_id: TransportId,
+    },
+    Negotiating {
+        epoch: ConnectionEpoch,
+        transport_id: TransportId,
+        effect_id: EffectId,
+        deadline_timer: TimerId,
+        deadline: Moment,
     },
     Active {
         mode: ActiveMode,
@@ -117,6 +144,7 @@ impl StateData {
         match self {
             Self::Dormant { epoch }
             | Self::Opening { epoch, .. }
+            | Self::Negotiating { epoch, .. }
             | Self::Closing { epoch, .. }
             | Self::Closed { epoch, .. } => *epoch,
             Self::Active { connection, .. } => connection.epoch,
@@ -127,6 +155,7 @@ impl StateData {
         match self {
             Self::Dormant { .. } => ConnectionPhase::Dormant,
             Self::Opening { .. } => ConnectionPhase::Opening,
+            Self::Negotiating { .. } => ConnectionPhase::Negotiating,
             Self::Active {
                 mode: ActiveMode::Ready,
                 ..
@@ -152,16 +181,31 @@ impl StateData {
                 effect_id: *effect_id,
                 transport_id: *transport_id,
             },
+            Self::Negotiating {
+                epoch,
+                transport_id,
+                effect_id,
+                deadline_timer,
+                deadline,
+            } => ConnectionState::Negotiating {
+                epoch: *epoch,
+                transport_id: *transport_id,
+                effect_id: *effect_id,
+                deadline_timer: *deadline_timer,
+                deadline: *deadline,
+            },
             Self::Active { mode, connection } => match mode {
                 ActiveMode::Ready => ConnectionState::Ready {
                     epoch: connection.epoch,
                     transport_id: connection.transport_id,
                     pending: connection.pending.len(),
+                    capabilities: connection.capabilities.len(),
                 },
                 ActiveMode::Draining => ConnectionState::Draining {
                     epoch: connection.epoch,
                     transport_id: connection.transport_id,
                     pending: connection.pending.len(),
+                    capabilities: connection.capabilities.len(),
                 },
             },
             Self::Closing {
@@ -178,37 +222,5 @@ impl StateData {
                 reason: *reason,
             },
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ActiveMode {
-    Ready,
-    Draining,
-}
-
-pub(super) struct ActiveConnection {
-    pub(super) epoch: ConnectionEpoch,
-    pub(super) transport_id: TransportId,
-    pub(super) correlations: CorrelationAllocator,
-    pub(super) pending: PendingQueue,
-}
-
-impl ActiveConnection {
-    pub(super) fn new(
-        epoch: ConnectionEpoch,
-        transport_id: TransportId,
-        limits: ConnectionLimits,
-    ) -> Self {
-        Self {
-            epoch,
-            transport_id,
-            correlations: CorrelationAllocator::default(),
-            pending: PendingQueue::new(limits.max_in_flight().get()),
-        }
-    }
-
-    pub(super) fn pending_calls(&self) -> impl ExactSizeIterator<Item = &PendingCall> {
-        self.pending.iter()
     }
 }

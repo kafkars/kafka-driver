@@ -3,8 +3,8 @@
 use crate::{ConnectionEpoch, EffectId, TransportId};
 
 use super::{
-    ActiveConnection, ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine,
-    Decision, StateData, TransportFailure,
+    ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, Decision,
+    NegotiationAttempt, StateData, TransportFailure,
 };
 
 impl ConnectionMachine {
@@ -29,6 +29,7 @@ impl ConnectionMachine {
         epoch: ConnectionEpoch,
         effect_id: EffectId,
         transport_id: TransportId,
+        negotiation: NegotiationAttempt,
     ) -> Decision {
         let StateData::Opening {
             epoch: expected_epoch,
@@ -44,11 +45,7 @@ impl ConnectionMachine {
         {
             return Decision::stale();
         }
-        self.state = StateData::Active {
-            mode: ActiveMode::Ready,
-            connection: ActiveConnection::new(epoch, transport_id, self.limits),
-        };
-        Decision::applied(Vec::new())
+        self.begin_negotiation(epoch, transport_id, negotiation)
     }
 
     pub(super) fn transport_open_failed(
@@ -106,6 +103,31 @@ impl ConnectionMachine {
                     reason: CloseReason::Requested,
                 }])
             }
+            StateData::Negotiating {
+                epoch,
+                transport_id,
+                deadline_timer,
+                ..
+            } => {
+                let epoch = *epoch;
+                let transport_id = *transport_id;
+                let deadline_timer = *deadline_timer;
+                self.state = StateData::Closing {
+                    epoch,
+                    transport_id,
+                    reason: CloseReason::Requested,
+                };
+                Decision::applied(vec![
+                    ConnectionEffect::CloseTransport {
+                        epoch,
+                        transport_id,
+                        reason: CloseReason::Requested,
+                    },
+                    ConnectionEffect::CancelDeadline {
+                        timer_id: deadline_timer,
+                    },
+                ])
+            }
             StateData::Active {
                 mode: ActiveMode::Ready,
                 connection,
@@ -153,6 +175,20 @@ impl ConnectionMachine {
                 };
                 Decision::applied(Vec::new())
             }
+            StateData::Negotiating {
+                transport_id: expected,
+                deadline_timer,
+                ..
+            } if *expected == transport_id => {
+                let deadline_timer = *deadline_timer;
+                self.state = StateData::Closed {
+                    epoch,
+                    reason: CloseReason::TransportLost(failure),
+                };
+                Decision::applied(vec![ConnectionEffect::CancelDeadline {
+                    timer_id: deadline_timer,
+                }])
+            }
             StateData::Active { connection, .. } if connection.transport_id == transport_id => {
                 let reason = CloseReason::TransportLost(failure);
                 let effects = self.finish_active_close(reason, None);
@@ -169,6 +205,7 @@ impl ConnectionMachine {
             }
             StateData::Dormant { .. }
             | StateData::Opening { .. }
+            | StateData::Negotiating { .. }
             | StateData::Active { .. }
             | StateData::Closing { .. }
             | StateData::Closed { .. } => Decision::stale(),
@@ -183,6 +220,7 @@ impl ConnectionMachine {
             } => CallFailure::Draining,
             StateData::Dormant { .. }
             | StateData::Opening { .. }
+            | StateData::Negotiating { .. }
             | StateData::Active {
                 mode: ActiveMode::Ready,
                 ..

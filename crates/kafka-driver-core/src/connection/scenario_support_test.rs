@@ -1,16 +1,25 @@
 //! Shared deterministic fixtures for connection-machine scenario modules.
 
-use crate::{CallId, ConnectionEpoch, EffectId, Moment, TimerId, TransportId};
+use std::num::NonZeroUsize;
+
+use kafka_wire_core::{ApiKey, ApiVersion};
+
+use crate::{
+    CallId, ConnectionEpoch, EffectId, Moment, NegotiatedApi, NegotiatedCapabilities, TimerId,
+    TransportId,
+};
 
 use super::{
     ConnectionEffect, ConnectionInput, ConnectionLimits, ConnectionMachine, ConnectionTransition,
-    CorrelationId,
+    CorrelationId, NegotiationAttempt,
 };
 
 pub(super) const EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(7);
 pub(super) const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(6);
 pub(super) const TRANSPORT: TransportId = TransportId::from_raw(11);
 pub(super) const OPEN_EFFECT: EffectId = EffectId::from_raw(13);
+pub(super) const NEGOTIATION_EFFECT: EffectId = EffectId::from_raw(14);
+pub(super) const NEGOTIATION_TIMER: TimerId = TimerId::from_raw(15);
 
 pub(super) fn ready_machine() -> ConnectionMachine {
     ready_machine_with(ConnectionLimits::default())
@@ -27,13 +36,42 @@ pub(super) fn ready_machine_with(limits: ConnectionLimits) -> ConnectionMachine 
     );
     apply(
         &mut machine,
-        ConnectionInput::TransportOpened {
+        transport_opened(EPOCH, OPEN_EFFECT, TRANSPORT),
+    );
+    apply(
+        &mut machine,
+        ConnectionInput::ApiVersionsNegotiated {
             epoch: EPOCH,
-            effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            effect_id: NEGOTIATION_EFFECT,
+            capabilities: capabilities(),
         },
     );
     machine
+}
+
+pub(super) const fn transport_opened(
+    epoch: ConnectionEpoch,
+    effect_id: EffectId,
+    transport_id: TransportId,
+) -> ConnectionInput {
+    ConnectionInput::TransportOpened {
+        epoch,
+        effect_id,
+        transport_id,
+        negotiation: NegotiationAttempt::new(
+            NEGOTIATION_EFFECT,
+            NEGOTIATION_TIMER,
+            Moment::ORIGIN,
+            Moment::from_nanos(100),
+        ),
+    }
+}
+
+pub(super) fn capabilities() -> NegotiatedCapabilities {
+    let entries = [NegotiatedApi::new(ApiKey::new(18), ApiVersion::new(4))];
+    NegotiatedCapabilities::try_from_iter(entries, NonZeroUsize::MIN)
+        .unwrap_or_else(|error| panic!("scenario capabilities must be valid: {error}"))
 }
 
 pub(super) fn submit(machine: &mut ConnectionMachine, raw: u64) -> ConnectionTransition {

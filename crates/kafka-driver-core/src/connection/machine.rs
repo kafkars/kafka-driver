@@ -3,6 +3,7 @@
 use std::fmt;
 
 use crate::{CallId, ConnectionEpoch};
+use kafka_wire_core::{ApiKey, ApiVersion};
 
 use super::{
     ConnectionInput, ConnectionLimits, ConnectionMachineError, ConnectionState,
@@ -87,6 +88,12 @@ impl ConnectionMachine {
         })
     }
 
+    /// Returns the selected API version for the active epoch, if negotiated.
+    pub fn negotiated_version(&self, api_key: ApiKey) -> Option<ApiVersion> {
+        self.active()
+            .and_then(|connection| connection.negotiated_version(api_key))
+    }
+
     /// Iterates retained transition records from oldest to newest.
     pub fn recent_transitions(&self) -> impl ExactSizeIterator<Item = &TransitionRecord> {
         self.trace.iter()
@@ -102,13 +109,26 @@ impl ConnectionMachine {
                 epoch,
                 effect_id,
                 transport_id,
-            } => Ok(self.transport_opened(epoch, effect_id, transport_id)),
+                negotiation,
+            } => Ok(self.transport_opened(epoch, effect_id, transport_id, negotiation)),
             ConnectionInput::TransportOpenFailed {
                 epoch,
                 effect_id,
                 transport_id,
                 failure,
             } => Ok(self.transport_open_failed(epoch, effect_id, transport_id, failure)),
+            ConnectionInput::ApiVersionsNegotiated {
+                epoch,
+                transport_id,
+                effect_id,
+                capabilities,
+            } => Ok(self.api_versions_negotiated(epoch, transport_id, effect_id, capabilities)),
+            ConnectionInput::ApiVersionsFailed {
+                epoch,
+                transport_id,
+                effect_id,
+                failure,
+            } => Ok(self.api_versions_failed(epoch, transport_id, effect_id, failure)),
             ConnectionInput::Submit {
                 call_id,
                 write_effect,

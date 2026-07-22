@@ -140,6 +140,7 @@ impl Reactor {
     }
 
     fn observe_poll_events(&mut self) -> Result<bool, ReactorError> {
+        let now = self.clock.now().map_err(ReactorError::clock)?;
         let Some(broker) = &mut self.broker else {
             self.poll_events.clear();
             return Ok(false);
@@ -147,7 +148,7 @@ impl Reactor {
         let mut progress = false;
         for event in self.poll_events.drain(..) {
             progress |= broker
-                .observe(&self.poller, event)
+                .observe(&self.poller, event, now)
                 .map_err(ReactorError::broker)?;
         }
         Ok(progress)

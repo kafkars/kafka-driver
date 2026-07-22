@@ -3,7 +3,7 @@
 use crate::{ConnectionEpoch, EffectId, TransportId};
 
 use super::scenario_support_test::{
-    EPOCH, OPEN_EFFECT, STALE_EPOCH, TRANSPORT, apply, ready_machine,
+    EPOCH, OPEN_EFFECT, STALE_EPOCH, TRANSPORT, apply, ready_machine, transport_opened,
 };
 use super::{
     CloseReason, ConnectionEffect, ConnectionInput, ConnectionLimits, ConnectionMachine,
@@ -55,11 +55,7 @@ fn stale_open_result_cannot_claim_the_reserved_transport() {
 
     let transition = apply(
         &mut machine,
-        ConnectionInput::TransportOpened {
-            epoch: STALE_EPOCH,
-            effect_id: OPEN_EFFECT,
-            transport_id: TRANSPORT,
-        },
+        transport_opened(STALE_EPOCH, OPEN_EFFECT, TRANSPORT),
     );
 
     assert!(transition.effects().is_empty());
@@ -164,11 +160,7 @@ fn mismatched_open_identities_are_stale() {
 
     let transition = apply(
         &mut machine,
-        ConnectionInput::TransportOpened {
-            epoch: EPOCH,
-            effect_id: EffectId::from_raw(99),
-            transport_id: TransportId::from_raw(100),
-        },
+        transport_opened(EPOCH, EffectId::from_raw(99), TransportId::from_raw(100)),
     );
 
     assert_eq!(

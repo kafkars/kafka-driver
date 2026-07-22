@@ -5,7 +5,8 @@ use std::num::NonZeroUsize;
 use bytes::{Bytes, BytesMut};
 use kafka_driver_core::{
     CallId, ConnectionEffect, ConnectionEpoch, ConnectionInput, ConnectionLimits,
-    ConnectionMachine, ConnectionState, CorrelationId, EffectId, Moment, TimerId, TransportId,
+    ConnectionMachine, ConnectionState, CorrelationId, EffectId, Moment, NegotiatedCapabilities,
+    NegotiationAttempt, TimerId, TransportId,
 };
 use kafka_driver_sim::{
     FaultPlan, ReadRequest, ReadResult, ReadStep, ScriptedTransport,
@@ -29,6 +30,8 @@ const OPEN_EFFECT: EffectId = EffectId::from_raw(3);
 const CALL: CallId = CallId::from_raw(4);
 const WRITE_EFFECT: EffectId = EffectId::from_raw(5);
 const TIMER: TimerId = TimerId::from_raw(6);
+const NEGOTIATION_EFFECT: EffectId = EffectId::from_raw(7);
+const NEGOTIATION_TIMER: TimerId = TimerId::from_raw(8);
 
 #[test]
 fn generated_call_survives_partial_writes_and_fragmented_response_reads() {
@@ -127,6 +130,22 @@ fn ready_machine() -> ConnectionMachine {
             epoch: EPOCH,
             effect_id: OPEN_EFFECT,
             transport_id: TRANSPORT,
+            negotiation: NegotiationAttempt::new(
+                NEGOTIATION_EFFECT,
+                NEGOTIATION_TIMER,
+                Moment::ORIGIN,
+                Moment::from_nanos(100),
+            ),
+        },
+    );
+    apply(
+        &mut machine,
+        ConnectionInput::ApiVersionsNegotiated {
+            epoch: EPOCH,
+            transport_id: TRANSPORT,
+            effect_id: NEGOTIATION_EFFECT,
+            capabilities: NegotiatedCapabilities::try_from_iter([], NonZeroUsize::MIN)
+                .unwrap_or_else(|error| panic!("test capabilities must be valid: {error}")),
         },
     );
     machine
