@@ -1,6 +1,6 @@
 //! One broker endpoint joining connection policy to one registered transport.
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, num::NonZeroUsize};
 
 use kafka_driver_core::{
     ConnectionEffect, ConnectionEpoch, ConnectionInput, ConnectionMachine, ConnectionPhase,
@@ -13,7 +13,7 @@ use crate::reactor::{
     PollEvent, PollInterest, Poller,
     plaintext::{CompletedWrite, ConnectProgress, ReadBudget, WriteBudget},
     resource::{PlaintextResources, ResourceIdentity, ResourceToken},
-    timer::TimerHeap,
+    timer::{DeadlineTimer, TimerHeap},
 };
 use crate::response::ResponseRegistry;
 
@@ -33,6 +33,8 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) resource_token: Option<ResourceToken>,
     pub(super) responses: ResponseRegistry,
     pub(super) timers: TimerHeap,
+    pub(super) timer_budget: NonZeroUsize,
+    pub(super) due_timers: Vec<DeadlineTimer>,
     pub(super) read_budget: ReadBudget,
     pub(super) write_budget: WriteBudget,
     pub(super) frames: Vec<FrameBody>,
@@ -51,6 +53,8 @@ impl SingleBroker {
             resource_token: None,
             responses: ResponseRegistry::new(limits.response_capacity(), DecodeLimits::default()),
             timers: TimerHeap::new(limits.timer_capacity()),
+            timer_budget: limits.timer_budget(),
+            due_timers: Vec::new(),
             read_budget: limits.read_budget(),
             write_budget: limits.write_budget(),
             frames: Vec::new(),

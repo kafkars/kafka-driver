@@ -4,6 +4,7 @@ use std::{fmt, io};
 
 use kafka_driver_core::{CallId, ConnectionEffect, ConnectionMachineError};
 
+use crate::reactor::timer::TimerScheduleError;
 use crate::response::{ResponseDispatchError, ResponseFailError};
 
 /// Why the single-broker adapter could not preserve its machine contract.
@@ -25,6 +26,8 @@ pub(in crate::reactor) enum BrokerError {
     ResponseDispatch(ResponseDispatchError),
     /// A registered resource could not change its readiness interests.
     ResourceInterest(io::Error),
+    /// A machine-requested deadline contradicted bounded timer ownership.
+    TimerSchedule(TimerScheduleError),
     /// An opened resource could not be deregistered after its terminal outcome.
     ResourceClose(io::Error),
 }
@@ -49,6 +52,7 @@ impl fmt::Display for BrokerError {
             Self::ResourceInterest(_) => {
                 formatter.write_str("failed to update broker readiness interests")
             }
+            Self::TimerSchedule(error) => error.fmt(formatter),
             Self::ResourceClose(_) => formatter.write_str("failed to close broker transport"),
         }
     }
@@ -59,6 +63,7 @@ impl std::error::Error for BrokerError {
         match self {
             Self::ResponseFailure(source) => Some(source),
             Self::ResponseDispatch(source) => Some(source),
+            Self::TimerSchedule(source) => Some(source),
             Self::ResourceInterest(source) | Self::ResourceClose(source) => Some(source),
             Self::IdentityExhausted
             | Self::Machine(_)
@@ -78,6 +83,12 @@ impl From<ResponseFailError> for BrokerError {
 impl From<ResponseDispatchError> for BrokerError {
     fn from(source: ResponseDispatchError) -> Self {
         Self::ResponseDispatch(source)
+    }
+}
+
+impl From<TimerScheduleError> for BrokerError {
+    fn from(source: TimerScheduleError) -> Self {
+        Self::TimerSchedule(source)
     }
 }
 
