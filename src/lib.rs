@@ -27,9 +27,10 @@ pub use config::{
 };
 pub use host::{DriverHost, DriverHostError};
 pub use kafka_driver_core::{
-    BootstrapError, BootstrapLimits, BootstrapSet, BrokerDirectoryLimits, BrokerEndpoint,
-    CallFailure, CallId, CoordinatorKey, CoordinatorKeyError, CoordinatorKind, HostName,
-    HostNameError, Moment, PartitionId, PartitionIdError, TopicName, TopicNameError,
+    AuthenticationFailure, BootstrapError, BootstrapLimits, BootstrapSet, BrokerDirectoryLimits,
+    BrokerEndpoint, CallFailure, CallId, CloseReason as ConnectionCloseReason, CoordinatorKey,
+    CoordinatorKeyError, CoordinatorKind, HostName, HostNameError, Moment, NegotiationFailure,
+    PartitionId, PartitionIdError, TopicName, TopicNameError, TransportFailure,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use reactor::{Reactor, ReactorError, TurnOutcome, WakeHandle};
