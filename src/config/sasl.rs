@@ -4,7 +4,7 @@ use std::{fmt, sync::Arc};
 
 use kafka_driver_core::SaslMechanism;
 use stringprep::saslprep;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 /// Validated credentials and mechanism selection for broker authentication.
 #[must_use]
@@ -30,7 +30,7 @@ impl SaslConfig {
             mechanism: SaslMechanism::Plain,
             authorization_identity: Arc::from(""),
             username: Arc::from(username),
-            password: Arc::new(SecretText(password)),
+            password: Arc::new(SecretText(Zeroizing::new(password))),
         })
     }
 
@@ -73,13 +73,15 @@ impl SaslConfig {
         password: impl Into<String>,
     ) -> Result<Self, SaslConfigError> {
         let username = username.into();
-        let password = password.into();
+        let password = Zeroizing::new(password.into());
         let username = saslprep(&username)
             .map_err(|_| SaslConfigError::UsernamePreparation)?
             .into_owned();
-        let password = saslprep(&password)
-            .map_err(|_| SaslConfigError::PasswordPreparation)?
-            .into_owned();
+        let password = Zeroizing::new(
+            saslprep(password.as_str())
+                .map_err(|_| SaslConfigError::PasswordPreparation)?
+                .into_owned(),
+        );
         if username.is_empty() {
             return Err(SaslConfigError::EmptyUsername);
         }
@@ -111,7 +113,7 @@ impl SaslConfig {
     }
 
     pub(crate) fn password(&self) -> &str {
-        &self.password.0
+        self.password.0.as_str()
     }
 }
 
@@ -164,13 +166,7 @@ impl fmt::Display for SaslConfigError {
 
 impl std::error::Error for SaslConfigError {}
 
-struct SecretText(String);
-
-impl Drop for SecretText {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
+struct SecretText(Zeroizing<String>);
 
 fn validate_username(username: &str) -> Result<(), SaslConfigError> {
     if username.is_empty() {
