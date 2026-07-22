@@ -5,6 +5,7 @@ mod failure;
 mod identity;
 mod limits;
 mod owner;
+mod submission;
 
 #[cfg(test)]
 mod identity_test;
@@ -12,6 +13,8 @@ mod identity_test;
 mod lifecycle_test;
 #[cfg(test)]
 mod limits_test;
+#[cfg(test)]
+mod submission_test;
 
 pub(in crate::reactor) use error::BrokerError;
 pub(in crate::reactor) use identity::BrokerIds;

@@ -7,7 +7,7 @@ use crate::completion::CompletionSender;
 
 use super::{CompletionDisposition, RequestError, ResponseFailure};
 
-pub(super) trait PendingResponse {
+pub(super) trait PendingResponse: Send {
     fn call_id(&self) -> CallId;
     fn correlation_id(&self) -> CorrelationId;
     fn header_version(&self) -> ApiVersion;
@@ -47,7 +47,7 @@ impl<T> TypedSlot<T> {
 
 impl<T> PendingResponse for TypedSlot<T>
 where
-    T: KafkaDecode + 'static,
+    T: KafkaDecode + Send + 'static,
 {
     fn call_id(&self) -> CallId {
         self.call_id

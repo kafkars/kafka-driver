@@ -26,6 +26,8 @@ pub enum RequestError {
     },
     /// Driver-owned call or correlation identity unexpectedly conflicted.
     IdentityConflict,
+    /// The relative timeout could not fit in the driver clock domain.
+    DeadlineOverflow,
     /// Deterministic connection policy rejected or failed the call.
     Rejected {
         /// Connection-policy reason.
@@ -51,6 +53,9 @@ impl fmt::Display for RequestError {
             Self::IdentityConflict => {
                 formatter.write_str("driver-owned request identity unexpectedly conflicted")
             }
+            Self::DeadlineOverflow => {
+                formatter.write_str("request deadline exceeds the driver clock domain")
+            }
             Self::Rejected { failure, delivery } => {
                 write!(
                     formatter,
@@ -72,6 +77,7 @@ impl Error for RequestError {
             Self::UnsupportedVersion { .. }
             | Self::ResponseCapacityReached { .. }
             | Self::IdentityConflict
+            | Self::DeadlineOverflow
             | Self::Rejected { .. }
             | Self::ConnectionClosed(_) => None,
         }

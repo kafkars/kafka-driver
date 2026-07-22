@@ -5,12 +5,15 @@ use std::net::SocketAddr;
 use kafka_driver_core::{
     ConnectionEffect, ConnectionEpoch, ConnectionInput, ConnectionMachine, ConnectionState,
 };
+use kafka_wire_core::DecodeLimits;
 
 use crate::reactor::{
-    PollEvent, Poller,
+    PollEvent, PollInterest, Poller,
     plaintext::ConnectProgress,
     resource::{PlaintextResources, ResourceIdentity, ResourceToken},
+    timer::TimerHeap,
 };
+use crate::response::ResponseRegistry;
 
 use super::{
     BrokerError, BrokerIds,
@@ -21,11 +24,13 @@ use super::{
 /// Single-owner adapter for one broker connection epoch.
 #[derive(Debug)]
 pub(in crate::reactor) struct SingleBroker {
-    address: SocketAddr,
-    machine: ConnectionMachine,
-    ids: BrokerIds,
-    resources: PlaintextResources,
-    resource_token: Option<ResourceToken>,
+    pub(super) address: SocketAddr,
+    pub(super) machine: ConnectionMachine,
+    pub(super) ids: BrokerIds,
+    pub(super) resources: PlaintextResources,
+    pub(super) resource_token: Option<ResourceToken>,
+    pub(super) responses: ResponseRegistry,
+    pub(super) timers: TimerHeap,
 }
 
 impl SingleBroker {
@@ -36,6 +41,8 @@ impl SingleBroker {
             ids: BrokerIds::new(),
             resources: PlaintextResources::new(limits.resource_capacity(), limits.plaintext()),
             resource_token: None,
+            responses: ResponseRegistry::new(limits.response_capacity(), DecodeLimits::default()),
+            timers: TimerHeap::new(limits.timer_capacity()),
         }
     }
 
@@ -90,6 +97,9 @@ impl SingleBroker {
                     return Ok(false);
                 };
                 self.apply_opened(identity, effect_id)?;
+                self.resources
+                    .reregister(poller, token, PollInterest::Readable)
+                    .map_err(BrokerError::ResourceInterest)?;
                 Ok(true)
             }
             Ok(ConnectProgress::Pending) => Ok(false),
@@ -142,7 +152,7 @@ impl SingleBroker {
         expect_no_effects(&transition.into_effects())
     }
 
-    fn close_resource(
+    pub(super) fn close_resource(
         &mut self,
         poller: &Poller,
         identity: ResourceIdentity,

@@ -43,7 +43,7 @@ impl ResponseRegistry {
     ) -> Result<Call<Result<R::Response, ResponseFailure>>, ResponseAdmissionError>
     where
         R: RequestResponsePair,
-        R::Response: 'static,
+        R::Response: Send + 'static,
     {
         self.validate_admission::<R>(call_id, correlation_id, version)?;
         let (receiver, completion) = completion_pair();
@@ -60,7 +60,7 @@ impl ResponseRegistry {
         completion: CompletionSender<Result<R::Response, ResponseFailure>>,
     ) where
         R: RequestResponsePair,
-        R::Response: 'static,
+        R::Response: Send + 'static,
     {
         let header_version = ApiVersion::new(response_header_version_for::<R>(version));
         self.slots.push_back(Box::new(TypedSlot::<R::Response>::new(

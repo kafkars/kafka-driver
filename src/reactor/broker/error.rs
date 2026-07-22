@@ -2,7 +2,9 @@
 
 use std::{fmt, io};
 
-use kafka_driver_core::{ConnectionEffect, ConnectionMachineError};
+use kafka_driver_core::{CallId, ConnectionEffect, ConnectionMachineError};
+
+use crate::response::ResponseFailError;
 
 /// Why the single-broker adapter could not preserve its machine contract.
 #[derive(Debug)]
@@ -15,6 +17,12 @@ pub(in crate::reactor) enum BrokerError {
     UnexpectedEffect(ConnectionEffect),
     /// A transition omitted work required by the current adapter seam.
     MissingEffect,
+    /// An effect named request ownership not carried by the current exchange.
+    RequestOwnership { expected: CallId, observed: CallId },
+    /// A machine failure contradicted typed FIFO response ownership.
+    ResponseFailure(ResponseFailError),
+    /// A registered resource could not change its readiness interests.
+    ResourceInterest(io::Error),
     /// An opened resource could not be deregistered after its terminal outcome.
     ResourceClose(io::Error),
 }
@@ -30,6 +38,14 @@ impl fmt::Display for BrokerError {
                 write!(formatter, "unexpected connection effect: {effect:?}")
             }
             Self::MissingEffect => formatter.write_str("required connection effect was missing"),
+            Self::RequestOwnership { expected, observed } => write!(
+                formatter,
+                "request ownership names call {observed:?}; effect names {expected:?}"
+            ),
+            Self::ResponseFailure(error) => error.fmt(formatter),
+            Self::ResourceInterest(_) => {
+                formatter.write_str("failed to update broker readiness interests")
+            }
             Self::ResourceClose(_) => formatter.write_str("failed to close broker transport"),
         }
     }
@@ -38,12 +54,20 @@ impl fmt::Display for BrokerError {
 impl std::error::Error for BrokerError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::ResourceClose(source) => Some(source),
+            Self::ResponseFailure(source) => Some(source),
+            Self::ResourceInterest(source) | Self::ResourceClose(source) => Some(source),
             Self::IdentityExhausted
             | Self::Machine(_)
             | Self::UnexpectedEffect(_)
-            | Self::MissingEffect => None,
+            | Self::MissingEffect
+            | Self::RequestOwnership { .. } => None,
         }
+    }
+}
+
+impl From<ResponseFailError> for BrokerError {
+    fn from(source: ResponseFailError) -> Self {
+        Self::ResponseFailure(source)
     }
 }
 

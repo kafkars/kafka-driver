@@ -55,6 +55,20 @@ impl PlaintextResources {
         self.connections.get_mut(token)
     }
 
+    pub(in crate::reactor) fn reregister(
+        &mut self,
+        poller: &Poller,
+        token: ResourceToken,
+        interest: PollInterest,
+    ) -> io::Result<bool> {
+        let Some((_, connection)) = self.connections.get_mut(token) else {
+            return Ok(false);
+        };
+        poller
+            .reregister(connection, token, interest)
+            .map(|()| true)
+    }
+
     pub(in crate::reactor) fn close(
         &mut self,
         poller: &Poller,

@@ -11,3 +11,4 @@ mod heap_test;
 pub(super) use deadline::DeadlineTimer;
 pub(super) use drain::TimerDrain;
 pub(super) use error::TimerScheduleError;
+pub(in crate::reactor) use heap::TimerHeap;
