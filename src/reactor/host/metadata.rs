@@ -1,6 +1,8 @@
 //! Host-phase integration for generated Metadata progress on the bootstrap broker.
 
-use super::{HostState, Reactor, ReactorError};
+use crate::RouteReceipt;
+
+use super::{HostState, Reactor, ReactorError, routing::bind_route};
 
 impl Reactor {
     pub(super) fn continue_metadata(&mut self) -> Result<bool, ReactorError> {
@@ -33,7 +35,13 @@ impl Reactor {
         let waiting_more = waiting.more_work();
         for routed in waiting.into_routed() {
             let route = routed.route().broker_route();
-            self.submit_broker_route(route, routed.into_request(), now)?;
+            let receipt = RouteReceipt::PartitionLeader {
+                route: routed.route().clone(),
+            };
+            let Ok(request) = bind_route(routed.into_request(), receipt) else {
+                continue;
+            };
+            self.submit_broker_route(route, request, now)?;
         }
         Ok(progress || installed || waiting_progress || waiting_more)
     }

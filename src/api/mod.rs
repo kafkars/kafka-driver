@@ -7,10 +7,13 @@ mod driver;
 mod identity;
 mod protocol;
 mod route;
+mod tracked;
 mod traffic;
 
 #[cfg(test)]
 mod route_test;
+#[cfg(test)]
+mod tracked_test;
 
 pub use crate::completion::CompletionError;
 pub use crate::response::{RequestError, ResponseCloseReason};
@@ -21,6 +24,8 @@ pub use driver::{Driver, SubmitError};
 pub use kafka_driver_core::Delivery;
 pub use protocol::RequestResponsePair;
 pub use route::Route;
+pub use tracked::{RouteReceipt, RoutedCall, RoutedOutcome};
 pub use traffic::TrafficClass;
 
 pub(crate) use identity::CallIds;
+pub(crate) use tracked::{RouteReceiptWriter, route_receipt_pair};

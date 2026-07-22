@@ -11,10 +11,12 @@ use kafka_wire::RequestResponsePair;
 use crate::{
     completion::completion_pair,
     reactor::{Command, MailboxSender, TrySendError},
-    request::{erased_request, erased_request_in},
+    request::{erased_request, erased_request_in, routed_request_in},
 };
 
-use super::{Call, DriverBuilder, RequestError, Route, TrafficClass, identity::CallIds};
+use super::{
+    Call, DriverBuilder, RequestError, Route, RoutedCall, TrafficClass, identity::CallIds,
+};
 
 /// Cloneable command-admission handle for one driver reactor.
 #[derive(Clone, Debug)]
@@ -113,6 +115,52 @@ impl Driver {
             return Err(SubmitError::IdentityExhausted);
         };
         let (call, request) = erased_request_in(call_id, traffic_class, request, timeout);
+        let submitted_at = Instant::now();
+        self.commands
+            .try_send(Command::Submit {
+                route,
+                request,
+                submitted_at,
+            })
+            .map_err(SubmitError::from)?;
+        Ok(call)
+    }
+
+    /// Submits one generated request and retains the exact semantic route used.
+    ///
+    /// The returned outcome has no receipt when the request settles before a
+    /// controller, coordinator, or partition-leader fact reaches broker
+    /// ownership. Its timeout has the same end-to-end semantics as
+    /// [`Self::request`].
+    pub fn request_tracked<R>(
+        &self,
+        route: Route,
+        request: R,
+        timeout: Duration,
+    ) -> Result<RoutedCall<R::Response>, SubmitError>
+    where
+        R: RequestResponsePair + Send + 'static,
+        R::Response: Send + 'static,
+    {
+        self.request_tracked_in(TrafficClass::Interactive, route, request, timeout)
+    }
+
+    /// Submits one route-tracked request through an explicit isolation lane.
+    pub fn request_tracked_in<R>(
+        &self,
+        traffic_class: TrafficClass,
+        route: Route,
+        request: R,
+        timeout: Duration,
+    ) -> Result<RoutedCall<R::Response>, SubmitError>
+    where
+        R: RequestResponsePair + Send + 'static,
+        R::Response: Send + 'static,
+    {
+        let Some(call_id) = self.call_ids.allocate() else {
+            return Err(SubmitError::IdentityExhausted);
+        };
+        let (call, request) = routed_request_in(call_id, traffic_class, request, timeout);
         let submitted_at = Instant::now();
         self.commands
             .try_send(Command::Submit {

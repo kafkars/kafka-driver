@@ -8,7 +8,8 @@ use kafka_wire::{OutboundFrameLimits, RequestResponsePair, encode_request};
 use kafka_wire_core::{ApiVersion, Bytes};
 
 use crate::{
-    Call, RequestError, TrafficClass,
+    Call, RequestError, RouteReceipt, RoutedCall, TrafficClass,
+    api::{RouteReceiptWriter, route_receipt_pair},
     completion::{CompletionSender, completion_pair},
     request::RequestDeadline,
     response::{ResponseAdmissionError, ResponseRegistry},
@@ -17,6 +18,7 @@ use crate::{
 use super::ErasedRequest;
 
 pub(crate) type ErasedRequestPair<T> = (Call<Result<T, RequestError>>, Box<dyn ErasedRequest>);
+pub(crate) type RoutedRequestPair<T> = (RoutedCall<T>, Box<dyn ErasedRequest>);
 
 pub(crate) fn erased_request<R>(
     call_id: CallId,
@@ -49,8 +51,37 @@ where
         deadline: RequestDeadline::new(timeout),
         retained_bytes,
         completion,
+        receipt: None,
     };
     (Call::new(receiver), Box::new(request))
+}
+
+pub(crate) fn routed_request_in<R>(
+    call_id: CallId,
+    traffic_class: TrafficClass,
+    request: R,
+    timeout: Duration,
+) -> RoutedRequestPair<R::Response>
+where
+    R: RequestResponsePair + Send + 'static,
+    R::Response: Send + 'static,
+{
+    let (receiver, completion) = completion_pair();
+    let (receipt, writer) = route_receipt_pair();
+    let retained_bytes = retained_bytes(&request);
+    let request = TypedRequest {
+        call_id,
+        traffic_class,
+        request,
+        deadline: RequestDeadline::new(timeout),
+        retained_bytes,
+        completion,
+        receipt: Some(writer),
+    };
+    (
+        RoutedCall::new(Call::new(receiver), receipt),
+        Box::new(request),
+    )
 }
 
 struct TypedRequest<R>
@@ -63,6 +94,7 @@ where
     deadline: RequestDeadline,
     retained_bytes: usize,
     completion: CompletionSender<Result<R::Response, RequestError>>,
+    receipt: Option<RouteReceiptWriter>,
 }
 
 impl<R> ErasedRequest for TypedRequest<R>
@@ -91,6 +123,12 @@ where
 
     fn retained_bytes(&self) -> usize {
         self.retained_bytes
+    }
+
+    fn record_route(&mut self, receipt: RouteReceipt) -> Result<(), RouteReceipt> {
+        self.receipt
+            .as_ref()
+            .map_or(Ok(()), |writer| writer.publish(receipt))
     }
 
     fn prepare(

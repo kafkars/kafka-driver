@@ -6,7 +6,7 @@ use kafka_driver_core::{
 };
 
 use crate::{
-    RequestError, Route,
+    RequestError, Route, RouteReceipt,
     reactor::{coordinator::CoordinatorWait, metadata::PartitionWait},
     request::ErasedRequest,
 };
@@ -58,6 +58,9 @@ impl Reactor {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());
         };
+        let Ok(request) = bind_route(request, RouteReceipt::Controller { route }) else {
+            return Ok(());
+        };
         self.submit_broker_route(route, request, now)
     }
 
@@ -73,7 +76,6 @@ impl Reactor {
             .as_ref()
             .and_then(|metadata| metadata.current())
             .and_then(|snapshot| snapshot.partition_route(&topic, partition))
-            .map(|route| route.broker_route())
         else {
             let Some(metadata) = &mut self.metadata else {
                 request.fail(RequestError::RouteUnavailable);
@@ -94,7 +96,11 @@ impl Reactor {
                 .map_err(ReactorError::metadata)?;
             return Ok(());
         };
-        self.submit_broker_route(route, request, now)
+        let broker = route.broker_route();
+        let Ok(request) = bind_route(request, RouteReceipt::PartitionLeader { route }) else {
+            return Ok(());
+        };
+        self.submit_broker_route(broker, request, now)
     }
 
     fn submit_coordinator(
@@ -108,10 +114,16 @@ impl Reactor {
             .as_ref()
             .and_then(|owner| owner.current(&key))
             .cloned();
-        if let Some(route) = current
-            .as_ref()
-            .and_then(|route| self.coordinator_broker_route(route))
-        {
+        if let Some((coordinator, route)) = current.as_ref().and_then(|coordinator| {
+            self.coordinator_broker_route(coordinator)
+                .map(|route| (coordinator, route))
+        }) {
+            let receipt = RouteReceipt::Coordinator {
+                route: coordinator.clone(),
+            };
+            let Ok(request) = bind_route(request, receipt) else {
+                return Ok(());
+            };
             return self.submit_broker_route(route, request, now);
         }
         let Some(owner) = &mut self.coordinator else {
@@ -184,4 +196,15 @@ fn not_ready() -> RequestError {
         failure: CallFailure::NotReady,
         delivery: Delivery::NotSent,
     }
+}
+
+pub(super) fn bind_route(
+    mut request: Box<dyn ErasedRequest>,
+    receipt: RouteReceipt,
+) -> Result<Box<dyn ErasedRequest>, ()> {
+    if request.record_route(receipt).is_err() {
+        request.fail(RequestError::IdentityConflict);
+        return Err(());
+    }
+    Ok(request)
 }

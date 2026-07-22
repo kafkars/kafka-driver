@@ -11,4 +11,4 @@ mod typed_test;
 
 pub(crate) use deadline::RequestDeadline;
 pub(crate) use erased::ErasedRequest;
-pub(crate) use typed::{erased_request, erased_request_in};
+pub(crate) use typed::{erased_request, erased_request_in, routed_request_in};

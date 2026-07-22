@@ -1,8 +1,8 @@
 //! Host-phase integration for generated coordinator discovery and waiter routing.
 
-use crate::RequestError;
+use crate::{RequestError, RouteReceipt};
 
-use super::{HostState, Reactor, ReactorError};
+use super::{HostState, Reactor, ReactorError, routing::bind_route};
 
 impl Reactor {
     pub(super) fn continue_coordinator(&mut self) -> Result<bool, ReactorError> {
@@ -27,7 +27,12 @@ impl Reactor {
         let waiting_more = waiting.more_work();
         for routed in waiting.into_routed() {
             let route = self.coordinator_broker_route(routed.route());
-            let request = routed.into_request();
+            let receipt = RouteReceipt::Coordinator {
+                route: routed.route().clone(),
+            };
+            let Ok(request) = bind_route(routed.into_request(), receipt) else {
+                continue;
+            };
             match route {
                 Some(route) => self.submit_broker_route(route, request, now)?,
                 None => request.fail(RequestError::RouteUnavailable),
