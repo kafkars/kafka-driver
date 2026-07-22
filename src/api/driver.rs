@@ -2,23 +2,19 @@
 
 use std::{
     fmt, io,
-    net::SocketAddr,
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use kafka_driver_core::BootstrapSet;
 use kafka_wire::RequestResponsePair;
 
 use crate::{
     completion::completion_pair,
-    config::{BootstrapConfig, BrokerConfig, DriverLimits, DriverTarget},
-    host::DriverHost,
-    reactor::{Command, MailboxSender, Reactor, TrySendError},
+    reactor::{Command, MailboxSender, TrySendError},
     request::{erased_request, erased_request_in},
 };
 
-use super::{Call, DriverBuildError, RequestError, Route, TrafficClass, identity::CallIds};
+use super::{Call, DriverBuilder, RequestError, Route, TrafficClass, identity::CallIds};
 
 /// Cloneable command-admission handle for one driver reactor.
 #[derive(Clone, Debug)]
@@ -28,6 +24,10 @@ pub struct Driver {
 }
 
 impl Driver {
+    pub(super) const fn new(commands: MailboxSender<Command>, call_ids: Arc<CallIds>) -> Self {
+        Self { commands, call_ids }
+    }
+
     /// Starts configuration of a driver and its reactor host.
     pub fn builder() -> DriverBuilder {
         DriverBuilder::default()
@@ -116,70 +116,6 @@ impl Driver {
             })
             .map_err(SubmitError::from)?;
         Ok(call)
-    }
-}
-
-/// Builder for one driver using either embedded or dedicated hosting.
-#[derive(Clone, Debug, Default)]
-pub struct DriverBuilder {
-    limits: DriverLimits,
-    target: Option<DriverTarget>,
-    sasl: Option<crate::SaslConfig>,
-}
-
-impl DriverBuilder {
-    /// Replaces the default admission and fairness limits.
-    #[must_use]
-    pub const fn limits(mut self, limits: DriverLimits) -> Self {
-        self.limits = limits;
-        self
-    }
-
-    /// Configures the single plaintext broker endpoint owned by this reactor.
-    #[must_use]
-    pub fn broker(mut self, address: SocketAddr) -> Self {
-        self.target = Some(DriverTarget::Direct(BrokerConfig::plaintext(address)));
-        self
-    }
-
-    /// Configures bounded plaintext bootstrap membership for cluster discovery.
-    #[must_use]
-    pub fn bootstrap(mut self, endpoints: BootstrapSet) -> Self {
-        self.target = Some(DriverTarget::Bootstrap(BootstrapConfig::plaintext(
-            endpoints,
-        )));
-        self
-    }
-
-    /// Configures one broker protected by the supplied rustls client policy.
-    #[cfg(feature = "tls-rustls")]
-    #[must_use]
-    pub fn rustls_broker(mut self, address: SocketAddr, tls: crate::TlsClientConfig) -> Self {
-        self.target = Some(DriverTarget::Direct(BrokerConfig::rustls(address, tls)));
-        self
-    }
-
-    /// Requires the configured broker endpoint to complete SASL authentication.
-    #[must_use]
-    pub fn sasl(mut self, sasl: crate::SaslConfig) -> Self {
-        self.sasl = Some(sasl);
-        self
-    }
-
-    /// Builds a driver handle and an embedded, caller-driven reactor.
-    pub fn build_reactor(self) -> Result<(Driver, Reactor), DriverBuildError> {
-        let target = self.target.map(|target| target.with_sasl(self.sasl));
-        let call_ids = Arc::new(CallIds::new());
-        let (commands, reactor) = Reactor::new(self.limits, target, Arc::clone(&call_ids))
-            .map_err(DriverBuildError::new)?;
-        Ok((Driver { commands, call_ids }, reactor))
-    }
-
-    /// Builds a driver and starts its reactor on one dedicated thread.
-    pub fn spawn(self) -> Result<(Driver, DriverHost), DriverBuildError> {
-        let (driver, reactor) = self.build_reactor()?;
-        let host = DriverHost::spawn(reactor).map_err(DriverBuildError::new)?;
-        Ok((driver, host))
     }
 }
 
