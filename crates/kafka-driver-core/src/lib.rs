@@ -12,6 +12,7 @@ mod delivery;
 mod directory;
 mod endpoint;
 mod identity;
+mod metadata;
 mod resolution;
 mod time;
 
@@ -53,6 +54,7 @@ pub use identity::{
     TimerId, TransportId,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
+pub use metadata::{MetadataSnapshot, MetadataSnapshotError};
 pub use resolution::{
     DnsFailure, DnsOutcome, DnsRequest, ResolutionLimits, ResolvedAddressSet,
     ResolvedAddressSetError,
