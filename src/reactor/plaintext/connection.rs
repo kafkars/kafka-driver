@@ -7,7 +7,9 @@ use kafka_driver_transport::{
     FrameBody, FrameDecoder, WriteAccepted, WriteAdmissionError, WriteProgress, WriteQueue,
 };
 use kafka_wire_core::Bytes;
-use mio::{Registry, Token, event::Source, net::TcpStream};
+#[cfg(test)]
+use mio::net::TcpStream;
+use mio::{Registry, Token, event::Source};
 
 use super::{
     CompletedWrite, ConnectProgress, PlaintextError, PlaintextLimits, ReadBudget, ReadProgress,
@@ -32,6 +34,7 @@ impl PlaintextConnection {
         PlaintextSocket::connect(address).map(|socket| Self::with_socket(socket, limits))
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) fn new(socket: TcpStream, limits: PlaintextLimits) -> Self {
         Self::with_socket(PlaintextSocket::open(socket), limits)
     }
@@ -159,6 +162,7 @@ impl PlaintextConnection {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) fn queued_write_frames(&self) -> usize {
         self.writes.queued_frames()
     }

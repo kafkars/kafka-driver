@@ -17,8 +17,8 @@ pub(crate) use envelope::ResponseEnvelope;
 pub(crate) use error::{
     ResponseAdmissionError, ResponseDispatchError, ResponseFailError, ResponseInspectError,
 };
-pub(crate) use outcome::{
-    CompletionDisposition, FailedResponses, ResponseDispatch, ResponseFailure,
-};
+#[cfg(test)]
+pub(crate) use outcome::FailedResponses;
+pub(crate) use outcome::{CompletionDisposition, ResponseDispatch, ResponseFailure};
 pub use outcome::{RequestError, ResponseCloseReason};
 pub(crate) use registry::ResponseRegistry;

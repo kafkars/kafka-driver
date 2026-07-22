@@ -23,7 +23,7 @@ impl<T> CompletionSender<T> {
 
     #[allow(
         dead_code,
-        reason = "M1 locks the producer cancellation contract before M2 call machines consume it"
+        reason = "semantic owners may observe cancellation; generic RPC cannot revoke possibly sent work"
     )]
     pub(crate) fn is_cancellation_requested(&self) -> bool {
         self.shared.is_cancellation_requested()

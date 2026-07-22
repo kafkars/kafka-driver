@@ -77,6 +77,7 @@ impl TimerHeap {
         TimerDrain::new(fired, self.next_deadline().is_some_and(|at| at <= now))
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) fn len(&self) -> usize {
         self.deadlines.len()
     }

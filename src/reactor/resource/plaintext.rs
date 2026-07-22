@@ -37,7 +37,11 @@ impl PlaintextResources {
         let token = self
             .connections
             .admit(identity, connection)
-            .map_err(|error| ResourceOpenError::Admission(error.failure()))?;
+            .map_err(|error| {
+                let failure = error.failure();
+                drop(error.into_resource());
+                ResourceOpenError::Admission(failure)
+            })?;
         let Some((_, connection)) = self.connections.get_mut(token) else {
             return Err(ResourceOpenError::RegistryInvariant);
         };
@@ -85,6 +89,7 @@ impl PlaintextResources {
         deregistration.map(|()| removed)
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn len(&self) -> usize {
         self.connections.len()
     }

@@ -125,6 +125,7 @@ pub(crate) struct ResponseDispatch {
 }
 
 /// Aggregate result of failing every remaining typed response slot.
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FailedResponses {
     /// Slots removed from the registry.

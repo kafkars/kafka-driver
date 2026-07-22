@@ -128,6 +128,7 @@ impl<R> ResourceRegistry<R> {
         Some((identity, resource))
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn len(&self) -> usize {
         self.active
     }

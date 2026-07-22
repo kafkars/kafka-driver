@@ -196,7 +196,6 @@ fn await_interest(connection: &mut PlaintextConnection, interest: PollInterest) 
     assert_eq!(*observed, token);
     match interest {
         PollInterest::Readable => assert!(readiness.is_readable()),
-        PollInterest::Writable => assert!(readiness.is_writable()),
         PollInterest::ReadWrite => {
             assert!(readiness.is_readable() || readiness.is_writable());
         }

@@ -8,10 +8,6 @@ mod completion;
 mod config;
 mod reactor;
 mod request;
-#[allow(
-    dead_code,
-    reason = "M4 response inspection and dispatch are consumed by the read-drive slice"
-)]
 mod response;
 
 pub use api::{

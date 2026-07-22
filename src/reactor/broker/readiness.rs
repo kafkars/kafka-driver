@@ -1,6 +1,6 @@
 //! Fairness-bounded socket progress from one generation-checked readiness event.
 
-use kafka_driver_core::{ConnectionPhase, TransportFailure};
+use kafka_driver_core::TransportFailure;
 
 use crate::reactor::{
     PollInterest, Poller, Readiness,
@@ -127,12 +127,5 @@ impl SingleBroker {
                 .map_err(BrokerError::ResourceInterest)?;
         }
         Ok(progress.bytes() != 0 || progress.completed() != 0)
-    }
-
-    pub(super) fn is_active(&self) -> bool {
-        matches!(
-            self.machine.state().phase(),
-            ConnectionPhase::Ready | ConnectionPhase::Draining
-        )
     }
 }

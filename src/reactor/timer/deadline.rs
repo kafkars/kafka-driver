@@ -34,6 +34,7 @@ impl DeadlineTimer {
         self.epoch
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn call_id(self) -> CallId {
         self.call_id
     }

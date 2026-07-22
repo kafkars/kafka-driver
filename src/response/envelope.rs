@@ -24,6 +24,7 @@ impl ResponseEnvelope {
     }
 
     /// Returns encoded response-body bytes after the consumed header.
+    #[cfg(test)]
     pub(crate) const fn body_bytes(&self) -> usize {
         self.body.len()
     }

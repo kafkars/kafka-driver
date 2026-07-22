@@ -8,14 +8,17 @@ use kafka_wire::{KafkaMessage, RequestResponsePair, ResponseHeader, response_hea
 use kafka_wire_core::{ApiVersion, DecodeLimits, Decoder, KafkaDecode};
 
 use crate::completion::CompletionSender;
+#[cfg(test)]
 use crate::{api::Call, completion::completion_pair};
 
 use super::{
-    CompletionDisposition, FailedResponses, RequestError, ResponseAdmissionError,
-    ResponseCloseReason, ResponseDispatch, ResponseDispatchError, ResponseEnvelope,
-    ResponseFailError, ResponseFailure, ResponseInspectError,
+    CompletionDisposition, RequestError, ResponseAdmissionError, ResponseDispatch,
+    ResponseDispatchError, ResponseEnvelope, ResponseFailError, ResponseFailure,
+    ResponseInspectError,
     slot::{PendingResponse, TypedSlot},
 };
+#[cfg(test)]
+use super::{FailedResponses, ResponseCloseReason};
 
 /// Bounded typed response ownership in Kafka connection order.
 pub(crate) struct ResponseRegistry {
@@ -35,6 +38,7 @@ impl ResponseRegistry {
     }
 
     /// Atomically registers a generated request's typed response completion.
+    #[cfg(test)]
     pub(crate) fn register<R>(
         &mut self,
         call_id: CallId,
@@ -159,6 +163,7 @@ impl ResponseRegistry {
     }
 
     /// Fails and removes every remaining slot when its connection epoch ends.
+    #[cfg(test)]
     pub(crate) fn fail_all(&mut self, reason: ResponseCloseReason) -> FailedResponses {
         let mut failed = FailedResponses::default();
         while let Some(slot) = self.slots.pop_front() {
@@ -173,6 +178,7 @@ impl ResponseRegistry {
     }
 
     /// Returns typed response slots currently awaiting frames.
+    #[cfg(test)]
     pub(crate) fn pending(&self) -> usize {
         self.slots.len()
     }

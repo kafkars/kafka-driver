@@ -21,6 +21,7 @@ impl PlaintextSocket {
         })
     }
 
+    #[cfg(test)]
     pub(super) const fn open(stream: TcpStream) -> Self {
         Self {
             stream,

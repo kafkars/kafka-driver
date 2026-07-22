@@ -47,6 +47,7 @@ impl ReadProgress {
         self.bytes
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn frames(self) -> usize {
         self.frames
     }
@@ -73,14 +74,17 @@ impl CompletedWrite {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn call_id(self) -> CallId {
         self.call_id
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn effect_id(self) -> EffectId {
         self.effect_id
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn frame_bytes(self) -> usize {
         self.frame_bytes
     }
