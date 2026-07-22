@@ -18,4 +18,13 @@ impl TrafficClass {
     pub(crate) const ALL: [Self; 4] =
         [Self::Control, Self::Interactive, Self::Bulk, Self::LongPoll];
     pub(crate) const COUNT: usize = Self::ALL.len();
+
+    pub(crate) const fn stable_order(self) -> u8 {
+        match self {
+            Self::Control => 0,
+            Self::Interactive => 1,
+            Self::Bulk => 2,
+            Self::LongPoll => 3,
+        }
+    }
 }

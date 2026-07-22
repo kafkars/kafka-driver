@@ -7,7 +7,7 @@ use crate::reactor::{
     broker::{DeadlineProgress, SingleBroker},
 };
 
-use super::{BrokerSet, BrokerSetError, child::BrokerChild};
+use super::{BrokerSet, BrokerSetError};
 
 impl BrokerSet {
     pub(in crate::reactor) fn observe(
@@ -38,10 +38,11 @@ impl BrokerSet {
         let Some(index) = owner.checked_sub(1) else {
             return Ok(false);
         };
-        self.children
+        let progress = self
+            .children
             .get_mut(index)
-            .and_then(Option::as_mut)
-            .map_or(Ok(false), |child| child.observe(poller, event, now))
+            .map_or(Ok(false), |child| child.observe(poller, event, now))?;
+        Ok(progress | self.reclaim_reusable_children()?)
     }
 
     pub(in crate::reactor) fn continue_io(
@@ -53,11 +54,18 @@ impl BrokerSet {
             seed.continue_io(poller, now)
                 .map_err(BrokerSetError::Broker)
         })?;
-        for child in self.children.iter_mut().flatten() {
+        let mut position = 0;
+        while let Some(index) = self.active_slots.get(position).copied() {
+            let child = self
+                .children
+                .get_mut(index)
+                .ok_or(BrokerSetError::UnknownBrokerChild)?;
             progress |= child.continue_io(poller, now)?;
+            position += 1;
         }
         progress |= self.activate_pending(poller, now)?;
         progress |= self.admit_waiting(poller, now)?;
+        progress |= self.reclaim_reusable_children()?;
         Ok(progress)
     }
 
@@ -72,17 +80,27 @@ impl BrokerSet {
             .map_or(Ok(DeadlineProgress::idle()), |seed| {
                 seed.fire_due(poller, now).map_err(BrokerSetError::Broker)
             })?;
-        for child in self.children.iter_mut().flatten() {
+        let mut position = 0;
+        while let Some(index) = self.active_slots.get(position).copied() {
+            let child = self
+                .children
+                .get_mut(index)
+                .ok_or(BrokerSetError::UnknownBrokerChild)?;
             progress = progress.merge(child.fire_due(poller, now)?);
+            position += 1;
         }
+        progress = progress.merge(DeadlineProgress::from_work(
+            usize::from(self.reclaim_reusable_children()?),
+            false,
+        ));
         Ok(progress)
     }
 
     pub(in crate::reactor) fn next_deadline(&self) -> Option<Moment> {
-        self.children
+        self.active_slots
             .iter()
-            .filter_map(Option::as_ref)
-            .filter_map(BrokerChild::next_deadline)
+            .filter_map(|index| self.children.get(*index))
+            .filter_map(|child| child.next_deadline())
             .chain(self.seed.as_ref().and_then(SingleBroker::next_deadline))
             .min()
     }
@@ -96,8 +114,14 @@ impl BrokerSet {
             seed.begin_drain(poller, now)
                 .map_err(BrokerSetError::Broker)
         })?;
-        for child in self.children.iter_mut().flatten() {
+        let mut position = 0;
+        while let Some(index) = self.active_slots.get(position).copied() {
+            let child = self
+                .children
+                .get_mut(index)
+                .ok_or(BrokerSetError::UnknownBrokerChild)?;
             child.begin_drain(poller, now)?;
+            position += 1;
         }
         Ok(())
     }
@@ -105,32 +129,34 @@ impl BrokerSet {
     pub(in crate::reactor) fn is_terminal(&self) -> bool {
         self.seed.as_ref().is_none_or(SingleBroker::is_terminal)
             && self
-                .children
+                .active_slots
                 .iter()
-                .filter_map(Option::as_ref)
-                .all(BrokerChild::is_terminal)
+                .filter_map(|index| self.children.get(*index))
+                .all(|child| child.is_terminal())
     }
 
     pub(in crate::reactor) fn has_local_io(&self) -> bool {
         self.seed.as_ref().is_some_and(SingleBroker::has_local_io)
             || self
-                .children
+                .active_slots
                 .iter()
-                .filter_map(Option::as_ref)
-                .any(BrokerChild::has_local_io)
+                .filter_map(|index| self.children.get(*index))
+                .any(|child| child.has_local_io())
     }
 
     fn admit_waiting(&mut self, poller: &Poller, now: Moment) -> Result<bool, BrokerSetError> {
         let mut progress = false;
         let mut admitted = 0;
         let mut idle_slots = 0;
-        while admitted < self.admission_budget.get() && idle_slots < self.children.len() {
-            let index = self.admission_cursor;
-            self.admission_cursor = (self.admission_cursor + 1) % self.children.len();
-            let made_progress = match self.children[index].as_mut() {
-                Some(child) => child.admit_one(poller, now)?,
-                None => false,
-            };
+        while admitted < self.admission_budget.get() && idle_slots < self.active_slots.len() {
+            let slot_position = self.admission_cursor;
+            self.admission_cursor = (self.admission_cursor + 1) % self.active_slots.len();
+            let index = self.active_slots[slot_position];
+            let made_progress = self
+                .children
+                .get_mut(index)
+                .ok_or(BrokerSetError::UnknownBrokerChild)?
+                .admit_one(poller, now)?;
             if made_progress {
                 progress = true;
                 admitted += 1;

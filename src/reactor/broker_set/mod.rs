@@ -11,6 +11,7 @@ mod proof;
 mod replacement;
 mod routing;
 mod seed;
+mod slots;
 mod waiting;
 
 #[cfg(test)]

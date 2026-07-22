@@ -131,6 +131,8 @@ fn retired_dormant_slot_is_reassigned_to_new_membership() {
         .unwrap_or_else(|error| panic!("replacement demand: {error}"));
 
     assert!(second_dns.is_some());
+    assert_eq!(brokers.allocated_lanes(), 1);
+    assert_eq!(brokers.retained_child_slots(), 1);
     drop(second_call);
 }
 

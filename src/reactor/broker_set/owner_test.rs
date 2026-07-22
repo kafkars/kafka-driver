@@ -12,11 +12,12 @@ use crate::{MetadataLimits, TrafficClass, reactor::broker::BrokerLimits};
 use super::{BrokerSet, BrokerSetError};
 
 #[test]
-fn every_broker_lane_reserves_a_disjoint_slot_after_the_seed() {
+fn configured_lanes_reserve_identity_without_allocating_children() {
     let set = BrokerSet::new(BrokerLimits::default(), metadata_limits(7), None)
         .unwrap_or_else(|error| panic!("representable broker set: {error}"));
 
     assert_eq!(set.owner_capacity(), nonzero(7 * TrafficClass::COUNT + 1));
+    assert_eq!(set.retained_child_slots(), 0);
     assert!(!set.has_seed());
 }
 

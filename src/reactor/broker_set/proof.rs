@@ -10,7 +10,10 @@ impl BrokerSet {
         if let Some(seed) = &mut self.seed {
             seed.release_scram_proof_sender();
         }
-        for child in self.children.iter_mut().flatten() {
+        for &index in &self.active_slots {
+            let Some(child) = self.children.get_mut(index) else {
+                continue;
+            };
             if let Some(connection) = &mut child.connection {
                 connection.release_scram_proof_sender();
             }
@@ -39,7 +42,6 @@ impl BrokerSet {
         };
         self.children
             .get_mut(index)
-            .and_then(Option::as_mut)
             .and_then(|child| child.connection.as_mut())
             .map_or(Ok(false), |connection| {
                 connection

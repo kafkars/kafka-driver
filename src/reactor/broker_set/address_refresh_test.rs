@@ -119,10 +119,7 @@ fn observe_refusal_if_needed(poller: &mut Poller, brokers: &mut BrokerSet, lane:
 
 fn connection(brokers: &BrokerSet, lane: BrokerLane) -> &super::super::broker::SingleBroker {
     brokers
-        .children
-        .iter()
-        .filter_map(Option::as_ref)
-        .find(|child| child.lane() == lane)
+        .child_for_lane(lane)
         .and_then(|child| child.connection.as_ref())
         .unwrap_or_else(|| panic!("broker child connection"))
 }
@@ -131,11 +128,12 @@ fn connection_mut(
     brokers: &mut BrokerSet,
     lane: BrokerLane,
 ) -> &mut super::super::broker::SingleBroker {
+    let index = brokers
+        .child_index(lane)
+        .unwrap_or_else(|| panic!("broker child slot"));
     brokers
         .children
-        .iter_mut()
-        .filter_map(Option::as_mut)
-        .find(|child| child.lane() == lane)
+        .get_mut(index)
         .and_then(|child| child.connection.as_mut())
         .unwrap_or_else(|| panic!("broker child connection"))
 }

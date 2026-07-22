@@ -1,6 +1,6 @@
 //! Bounded broker directory and child-namespace ownership.
 
-use std::num::NonZeroUsize;
+use std::{collections::BTreeMap, num::NonZeroUsize};
 
 use kafka_driver_core::{BrokerDirectory, MetadataGeneration};
 
@@ -20,7 +20,15 @@ pub(in crate::reactor) struct BrokerSet {
     pub(super) broker_limits: BrokerLimits,
     pub(super) broker_capacity: NonZeroUsize,
     pub(super) owner_capacity: NonZeroUsize,
-    pub(super) children: Vec<Option<BrokerChild>>,
+    pub(super) child_capacity: NonZeroUsize,
+    #[allow(
+        clippy::vec_box,
+        reason = "lazy slot growth must not relocate substantial live broker child graphs"
+    )]
+    pub(super) children: Vec<Box<BrokerChild>>,
+    pub(super) active_slots: Vec<usize>,
+    pub(super) free_slots: Vec<usize>,
+    pub(super) lane_slots: BTreeMap<super::BrokerLane, usize>,
     pub(super) broker_template: Option<BrokerTemplate>,
     pub(super) scram_proof: Option<ScramProofSender>,
     pub(super) waiting_calls: NonZeroUsize,
@@ -67,9 +75,11 @@ impl BrokerSet {
             broker_limits,
             broker_capacity,
             owner_capacity: capacity,
-            children: std::iter::repeat_with(|| None)
-                .take(lane_capacity.get())
-                .collect(),
+            child_capacity: lane_capacity,
+            children: Vec::new(),
+            active_slots: Vec::new(),
+            free_slots: Vec::new(),
+            lane_slots: BTreeMap::new(),
             broker_template,
             scram_proof,
             waiting_calls: metadata_limits.waiting_calls(),
@@ -93,7 +103,11 @@ impl BrokerSet {
         if self.directory_generation() == Some(directory.generation()) {
             return Ok(false);
         }
-        for child in self.children.iter_mut().flatten() {
+        for &index in &self.active_slots {
+            let child = self
+                .children
+                .get_mut(index)
+                .ok_or(BrokerSetError::UnknownBrokerChild)?;
             let Some(route) = directory.route_to(child.broker_id()) else {
                 child.retire();
                 continue;
@@ -104,6 +118,7 @@ impl BrokerSet {
             child.retain_route(route, entry.endpoint());
         }
         self.directory = Some(directory.clone());
+        self.reclaim_reusable_children()?;
         Ok(true)
     }
 
@@ -116,21 +131,21 @@ impl BrokerSet {
     }
 
     pub(in crate::reactor) fn allocated_lanes(&self) -> usize {
-        self.children.iter().filter(|slot| slot.is_some()).count()
+        self.active_slots.len()
     }
 
     pub(in crate::reactor) fn connected_lanes(&self) -> usize {
-        self.children
+        self.active_slots
             .iter()
-            .filter_map(Option::as_ref)
+            .filter_map(|index| self.children.get(*index))
             .filter(|child| child.connection.is_some())
             .count()
     }
 
     pub(in crate::reactor) fn resolving_lanes(&self) -> usize {
-        self.children
+        self.active_slots
             .iter()
-            .filter_map(Option::as_ref)
+            .filter_map(|index| self.children.get(*index))
             .filter(|child| {
                 matches!(
                     child.resolution.state(),
@@ -141,9 +156,9 @@ impl BrokerSet {
     }
 
     pub(in crate::reactor) fn waiting_calls(&self) -> usize {
-        self.children
+        self.active_slots
             .iter()
-            .filter_map(Option::as_ref)
+            .filter_map(|index| self.children.get(*index))
             .map(|child| child.waiting.len())
             .sum()
     }
@@ -154,23 +169,22 @@ impl BrokerSet {
     }
 
     #[cfg(test)]
+    pub(super) fn retained_child_slots(&self) -> usize {
+        self.children.len()
+    }
+
+    #[cfg(test)]
     pub(super) fn child_endpoint(
         &self,
         lane: super::BrokerLane,
     ) -> Option<&kafka_driver_core::BrokerEndpoint> {
-        self.children
-            .iter()
-            .filter_map(Option::as_ref)
-            .find(|child| child.lane() == lane)
+        self.child_for_lane(lane)
             .and_then(|child| child.endpoint.as_ref())
     }
 
     #[cfg(test)]
     pub(super) fn child_resource_token(&self, lane: super::BrokerLane) -> Option<usize> {
-        self.children
-            .iter()
-            .filter_map(Option::as_ref)
-            .find(|child| child.lane() == lane)
+        self.child_for_lane(lane)
             .and_then(|child| child.connection.as_ref())
             .and_then(super::super::broker::SingleBroker::resource_token_for_test)
     }
@@ -180,10 +194,7 @@ impl BrokerSet {
         &self,
         lane: super::BrokerLane,
     ) -> Option<kafka_driver_core::BrokerPhase> {
-        self.children
-            .iter()
-            .filter_map(Option::as_ref)
-            .find(|child| child.lane() == lane)
+        self.child_for_lane(lane)
             .and_then(|child| child.connection.as_ref())
             .map(super::super::broker::SingleBroker::broker_state)
             .map(kafka_driver_core::BrokerState::phase)
