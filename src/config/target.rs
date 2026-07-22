@@ -16,4 +16,11 @@ impl DriverTarget {
             Self::Bootstrap(config) => Self::Bootstrap(config.with_sasl(sasl)),
         }
     }
+
+    pub(crate) fn requires_proof_worker(&self) -> bool {
+        match self {
+            Self::Direct(config) => config.requires_proof_worker(),
+            Self::Bootstrap(config) => config.requires_proof_worker(),
+        }
+    }
 }

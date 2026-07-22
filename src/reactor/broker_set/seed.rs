@@ -22,7 +22,12 @@ impl BrokerSet {
         }
         let namespace = ResourceNamespace::new(0, self.owner_capacity)
             .ok_or(BrokerSetError::NamespaceUnavailable)?;
-        let mut seed = SingleBroker::new_configured_in(config, self.broker_limits, namespace);
+        let mut seed = SingleBroker::new_configured_in(
+            config,
+            self.broker_limits,
+            namespace,
+            self.scram_proof.clone(),
+        );
         seed.start(poller, now).map_err(BrokerSetError::Broker)?;
         self.seed = Some(seed);
         Ok(())

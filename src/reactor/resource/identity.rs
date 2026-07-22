@@ -108,7 +108,7 @@ impl ResourceToken {
     }
 
     #[cfg(test)]
-    pub(super) const fn from_raw(raw: usize) -> Self {
+    pub(in crate::reactor) const fn from_raw(raw: usize) -> Self {
         Self(raw)
     }
 }

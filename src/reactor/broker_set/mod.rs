@@ -6,6 +6,7 @@ mod error;
 mod io;
 mod lane;
 mod owner;
+mod proof;
 mod replacement;
 mod routing;
 mod seed;

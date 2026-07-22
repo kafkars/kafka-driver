@@ -8,6 +8,7 @@ mod metadata;
 mod resolution;
 mod resolution_error;
 mod routing;
+mod scram_proof;
 mod state;
 
 use std::{sync::Arc, time::Duration};
@@ -26,6 +27,7 @@ use super::{
     mailbox,
     mailbox::{DrainStatus, MailboxReceiver},
     metadata::MetadataOwner,
+    scram_proof::{ScramProofOutcome, ScramProofWorker},
 };
 
 use resolution::{BrokerDnsOutcome, NameResolution};
@@ -60,6 +62,8 @@ pub struct Reactor {
     brokers: BrokerSet,
     resolution: Option<NameResolution>,
     broker_dns_outcomes: Vec<BrokerDnsOutcome>,
+    scram_proof: Option<ScramProofWorker>,
+    scram_proof_outcomes: Vec<ScramProofOutcome>,
     metadata: Option<MetadataOwner>,
     coordinator: Option<CoordinatorOwner>,
     call_ids: Arc<CallIds>,
@@ -83,9 +87,19 @@ impl Reactor {
             Some(DriverTarget::Bootstrap(config)) => Some(config.broker_template().clone()),
             Some(DriverTarget::Direct(_)) | None => None,
         };
-        let mut brokers =
-            BrokerSet::new(BrokerLimits::default(), limits.metadata(), broker_template)
-                .map_err(std::io::Error::other)?;
+        let scram_proof = target
+            .as_ref()
+            .filter(|target| target.requires_proof_worker())
+            .map(|_| ScramProofWorker::spawn(limits.scram_proof(), wake.clone()))
+            .transpose()?;
+        let proof_sender = scram_proof.as_ref().map(ScramProofWorker::sender);
+        let mut brokers = BrokerSet::with_scram_proof(
+            BrokerLimits::default(),
+            limits.metadata(),
+            broker_template,
+            proof_sender,
+        )
+        .map_err(std::io::Error::other)?;
         let (resolution, metadata, coordinator) = match target {
             Some(DriverTarget::Direct(config)) => {
                 brokers
@@ -109,6 +123,8 @@ impl Reactor {
             brokers,
             resolution,
             broker_dns_outcomes: Vec::with_capacity(limits.resolver().outcome_budget().get()),
+            scram_proof,
+            scram_proof_outcomes: Vec::with_capacity(limits.scram_proof().outcome_budget().get()),
             metadata,
             coordinator,
             call_ids,
@@ -140,6 +156,9 @@ impl Reactor {
         let resolution = self.continue_resolution()?;
         let mut more_resolution = resolution.more_work();
         progress |= resolution.made_progress();
+        let proofs = self.continue_scram_proofs()?;
+        let mut more_proofs = proofs.more_work();
+        progress |= proofs.made_progress();
         progress |= processed != 0;
         progress |= self.continue_broker_io()?;
         progress |= self.continue_metadata()?;
@@ -165,6 +184,9 @@ impl Reactor {
             progress |= resolution.made_progress();
             more_resolution |= resolution.more_work();
             progress |= self.observe_poll_events()?;
+            let proofs = self.continue_scram_proofs()?;
+            progress |= proofs.made_progress();
+            more_proofs |= proofs.more_work();
             progress |= self.continue_metadata()?;
             progress |= self.continue_coordinator()?;
         }
@@ -177,6 +199,7 @@ impl Reactor {
                 more_work: status == DrainStatus::MorePending
                     || more_due
                     || more_resolution
+                    || more_proofs
                     || self.broker_has_local_io()
                     || self.metadata_has_local_work()
                     || self.coordinator_has_local_work(),
@@ -203,6 +226,9 @@ impl Reactor {
         self.resolution = None;
         self.metadata = None;
         self.coordinator = None;
+        self.brokers.release_scram_proof_senders();
+        self.scram_proof = None;
+        self.scram_proof_outcomes.clear();
         drop(self.commands.close());
         self.shutdown_waiters.complete_all();
         Some(TurnOutcome::Shutdown { commands })

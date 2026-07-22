@@ -95,6 +95,13 @@ impl SaslConfig {
         self.mechanism
     }
 
+    pub(crate) const fn requires_proof_worker(&self) -> bool {
+        matches!(
+            self.mechanism,
+            SaslMechanism::ScramSha256 | SaslMechanism::ScramSha512
+        )
+    }
+
     pub(crate) fn authorization_identity(&self) -> &str {
         &self.authorization_identity
     }

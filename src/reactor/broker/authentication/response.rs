@@ -54,11 +54,26 @@ impl SingleBroker {
                 let effect_id = exchange.effect_id();
                 let round = exchange.round();
                 let outcome = match exchange.finish(frame) {
-                    Ok(response) if response.error_code == 0 => self
-                        .authentication_session
-                        .as_mut()
-                        .ok_or(BrokerError::MissingEffect)?
-                        .receive(&response.auth_bytes),
+                    Ok(response) if response.error_code == 0 => {
+                        let proof_required = self.authentication_session.as_ref().is_some_and(
+                            crate::authentication::AuthenticationSession::proof_required,
+                        );
+                        if proof_required
+                            && self.dispatch_scram_proof(
+                                poller,
+                                identity,
+                                effect_id,
+                                round,
+                                response.auth_bytes.clone(),
+                            )?
+                        {
+                            return Ok(());
+                        }
+                        self.authentication_session
+                            .as_mut()
+                            .ok_or(BrokerError::MissingEffect)?
+                            .receive(&response.auth_bytes)
+                    }
                     Ok(_) => ExchangeOutcome::Failed(AuthenticationFailure::Rejected),
                     Err(error) => ExchangeOutcome::Failed(error.failure()),
                 };

@@ -1,6 +1,7 @@
 //! Single-broker ownership above deterministic policy and below the host.
 
 mod authentication;
+mod construction;
 mod deadline;
 mod entropy;
 mod error;

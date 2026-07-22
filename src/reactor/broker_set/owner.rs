@@ -8,6 +8,7 @@ use crate::{
     MetadataLimits, TrafficClass,
     config::BrokerTemplate,
     reactor::broker::{BrokerLimits, SingleBroker},
+    reactor::scram_proof::ScramProofSender,
 };
 
 use super::{BrokerSetError, child::BrokerChild};
@@ -21,6 +22,7 @@ pub(in crate::reactor) struct BrokerSet {
     pub(super) owner_capacity: NonZeroUsize,
     pub(super) children: Vec<Option<BrokerChild>>,
     pub(super) broker_template: Option<BrokerTemplate>,
+    pub(super) scram_proof: Option<ScramProofSender>,
     pub(super) waiting_calls: NonZeroUsize,
     pub(super) waiting_bytes: NonZeroUsize,
     pub(super) admission_budget: NonZeroUsize,
@@ -28,10 +30,20 @@ pub(in crate::reactor) struct BrokerSet {
 }
 
 impl BrokerSet {
+    #[cfg(test)]
     pub(in crate::reactor) fn new(
         broker_limits: BrokerLimits,
         metadata_limits: MetadataLimits,
         broker_template: Option<BrokerTemplate>,
+    ) -> Result<Self, BrokerSetError> {
+        Self::with_scram_proof(broker_limits, metadata_limits, broker_template, None)
+    }
+
+    pub(in crate::reactor) fn with_scram_proof(
+        broker_limits: BrokerLimits,
+        metadata_limits: MetadataLimits,
+        broker_template: Option<BrokerTemplate>,
+        scram_proof: Option<ScramProofSender>,
     ) -> Result<Self, BrokerSetError> {
         let broker_capacity = metadata_limits.broker_directory().max_brokers();
         let lane_capacity = broker_capacity
@@ -59,6 +71,7 @@ impl BrokerSet {
                 .take(lane_capacity.get())
                 .collect(),
             broker_template,
+            scram_proof,
             waiting_calls: metadata_limits.waiting_calls(),
             waiting_bytes: metadata_limits.waiting_bytes(),
             admission_budget: metadata_limits.admission_budget(),

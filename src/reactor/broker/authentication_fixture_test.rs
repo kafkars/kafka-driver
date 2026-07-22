@@ -19,7 +19,11 @@ use kafka_wire_core::{
     ApiVersion, Bytes, DecodeLimits, Decoder, KafkaDecode, KafkaEncode, StrBytes,
 };
 
-use crate::{SaslConfig, config::BrokerConfig, reactor::Poller};
+use crate::{
+    SaslConfig, ScramProofLimits,
+    config::BrokerConfig,
+    reactor::{Poller, WakeHandle, resource::ResourceNamespace, scram_proof::ScramProofWorker},
+};
 
 use super::{limits::BrokerLimits, owner::SingleBroker, scenario_support_test::observe_once};
 
@@ -27,6 +31,23 @@ const HANDSHAKE_VERSION: ApiVersion = ApiVersion::new(1);
 const AUTHENTICATE_VERSION: ApiVersion = ApiVersion::new(1);
 
 pub(super) fn start_authenticated_broker(config: SaslConfig) -> (Poller, SingleBroker, TcpStream) {
+    let (poller, broker, peer, worker) = start_authenticated_broker_in(config, ProofMode::Inline);
+    assert!(worker.is_none());
+    (poller, broker, peer)
+}
+
+pub(super) fn start_authenticated_broker_with_proof(
+    config: SaslConfig,
+) -> (Poller, SingleBroker, TcpStream, ScramProofWorker) {
+    let (poller, broker, peer, worker) = start_authenticated_broker_in(config, ProofMode::Worker);
+    let worker = worker.unwrap_or_else(|| panic!("SCRAM proof worker missing"));
+    (poller, broker, peer, worker)
+}
+
+fn start_authenticated_broker_in(
+    config: SaslConfig,
+    proof_mode: ProofMode,
+) -> (Poller, SingleBroker, TcpStream, Option<ScramProofWorker>) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
     let address = listener
@@ -35,7 +56,14 @@ pub(super) fn start_authenticated_broker(config: SaslConfig) -> (Poller, SingleB
     let broker_config = BrokerConfig::plaintext(address).with_sasl(Some(config));
     let poller = Poller::new(NonZeroUsize::new(4).unwrap_or(NonZeroUsize::MIN))
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));
-    let mut broker = SingleBroker::new_configured(broker_config, BrokerLimits::default());
+    let proof_worker = proof_mode.spawn(&poller);
+    let proof_sender = proof_worker.as_ref().map(ScramProofWorker::sender);
+    let mut broker = SingleBroker::new_configured_in(
+        broker_config,
+        BrokerLimits::default(),
+        ResourceNamespace::single(),
+        proof_sender,
+    );
     broker
         .start(&poller, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("start authenticated broker: {error}"));
@@ -44,7 +72,28 @@ pub(super) fn start_authenticated_broker(config: SaslConfig) -> (Poller, SingleB
         .unwrap_or_else(|error| panic!("accept broker connection: {error}"));
     peer.set_read_timeout(Some(Duration::from_secs(1)))
         .unwrap_or_else(|error| panic!("bound broker read: {error}"));
-    (poller, broker, peer)
+    (poller, broker, peer, proof_worker)
+}
+
+#[derive(Clone, Copy)]
+enum ProofMode {
+    Inline,
+    Worker,
+}
+
+impl ProofMode {
+    fn spawn(self, poller: &Poller) -> Option<ScramProofWorker> {
+        match self {
+            Self::Inline => None,
+            Self::Worker => Some(
+                ScramProofWorker::spawn(
+                    ScramProofLimits::default(),
+                    WakeHandle::new(poller.wake_handle()),
+                )
+                .unwrap_or_else(|error| panic!("spawn SCRAM proof worker: {error}")),
+            ),
+        }
+    }
 }
 
 pub(super) fn advance_to_handshake(

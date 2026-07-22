@@ -39,6 +39,10 @@ impl BrokerConfig {
         let (security, sasl) = self.template.into_parts();
         (self.address, security, sasl)
     }
+
+    pub(crate) fn requires_proof_worker(&self) -> bool {
+        self.template.requires_proof_worker()
+    }
 }
 
 /// Reusable transport and authentication policy applied after address selection.
@@ -74,6 +78,12 @@ impl BrokerTemplate {
             address,
             template: self,
         }
+    }
+
+    pub(crate) fn requires_proof_worker(&self) -> bool {
+        self.sasl
+            .as_ref()
+            .is_some_and(SaslConfig::requires_proof_worker)
     }
 
     fn into_parts(self) -> (BrokerSecurity, Option<SaslConfig>) {

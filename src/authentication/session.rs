@@ -40,4 +40,8 @@ impl AuthenticationSession {
             Self::Scram(session) => session.receive(response),
         }
     }
+
+    pub(crate) const fn proof_required(&self) -> bool {
+        matches!(self, Self::Scram(session) if session.proof_required())
+    }
 }

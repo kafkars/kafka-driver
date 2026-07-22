@@ -142,6 +142,10 @@ impl ScramSession {
         }
     }
 
+    pub(crate) const fn proof_required(&self) -> bool {
+        matches!(self.state, ScramState::AwaitingServerFirst { .. })
+    }
+
     fn receive_server_first(
         &mut self,
         config: &SaslConfig,

@@ -164,6 +164,7 @@ impl BrokerSet {
             pending.epoch,
             poller,
             now,
+            self.scram_proof.clone(),
         )?;
         Ok(true)
     }

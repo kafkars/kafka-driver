@@ -28,6 +28,10 @@ impl BootstrapConfig {
         &self.broker
     }
 
+    pub(crate) fn requires_proof_worker(&self) -> bool {
+        self.broker.requires_proof_worker()
+    }
+
     pub(crate) fn into_parts(self) -> (BootstrapSet, BrokerTemplate) {
         (self.endpoints, self.broker)
     }

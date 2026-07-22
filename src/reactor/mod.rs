@@ -14,6 +14,7 @@ mod plaintext;
 mod poller;
 mod resolver;
 mod resource;
+mod scram_proof;
 mod tcp;
 mod timer;
 #[cfg(feature = "tls-rustls")]

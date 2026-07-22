@@ -160,6 +160,7 @@ impl BrokerChild {
         epoch: ConnectionEpoch,
         poller: &Poller,
         now: Moment,
+        scram_proof: Option<crate::reactor::scram_proof::ScramProofSender>,
     ) -> Result<(), BrokerSetError> {
         let connection = match &mut self.connection {
             Some(connection) => {
@@ -175,6 +176,7 @@ impl BrokerChild {
                     self.limits,
                     self.namespace,
                     epoch,
+                    scram_proof,
                 )),
         };
         connection

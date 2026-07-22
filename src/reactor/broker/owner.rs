@@ -8,12 +8,12 @@ use kafka_driver_core::{
 };
 use kafka_driver_transport::FrameBody;
 use kafka_wire::OutboundFrameLimits;
-use kafka_wire_core::{ApiKey, ApiVersion, DecodeLimits};
+use kafka_wire_core::{ApiKey, ApiVersion};
 
 use crate::negotiation::{NegotiationExchange, NegotiationLimits};
 use crate::reactor::{
     PollEvent, Poller,
-    resource::{ResourceIdentity, ResourceNamespace, ResourceToken, TransportResources},
+    resource::{ResourceIdentity, ResourceToken, TransportResources},
     tcp::ConnectProgress,
     timer::{DeadlineTimer, TimerHeap},
     transport::{CompletedWrite, ReadBudget, WriteBudget},
@@ -22,7 +22,6 @@ use crate::response::ResponseRegistry;
 use crate::{
     SaslConfig,
     authentication::{AuthenticationExchange, AuthenticationSession},
-    config::BrokerConfig,
 };
 
 use super::{
@@ -57,6 +56,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) sasl: Option<SaslConfig>,
     pub(super) authentication_session: Option<AuthenticationSession>,
     pub(super) authentication_exchange: Option<AuthenticationExchange>,
+    pub(super) scram_proof: Option<crate::reactor::scram_proof::ScramProofSender>,
     pub(super) frames: Vec<FrameBody>,
     pub(super) completed_writes: Vec<CompletedWrite>,
     pub(super) retry_read: bool,
@@ -64,75 +64,6 @@ pub(in crate::reactor) struct SingleBroker {
 }
 
 impl SingleBroker {
-    #[cfg(test)]
-    pub(in crate::reactor) fn new(address: SocketAddr, limits: BrokerLimits) -> Self {
-        Self::new_configured(BrokerConfig::plaintext(address), limits)
-    }
-
-    #[cfg(test)]
-    pub(in crate::reactor) fn new_configured(config: BrokerConfig, limits: BrokerLimits) -> Self {
-        Self::new_configured_in(config, limits, ResourceNamespace::single())
-    }
-
-    pub(in crate::reactor) fn new_configured_in(
-        config: BrokerConfig,
-        limits: BrokerLimits,
-        namespace: ResourceNamespace,
-    ) -> Self {
-        Self::new_configured_in_epoch(config, limits, namespace, ConnectionEpoch::from_raw(1))
-    }
-
-    pub(in crate::reactor) fn new_configured_in_epoch(
-        config: BrokerConfig,
-        limits: BrokerLimits,
-        namespace: ResourceNamespace,
-        epoch: ConnectionEpoch,
-    ) -> Self {
-        let (address, security, sasl) = config.into_parts();
-        let resources = TransportResources::in_namespace(
-            limits.resource_capacity(),
-            limits.transport(),
-            security,
-            namespace,
-        );
-        let connection = Self::connection_machine(
-            epoch,
-            limits.connection(),
-            sasl.as_ref(),
-            limits.authentication(),
-        );
-        Self {
-            limits,
-            address,
-            broker: BrokerMachine::new(epoch, limits.backoff()),
-            connection,
-            connection_limits: limits.connection(),
-            authentication_limits: limits.authentication(),
-            ids: BrokerIds::new(),
-            entropy: BackoffEntropy::for_broker(address),
-            resources,
-            resource_token: None,
-            responses: ResponseRegistry::new(limits.response_capacity(), DecodeLimits::default()),
-            timers: TimerHeap::new(limits.timer_capacity()),
-            timer_budget: limits.timer_budget(),
-            due_timers: Vec::new(),
-            read_budget: limits.read_budget(),
-            write_budget: limits.write_budget(),
-            outbound_frame: limits.outbound_frame(),
-            negotiation_exchange: None,
-            negotiation_limits: limits.negotiation(),
-            negotiation_timeout: limits.negotiation_timeout(),
-            authentication_timeout: limits.authentication_timeout(),
-            sasl,
-            authentication_session: None,
-            authentication_exchange: None,
-            frames: Vec::new(),
-            completed_writes: Vec::new(),
-            retry_read: false,
-            retry_write: false,
-        }
-    }
-
     pub(in crate::reactor) fn observe(
         &mut self,
         poller: &Poller,

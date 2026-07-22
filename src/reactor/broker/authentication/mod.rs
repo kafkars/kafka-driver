@@ -2,5 +2,6 @@
 
 mod effects;
 mod outcomes;
+mod proof;
 mod response;
 mod start;
