@@ -1,13 +1,13 @@
 //! Bootstrap-machine ownership and conversion of resolved addresses into broker policy.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
-
 use kafka_driver_core::{
     BootstrapEffect, BootstrapInput, BootstrapMachine, ConnectionEpoch, DnsOutcome, EffectId,
-    IpAddress, ResolvedAddress,
 };
 
-use crate::config::{BootstrapConfig, BrokerConfig, BrokerTemplate};
+use crate::{
+    config::{BootstrapConfig, BrokerConfig, BrokerTemplate},
+    reactor::resolver::socket_address,
+};
 
 use super::BootstrapOwnerError;
 
@@ -74,19 +74,5 @@ impl BootstrapOwner {
             }
             _ => Err(BootstrapOwnerError::UnexpectedEffect),
         }
-    }
-}
-
-fn socket_address(address: ResolvedAddress) -> SocketAddr {
-    match address.ip() {
-        IpAddress::V4(octets) => {
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::from(octets)), address.port().get())
-        }
-        IpAddress::V6(octets) => SocketAddr::V6(SocketAddrV6::new(
-            Ipv6Addr::from(octets),
-            address.port().get(),
-            address.flow_info(),
-            address.scope_id(),
-        )),
     }
 }
