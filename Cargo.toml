@@ -1,12 +1,14 @@
 [workspace]
 members = [
   "crates/kafka-driver-core",
+  "crates/kafka-driver-probe",
   "crates/kafka-driver-sim",
   "crates/kafka-driver-transport",
 ]
 default-members = [
   ".",
   "crates/kafka-driver-core",
+  "crates/kafka-driver-probe",
   "crates/kafka-driver-sim",
   "crates/kafka-driver-transport",
 ]

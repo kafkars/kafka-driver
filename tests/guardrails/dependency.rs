@@ -132,6 +132,20 @@ fn simulator_depends_only_on_the_deterministic_core() {
 }
 
 #[test]
+fn real_broker_probe_depends_only_on_public_driver_and_protocol_surfaces() {
+    let root = workspace_root();
+    let guardrails = load_guardrails(&root);
+    let dependencies = manifest_dependencies(&root.join("crates/kafka-driver-probe/Cargo.toml"));
+    let allowed = guardrails
+        .dependencies
+        .probe_allowed
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(dependencies, allowed);
+}
+
+#[test]
 fn ci_pins_the_verified_public_kafka_wire_source() {
     let root = workspace_root();
     let guardrails = load_guardrails(&root);

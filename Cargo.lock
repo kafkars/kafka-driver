@@ -98,6 +98,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kafka-driver-probe"
+version = "0.1.0"
+dependencies = [
+ "kafka-driver",
+ "kafka-wire",
+]
+
+[[package]]
 name = "kafka-driver-sim"
 version = "0.1.0"
 dependencies = [

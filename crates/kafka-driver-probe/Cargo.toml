@@ -1,0 +1,16 @@
+[package]
+name = "kafka-driver-probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Workspace-private real-broker qualification probe for kafka-driver"
+publish = false
+
+[dependencies]
+kafka-driver.workspace = true
+kafka-wire = { path = "../../../kafka-protocol/crates/kafka-wire" }
+
+[lints]
+workspace = true

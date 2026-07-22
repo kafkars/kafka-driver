@@ -33,6 +33,7 @@ pub(crate) struct Dependencies {
     pub(crate) banned: Vec<String>,
     pub(crate) core_allowed: Vec<String>,
     pub(crate) driver_allowed: Vec<String>,
+    pub(crate) probe_allowed: Vec<String>,
     pub(crate) transport_allowed: Vec<String>,
     pub(crate) kafka_wire_path: String,
     pub(crate) kafka_wire_core_path: String,

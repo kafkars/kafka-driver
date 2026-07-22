@@ -5,6 +5,7 @@ rust_roots = [
   "src",
   "tests",
   "crates/kafka-driver-core/src",
+  "crates/kafka-driver-probe/src",
   "crates/kafka-driver-sim/src",
   "crates/kafka-driver-transport/src",
 ]
@@ -32,6 +33,7 @@ kafka_wire_repository = "kafkars/kafka-wire"
 kafka_wire_revision = "a987ce83ea5b4644dd9f1dff66f5fa695cff7280"
 driver_allowed = ["base64", "bytes", "kafka-driver-core", "kafka-driver-transport", "kafka-wire", "kafka-wire-core", "mio", "ring", "rustls", "stringprep", "zeroize"]
 core_allowed = ["kafka-wire-core"]
+probe_allowed = ["kafka-driver", "kafka-wire"]
 transport_allowed = ["bytes", "kafka-driver-core", "kafka-wire-core"]
 
 [[capabilities]]
