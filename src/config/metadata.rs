@@ -2,7 +2,7 @@
 
 use std::{num::NonZeroUsize, time::Duration};
 
-use kafka_driver_core::BrokerDirectoryLimits;
+use kafka_driver_core::{BrokerDirectoryLimits, PartitionLeaderLimits};
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_WAITING_CALLS: NonZeroUsize = nonzero(256);
@@ -14,6 +14,7 @@ const DEFAULT_ADMISSION_BUDGET: NonZeroUsize = nonzero(64);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MetadataLimits {
     broker_directory: BrokerDirectoryLimits,
+    partition_leaders: PartitionLeaderLimits,
     request_timeout: Duration,
     waiting_calls: NonZeroUsize,
     waiting_bytes: NonZeroUsize,
@@ -25,11 +26,21 @@ impl MetadataLimits {
     pub const fn new(broker_directory: BrokerDirectoryLimits, request_timeout: Duration) -> Self {
         Self {
             broker_directory,
+            partition_leaders: PartitionLeaderLimits::defaults(),
             request_timeout,
             waiting_calls: DEFAULT_WAITING_CALLS,
             waiting_bytes: DEFAULT_WAITING_BYTES,
             admission_budget: DEFAULT_ADMISSION_BUDGET,
         }
+    }
+
+    /// Replaces retained topic and partition-leader bounds.
+    pub const fn with_partition_leader_limits(
+        mut self,
+        partition_leaders: PartitionLeaderLimits,
+    ) -> Self {
+        self.partition_leaders = partition_leaders;
+        self
     }
 
     /// Replaces per-broker waiting count, encoded bytes, and turn admission bounds.
@@ -48,6 +59,11 @@ impl MetadataLimits {
     /// Returns maximum broker membership retained in one generation.
     pub const fn broker_directory(self) -> BrokerDirectoryLimits {
         self.broker_directory
+    }
+
+    /// Returns maximum topic and known partition-leader retention per generation.
+    pub const fn partition_leaders(self) -> PartitionLeaderLimits {
+        self.partition_leaders
     }
 
     /// Returns the maximum wait assigned to one generated Metadata RPC.

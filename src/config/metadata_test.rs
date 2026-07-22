@@ -2,14 +2,16 @@
 
 use std::{num::NonZeroUsize, time::Duration};
 
-use kafka_driver_core::BrokerDirectoryLimits;
+use kafka_driver_core::{BrokerDirectoryLimits, PartitionLeaderLimits};
 
 use super::{DriverLimits, MetadataLimits};
 
 #[test]
 fn driver_limits_retain_broker_membership_and_request_wait_independently() {
     let broker_directory = BrokerDirectoryLimits::new(nonzero(7));
+    let partition_leaders = PartitionLeaderLimits::new(nonzero(11), nonzero(13));
     let metadata = MetadataLimits::new(broker_directory, Duration::from_millis(250))
+        .with_partition_leader_limits(partition_leaders)
         .with_waiting_limits(nonzero(3), nonzero(4_096), nonzero(2));
 
     let retained = DriverLimits::default()
@@ -17,6 +19,7 @@ fn driver_limits_retain_broker_membership_and_request_wait_independently() {
         .metadata();
 
     assert_eq!(retained.broker_directory().max_brokers(), nonzero(7));
+    assert_eq!(retained.partition_leaders(), partition_leaders);
     assert_eq!(retained.request_timeout(), Duration::from_millis(250));
     assert_eq!(retained.waiting_calls(), nonzero(3));
     assert_eq!(retained.waiting_bytes(), nonzero(4_096));
