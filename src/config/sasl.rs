@@ -3,6 +3,7 @@
 use std::{fmt, sync::Arc};
 
 use kafka_driver_core::SaslMechanism;
+use stringprep::saslprep;
 use zeroize::Zeroize;
 
 /// Validated credentials and mechanism selection for broker authentication.
@@ -33,18 +34,61 @@ impl SaslConfig {
         })
     }
 
+    /// Creates SASL SCRAM-SHA-256 credentials after applying `SASLprep`.
+    pub fn scram_sha_256(
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Result<Self, SaslConfigError> {
+        Self::scram(SaslMechanism::ScramSha256, username, password)
+    }
+
+    /// Creates SASL SCRAM-SHA-512 credentials after applying `SASLprep`.
+    pub fn scram_sha_512(
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Result<Self, SaslConfigError> {
+        Self::scram(SaslMechanism::ScramSha512, username, password)
+    }
+
     /// Replaces the SASL PLAIN authorization identity.
     pub fn with_authorization_identity(
         mut self,
         authorization_identity: impl Into<String>,
     ) -> Result<Self, SaslConfigError> {
         let authorization_identity = authorization_identity.into();
+        if self.mechanism != SaslMechanism::Plain && !authorization_identity.is_empty() {
+            return Err(SaslConfigError::UnsupportedAuthorizationIdentity);
+        }
         validate_plain_field(
             &authorization_identity,
             SaslConfigError::AuthorizationIdentityContainsNul,
         )?;
         self.authorization_identity = Arc::from(authorization_identity);
         Ok(self)
+    }
+
+    fn scram(
+        mechanism: SaslMechanism,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Result<Self, SaslConfigError> {
+        let username = username.into();
+        let password = password.into();
+        let username = saslprep(&username)
+            .map_err(|_| SaslConfigError::UsernamePreparation)?
+            .into_owned();
+        let password = saslprep(&password)
+            .map_err(|_| SaslConfigError::PasswordPreparation)?
+            .into_owned();
+        if username.is_empty() {
+            return Err(SaslConfigError::EmptyUsername);
+        }
+        Ok(Self {
+            mechanism,
+            authorization_identity: Arc::from(""),
+            username: Arc::from(username),
+            password: Arc::new(SecretText(password)),
+        })
     }
 
     pub(crate) const fn mechanism(&self) -> SaslMechanism {
@@ -85,6 +129,12 @@ pub enum SaslConfigError {
     PasswordContainsNul,
     /// The PLAIN authorization identity contained its field delimiter.
     AuthorizationIdentityContainsNul,
+    /// The SCRAM username could not be normalized safely.
+    UsernamePreparation,
+    /// The SCRAM password could not be normalized safely.
+    PasswordPreparation,
+    /// A nonempty authorization identity is not supported for SCRAM.
+    UnsupportedAuthorizationIdentity,
 }
 
 impl fmt::Display for SaslConfigError {
@@ -95,6 +145,11 @@ impl fmt::Display for SaslConfigError {
             Self::PasswordContainsNul => "the SASL password contains a NUL delimiter",
             Self::AuthorizationIdentityContainsNul => {
                 "the SASL authorization identity contains a NUL delimiter"
+            }
+            Self::UsernamePreparation => "the SCRAM username failed SASLprep",
+            Self::PasswordPreparation => "the SCRAM password failed SASLprep",
+            Self::UnsupportedAuthorizationIdentity => {
+                "SCRAM authorization identities are not supported"
             }
         })
     }
