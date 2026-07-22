@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 
 use crate::completion::CompletionSender;
 
-use super::{Reactor, TurnOutcome};
+use super::{Reactor, ReactorError, TurnOutcome};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum HostState {
@@ -46,19 +46,24 @@ impl ShutdownWaiters {
 }
 
 impl Reactor {
-    pub(super) fn finish_shutdown_if_terminal(&mut self, commands: usize) -> Option<TurnOutcome> {
+    pub(super) fn finish_shutdown_if_terminal(
+        &mut self,
+        commands: usize,
+    ) -> Result<Option<TurnOutcome>, ReactorError> {
         if self.state != HostState::Draining || !self.brokers.is_terminal() {
-            return None;
+            return Ok(None);
         }
-        self.state = HostState::Shutdown;
         self.resolution = None;
         self.metadata = None;
         self.coordinator = None;
         self.brokers.release_scram_proof_senders();
-        self.scram_proof = None;
+        if let Some(worker) = self.scram_proof.take() {
+            worker.shutdown().map_err(ReactorError::host)?;
+        }
         self.scram_proof_outcomes.clear();
         drop(self.commands.close());
+        self.state = HostState::Shutdown;
         self.shutdown_waiters.complete_all();
-        Some(TurnOutcome::Shutdown { commands })
+        Ok(Some(TurnOutcome::Shutdown { commands }))
     }
 }

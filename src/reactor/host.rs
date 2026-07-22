@@ -154,7 +154,7 @@ impl Reactor {
         if status == DrainStatus::Closed && self.state == HostState::Running {
             self.begin_implicit_shutdown()?;
         }
-        if let Some(outcome) = self.finish_shutdown_if_terminal(processed) {
+        if let Some(outcome) = self.finish_shutdown_if_terminal(processed)? {
             return Ok(outcome);
         }
         let deadlines = self.fire_due_deadlines()?;
@@ -197,7 +197,7 @@ impl Reactor {
             progress |= self.continue_metadata()?;
             progress |= self.continue_coordinator()?;
         }
-        if let Some(outcome) = self.finish_shutdown_if_terminal(processed) {
+        if let Some(outcome) = self.finish_shutdown_if_terminal(processed)? {
             return Ok(outcome);
         }
         if progress {

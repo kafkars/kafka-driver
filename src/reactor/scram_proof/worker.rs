@@ -16,12 +16,10 @@ pub(super) fn spawn(
     requests: Receiver<ScramProofRequest>,
     outcomes: SyncSender<ScramProofOutcome>,
     wake: WakeHandle,
-) -> io::Result<()> {
-    let worker = thread::Builder::new()
+) -> io::Result<thread::JoinHandle<()>> {
+    thread::Builder::new()
         .name(WORKER_NAME.into())
-        .spawn(move || run(&requests, &outcomes, &wake))?;
-    drop(worker);
-    Ok(())
+        .spawn(move || run(&requests, &outcomes, &wake))
 }
 
 fn run(

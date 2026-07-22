@@ -3,6 +3,7 @@
 use std::{
     fmt, io,
     sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel},
+    thread,
 };
 
 use crate::{ScramProofLimits, reactor::WakeHandle};
@@ -10,9 +11,10 @@ use crate::{ScramProofLimits, reactor::WakeHandle};
 use super::{ScramProofOutcome, ScramProofRequest, ScramProofSubmitError, worker};
 
 pub(in crate::reactor) struct ScramProofWorker {
-    sender: ScramProofSender,
-    outcomes: Receiver<ScramProofOutcome>,
+    sender: Option<ScramProofSender>,
+    outcomes: Option<Receiver<ScramProofOutcome>>,
     outcome_budget: usize,
+    worker: Option<thread::JoinHandle<()>>,
 }
 
 impl ScramProofWorker {
@@ -28,9 +30,10 @@ impl ScramProofWorker {
         let (outcome_sender, outcomes) = sync_channel(limits.outcome_capacity().get());
         (
             Self {
-                sender: ScramProofSender { requests },
-                outcomes,
+                sender: Some(ScramProofSender { requests }),
+                outcomes: Some(outcomes),
                 outcome_budget: limits.outcome_budget().get(),
+                worker: None,
             },
             request_receiver,
             outcome_sender,
@@ -43,16 +46,20 @@ impl ScramProofWorker {
     ) -> io::Result<Self> {
         let (requests, request_receiver) = sync_channel(limits.request_capacity().get());
         let (outcome_sender, outcomes) = sync_channel(limits.outcome_capacity().get());
-        worker::spawn(request_receiver, outcome_sender, wake)?;
+        let worker = worker::spawn(request_receiver, outcome_sender, wake)?;
         Ok(Self {
-            sender: ScramProofSender { requests },
-            outcomes,
+            sender: Some(ScramProofSender { requests }),
+            outcomes: Some(outcomes),
             outcome_budget: limits.outcome_budget().get(),
+            worker: Some(worker),
         })
     }
 
     pub(in crate::reactor) fn sender(&self) -> ScramProofSender {
-        self.sender.clone()
+        self.sender
+            .as_ref()
+            .unwrap_or_else(|| unreachable!("a live proof worker owns its sender"))
+            .clone()
     }
 
     pub(in crate::reactor) fn drain_into(
@@ -60,8 +67,14 @@ impl ScramProofWorker {
         destination: &mut Vec<ScramProofOutcome>,
     ) -> ScramProofProgress {
         let mut disconnected = false;
+        let Some(outcomes) = &self.outcomes else {
+            return ScramProofProgress {
+                outcomes: 0,
+                more_work: false,
+            };
+        };
         for _ in 0..self.outcome_budget {
-            match self.outcomes.try_recv() {
+            match outcomes.try_recv() {
                 Ok(outcome) => destination.push(outcome),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
@@ -74,6 +87,32 @@ impl ScramProofWorker {
             outcomes: destination.len(),
             more_work: !disconnected && destination.len() == self.outcome_budget,
         }
+    }
+
+    pub(in crate::reactor) fn shutdown(mut self) -> io::Result<()> {
+        self.close_channels();
+        self.join_worker()
+    }
+
+    fn close_channels(&mut self) {
+        self.sender = None;
+        self.outcomes = None;
+    }
+
+    fn join_worker(&mut self) -> io::Result<()> {
+        let Some(worker) = self.worker.take() else {
+            return Ok(());
+        };
+        worker
+            .join()
+            .map_err(|_| io::Error::other("SCRAM proof worker panicked"))
+    }
+}
+
+impl Drop for ScramProofWorker {
+    fn drop(&mut self) {
+        self.close_channels();
+        drop(self.join_worker());
     }
 }
 
