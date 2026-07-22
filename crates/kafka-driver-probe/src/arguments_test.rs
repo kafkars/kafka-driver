@@ -2,7 +2,7 @@
 
 use std::num::NonZeroUsize;
 
-use super::arguments::{ArgumentError, Arguments};
+use super::arguments::{ArgumentError, Arguments, SaslSelection};
 
 #[test]
 fn readiness_accepts_exactly_one_bootstrap_endpoint() {
@@ -44,6 +44,33 @@ fn reconnect_retains_one_exact_bootstrap_endpoint() {
         Ok(Arguments::Reconnect {
             bootstrap: "broker.test:9092".to_owned(),
         })
+    );
+}
+
+#[test]
+fn authentication_accepts_each_supported_sasl_mechanism() {
+    for (name, mechanism) in [
+        ("plain", SaslSelection::Plain),
+        ("scram-sha-256", SaslSelection::ScramSha256),
+        ("scram-sha-512", SaslSelection::ScramSha512),
+    ] {
+        let parsed = Arguments::parse(strings(["authenticate", name, "broker.test:9092"]));
+
+        assert_eq!(
+            parsed,
+            Ok(Arguments::Authenticate {
+                mechanism,
+                bootstrap: "broker.test:9092".to_owned(),
+            })
+        );
+    }
+}
+
+#[test]
+fn authentication_rejects_an_unsupported_sasl_mechanism() {
+    assert_eq!(
+        Arguments::parse(strings(["authenticate", "oauthbearer", "one:1"])),
+        Err(ArgumentError::SaslMechanism)
     );
 }
 

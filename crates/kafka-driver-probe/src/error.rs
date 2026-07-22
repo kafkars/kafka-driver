@@ -20,6 +20,9 @@ pub(crate) enum ProbeError {
         route: &'static str,
         attempts: usize,
     },
+    Credential {
+        name: &'static str,
+    },
     ReleaseRequired,
 }
 
@@ -51,6 +54,12 @@ impl fmt::Display for ProbeError {
                     "{route} was not ready after {attempts} exact probes"
                 )
             }
+            Self::Credential { name } => {
+                write!(
+                    formatter,
+                    "credential environment variable {name} is missing or invalid"
+                )
+            }
             Self::ReleaseRequired => {
                 formatter.write_str("performance measurement requires a release build")
             }
@@ -65,6 +74,7 @@ impl Error for ProbeError {
             Self::Kafka { .. }
             | Self::MissingApiVersions { .. }
             | Self::ReadinessAttempts { .. }
+            | Self::Credential { .. }
             | Self::ReleaseRequired => None,
         }
     }

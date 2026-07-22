@@ -20,6 +20,12 @@ pub(crate) enum Arguments {
     /// Proves one driver survives an externally orchestrated broker restart.
     Reconnect { bootstrap: String },
 
+    /// Proves one exact SASL mechanism against an authenticated broker.
+    Authenticate {
+        mechanism: SaslSelection,
+        bootstrap: String,
+    },
+
     /// Measures bounded generated-RPC progress through one real broker.
     Measure {
         bootstrap: String,
@@ -42,6 +48,12 @@ impl Arguments {
             [command, bootstrap] if command == "reconnect" => Ok(Self::Reconnect {
                 bootstrap: bootstrap.clone(),
             }),
+            [command, mechanism, bootstrap] if command == "authenticate" => {
+                Ok(Self::Authenticate {
+                    mechanism: SaslSelection::parse(mechanism)?,
+                    bootstrap: bootstrap.clone(),
+                })
+            }
             [command, bootstrap, samples] if command == "measure" => {
                 let samples = samples
                     .parse::<usize>()
@@ -64,20 +76,52 @@ impl Arguments {
 pub(crate) enum ArgumentError {
     Shape,
     Samples,
+    SaslMechanism,
 }
 
 impl fmt::Display for ArgumentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Shape => formatter.write_str(
-                "usage: kafka-driver-probe readiness <host:port> | routes <host:port> <topic> <group> | reconnect <host:port> | measure <host:port> <samples>",
+                "usage: kafka-driver-probe readiness <host:port> | routes <host:port> <topic> <group> | reconnect <host:port> | authenticate <plain|scram-sha-256|scram-sha-512> <host:port> | measure <host:port> <samples>",
             ),
             Self::Samples => write!(
                 formatter,
                 "measurement samples must be between 1 and {MAX_MEASUREMENT_SAMPLES}"
+            ),
+            Self::SaslMechanism => formatter.write_str(
+                "SASL mechanism must be plain, scram-sha-256, or scram-sha-512",
             ),
         }
     }
 }
 
 impl Error for ArgumentError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SaslSelection {
+    Plain,
+    ScramSha256,
+    ScramSha512,
+}
+
+impl SaslSelection {
+    fn parse(value: &str) -> Result<Self, ArgumentError> {
+        match value {
+            "plain" => Ok(Self::Plain),
+            "scram-sha-256" => Ok(Self::ScramSha256),
+            "scram-sha-512" => Ok(Self::ScramSha512),
+            _ => Err(ArgumentError::SaslMechanism),
+        }
+    }
+}
+
+impl fmt::Display for SaslSelection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Plain => "SASL PLAIN",
+            Self::ScramSha256 => "SCRAM-SHA-256",
+            Self::ScramSha512 => "SCRAM-SHA-512",
+        })
+    }
+}

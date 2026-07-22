@@ -8,6 +8,7 @@ mod endpoint;
 mod endpoint_test;
 mod error;
 mod scenario;
+mod security;
 mod session;
 
 use std::{env, fmt, process::ExitCode};

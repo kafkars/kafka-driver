@@ -3,7 +3,7 @@
 use std::{thread, time::Duration};
 
 use kafka_driver::{
-    Call, CallFailure, Delivery, Driver, DriverHost, RequestError, Route, TrafficClass,
+    Call, CallFailure, Delivery, Driver, DriverHost, RequestError, Route, SaslConfig, TrafficClass,
 };
 use kafka_wire::{API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse};
 
@@ -27,8 +27,18 @@ pub(crate) enum SeedObservation {
 
 impl ProbeSession {
     pub(crate) fn spawn(bootstrap: kafka_driver::BootstrapSet) -> Result<Self, ProbeError> {
-        let (driver, host) = Driver::builder()
-            .bootstrap(bootstrap)
+        Self::spawn_builder(Driver::builder().bootstrap(bootstrap))
+    }
+
+    pub(crate) fn spawn_sasl(
+        bootstrap: kafka_driver::BootstrapSet,
+        sasl: SaslConfig,
+    ) -> Result<Self, ProbeError> {
+        Self::spawn_builder(Driver::builder().bootstrap(bootstrap).sasl(sasl))
+    }
+
+    fn spawn_builder(builder: kafka_driver::DriverBuilder) -> Result<Self, ProbeError> {
+        let (driver, host) = builder
             .spawn()
             .map_err(|source| ProbeError::stage("start dedicated driver", source))?;
         Ok(Self { driver, host })
