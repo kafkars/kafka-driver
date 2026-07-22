@@ -6,6 +6,11 @@ mod host;
 mod mailbox;
 #[allow(
     dead_code,
+    reason = "M4 plaintext progress is wired into resource effects in the next slice"
+)]
+mod plaintext;
+#[allow(
+    dead_code,
     reason = "M4 poll adapter is consumed by the host in the next integration slice"
 )]
 mod poller;
