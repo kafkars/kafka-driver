@@ -76,10 +76,11 @@ impl Reactor {
         if self.shutdown {
             return Ok(TurnOutcome::Shutdown { commands: 0 });
         }
+        let mut external_progress = self.continue_broker_io()?;
         let mut status = self
             .commands
             .drain_into(&mut self.command_batch, self.limits.command_budget());
-        if self.command_batch.is_empty() && status == DrainStatus::Idle {
+        if self.command_batch.is_empty() && status == DrainStatus::Idle && !external_progress {
             self.poll_events.clear();
             self.poller
                 .poll_into(Some(max_wait), &mut self.poll_events)
@@ -88,7 +89,7 @@ impl Reactor {
                 .commands
                 .drain_into(&mut self.command_batch, self.limits.command_budget());
         }
-        let external_progress = self.observe_poll_events()?;
+        external_progress |= self.observe_poll_events()?;
         if self.command_batch.is_empty() {
             if status == DrainStatus::Closed {
                 self.shutdown = true;
@@ -97,7 +98,7 @@ impl Reactor {
             return if external_progress {
                 Ok(TurnOutcome::Progress {
                     commands: 0,
-                    more_work: false,
+                    more_work: self.broker_has_local_io(),
                 })
             } else {
                 Ok(TurnOutcome::Idle)
@@ -136,7 +137,7 @@ impl Reactor {
 
         Ok(TurnOutcome::Progress {
             commands: processed,
-            more_work: status == DrainStatus::MorePending,
+            more_work: status == DrainStatus::MorePending || self.broker_has_local_io(),
         })
     }
 
@@ -162,6 +163,18 @@ impl Reactor {
                 .map_err(ReactorError::broker)?;
         }
         Ok(progress)
+    }
+
+    fn continue_broker_io(&mut self) -> Result<bool, ReactorError> {
+        self.broker.as_mut().map_or(Ok(false), |broker| {
+            broker
+                .continue_io(&self.poller)
+                .map_err(ReactorError::broker)
+        })
+    }
+
+    fn broker_has_local_io(&self) -> bool {
+        self.broker.as_ref().is_some_and(SingleBroker::has_local_io)
     }
 }
 

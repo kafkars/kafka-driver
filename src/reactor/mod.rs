@@ -41,5 +41,5 @@ pub(crate) use command::Command;
 pub use error::ReactorError;
 pub use host::{Reactor, TurnOutcome};
 pub(crate) use mailbox::{MailboxSender, TrySendError, mailbox};
-pub(in crate::reactor) use poller::{PollEvent, PollInterest, PollWake, Poller};
+pub(in crate::reactor) use poller::{PollEvent, PollInterest, PollWake, Poller, Readiness};
 pub use wake::WakeHandle;

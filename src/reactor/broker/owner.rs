@@ -3,13 +3,15 @@
 use std::net::SocketAddr;
 
 use kafka_driver_core::{
-    ConnectionEffect, ConnectionEpoch, ConnectionInput, ConnectionMachine, ConnectionState,
+    ConnectionEffect, ConnectionEpoch, ConnectionInput, ConnectionMachine, ConnectionPhase,
+    ConnectionState,
 };
+use kafka_driver_transport::FrameBody;
 use kafka_wire_core::DecodeLimits;
 
 use crate::reactor::{
     PollEvent, PollInterest, Poller,
-    plaintext::ConnectProgress,
+    plaintext::{CompletedWrite, ConnectProgress, ReadBudget, WriteBudget},
     resource::{PlaintextResources, ResourceIdentity, ResourceToken},
     timer::TimerHeap,
 };
@@ -31,6 +33,12 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) resource_token: Option<ResourceToken>,
     pub(super) responses: ResponseRegistry,
     pub(super) timers: TimerHeap,
+    pub(super) read_budget: ReadBudget,
+    pub(super) write_budget: WriteBudget,
+    pub(super) frames: Vec<FrameBody>,
+    pub(super) completed_writes: Vec<CompletedWrite>,
+    pub(super) retry_read: bool,
+    pub(super) retry_write: bool,
 }
 
 impl SingleBroker {
@@ -43,6 +51,12 @@ impl SingleBroker {
             resource_token: None,
             responses: ResponseRegistry::new(limits.response_capacity(), DecodeLimits::default()),
             timers: TimerHeap::new(limits.timer_capacity()),
+            read_budget: limits.read_budget(),
+            write_budget: limits.write_budget(),
+            frames: Vec::new(),
+            completed_writes: Vec::new(),
+            retry_read: false,
+            retry_write: false,
         }
     }
 
@@ -81,11 +95,17 @@ impl SingleBroker {
         poller: &Poller,
         event: PollEvent,
     ) -> Result<bool, BrokerError> {
-        let PollEvent::Resource { token, .. } = event else {
+        let PollEvent::Resource { token, readiness } = event else {
             return Ok(false);
         };
         if self.resource_token != Some(token) {
             return Ok(false);
+        }
+        if matches!(
+            self.machine.state().phase(),
+            ConnectionPhase::Ready | ConnectionPhase::Draining
+        ) {
+            return self.drive_io(poller, token, readiness);
         }
         let Some((identity, connection)) = self.resources.get_mut(token) else {
             return Ok(false);
