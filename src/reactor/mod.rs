@@ -3,6 +3,11 @@
 mod command;
 mod host;
 mod mailbox;
+#[allow(
+    dead_code,
+    reason = "M4 locks bounded deadline ordering before the poll host consumes it"
+)]
+mod timer;
 mod wake;
 
 #[cfg(test)]
