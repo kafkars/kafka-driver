@@ -7,11 +7,11 @@ use kafka_driver_core::{
 
 use crate::{
     RequestError,
-    reactor::{PollInterest, Poller, resource::ResourceIdentity, timer::DeadlineTimer},
+    reactor::{Poller, timer::DeadlineTimer},
     request::ErasedRequest,
 };
 
-use super::{BrokerError, owner::SingleBroker, terminal::expect_no_effects};
+use super::{BrokerError, owner::SingleBroker, write_admission::WriteRequestOutcome};
 
 impl SingleBroker {
     pub(in crate::reactor) fn submit(
@@ -72,65 +72,20 @@ impl SingleBroker {
                         let Some(pending) = self.connection.pending_call(call_id) else {
                             return Err(BrokerError::MissingEffect);
                         };
-                        self.abort_write(poller, pending.write_effect(), Some(submitted_call))?;
+                        self.abort_unsent_call(
+                            pending.call_id(),
+                            pending.write_effect(),
+                            Some(submitted_call),
+                        )?;
                         return Ok(());
                     }
                 }
-                ConnectionEffect::WriteRequest {
-                    epoch,
-                    transport_id,
-                    call_id,
-                    correlation_id,
-                    effect_id,
-                } => {
-                    if call_id != submitted_call {
-                        return Err(ownership_error(submitted_call, call_id));
-                    }
-                    let Some(owned) = request.take() else {
-                        return Err(BrokerError::MissingEffect);
-                    };
-                    let Some(version) = version else {
-                        return Err(BrokerError::MissingEffect);
-                    };
-                    let Ok(frame) = owned.prepare(
-                        correlation_id,
-                        version,
-                        self.outbound_frame,
-                        &mut self.responses,
-                    ) else {
-                        self.abort_write(poller, effect_id, Some(call_id))?;
-                        return Ok(());
-                    };
-                    let Some(token) = self.resource_token else {
-                        self.abort_write(poller, effect_id, None)?;
-                        return Ok(());
-                    };
-                    let identity = ResourceIdentity::new(transport_id, epoch);
-                    let admitted =
-                        self.resources
-                            .get_mut(token)
-                            .is_some_and(|(observed, connection)| {
-                                observed == identity
-                                    && connection.admit_write(call_id, effect_id, frame).is_ok()
-                            });
-                    if !admitted {
-                        self.abort_write(poller, effect_id, None)?;
-                        return Ok(());
-                    }
-                    if self
-                        .resources
-                        .reregister(poller, token, PollInterest::ReadWrite)
-                        .is_err()
+                effect @ ConnectionEffect::WriteRequest { .. } => {
+                    if self.interpret_write_request(poller, &mut request, version, effect)?
+                        == WriteRequestOutcome::Settled
                     {
-                        self.abort_write(poller, effect_id, None)?;
                         return Ok(());
                     }
-                    let transition = self.connection.apply(ConnectionInput::WriteSubmitted {
-                        epoch,
-                        transport_id,
-                        effect_id,
-                    })?;
-                    expect_no_effects(&transition.into_effects())?;
                 }
                 ConnectionEffect::FailCall {
                     call_id,
@@ -154,7 +109,7 @@ impl SingleBroker {
         Ok(())
     }
 
-    fn abort_write(
+    pub(super) fn abort_write(
         &mut self,
         poller: &Poller,
         effect_id: kafka_driver_core::EffectId,

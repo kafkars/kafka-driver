@@ -2,13 +2,14 @@
 
 use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
 
-use kafka_driver_core::{CallId, ConnectionState, Moment};
+use kafka_driver_core::{CallFailure, CallId, ConnectionState, Delivery, Moment};
+use kafka_driver_transport::{FrameLimits, WriteQueueLimits};
 use kafka_wire::{ApiVersionsRequest, MetadataRequest};
 use kafka_wire_core::ApiKey;
 
 use crate::{
     RequestError,
-    reactor::{Poller, broker::limits::BrokerLimits},
+    reactor::{Poller, broker::limits::BrokerLimits, transport::TransportLimits},
     request::erased_request,
 };
 
@@ -89,4 +90,70 @@ fn given_an_unadvertised_api_when_submitted_then_it_fails_without_fifo_ownership
             api_key: ApiKey::new(3),
         }))
     );
+}
+
+#[test]
+fn given_a_pending_call_when_a_later_write_is_rejected_then_the_epoch_stays_ready() {
+    // Given
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read loopback broker address: {error}"));
+    let mut poller = Poller::new(NonZeroUsize::MIN)
+        .unwrap_or_else(|error| panic!("create broker poller: {error}"));
+    let mut broker = SingleBroker::new(address, one_write_limits());
+    broker
+        .start(&poller, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("start broker connection: {error}"));
+    let (mut peer, _) = listener
+        .accept()
+        .unwrap_or_else(|error| panic!("accept broker connection: {error}"));
+    complete_negotiation(&mut poller, &mut broker, &mut peer);
+    let (first_call, first) = erased_request(
+        CallId::from_raw(1),
+        ApiVersionsRequest::default(),
+        Duration::from_secs(1),
+    );
+    broker
+        .submit(&poller, first, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("admit first request: {error}"));
+    let (second_call, second) = erased_request(
+        CallId::from_raw(2),
+        ApiVersionsRequest::default(),
+        Duration::from_secs(1),
+    );
+
+    // When: the one-frame writer rejects B before accepting any B bytes.
+    broker
+        .submit(&poller, second, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("locally reject second request: {error}"));
+
+    // Then: A remains the sole pending call on the same ready epoch.
+    assert!(matches!(
+        broker.state(),
+        ConnectionState::Ready { pending: 1, .. }
+    ));
+    assert_eq!(broker.admitted_counts(), (1, 1, 1));
+    assert_eq!(
+        second_call.wait(),
+        Ok(Err(RequestError::Rejected {
+            failure: CallFailure::LocallyRejected,
+            delivery: Delivery::NotSent,
+        }))
+    );
+    drop(first_call);
+}
+
+fn one_write_limits() -> BrokerLimits {
+    let transport = TransportLimits::new(
+        FrameLimits::default(),
+        WriteQueueLimits::new(NonZeroUsize::MIN, nonzero(4_096)),
+        nonzero(4_096),
+    );
+    BrokerLimits::default().with_transport(transport)
+}
+
+fn nonzero(value: usize) -> NonZeroUsize {
+    NonZeroUsize::new(value).unwrap_or_else(|| panic!("test bound must be nonzero"))
 }

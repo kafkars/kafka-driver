@@ -22,7 +22,7 @@ use super::{FailedResponses, ResponseCloseReason};
 
 /// Bounded typed response ownership in Kafka connection order.
 pub(crate) struct ResponseRegistry {
-    slots: VecDeque<Box<dyn PendingResponse>>,
+    pub(super) slots: VecDeque<Box<dyn PendingResponse>>,
     max_pending: usize,
     decode_limits: DecodeLimits,
 }

@@ -91,6 +91,12 @@ impl BrokerLimits {
     pub(in crate::reactor) const fn backoff(self) -> BackoffPolicy {
         self.backoff
     }
+
+    #[cfg(test)]
+    pub(in crate::reactor) const fn with_transport(mut self, transport: TransportLimits) -> Self {
+        self.transport = transport;
+        self
+    }
 }
 
 impl Default for BrokerLimits {

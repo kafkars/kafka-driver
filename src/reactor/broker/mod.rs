@@ -8,6 +8,7 @@ mod error;
 mod failure;
 mod identity;
 mod limits;
+mod local_rejection;
 mod negotiation;
 mod owner;
 mod readiness;
@@ -17,6 +18,7 @@ mod response;
 mod shutdown;
 mod submission;
 mod terminal;
+mod write_admission;
 
 #[cfg(test)]
 mod authentication_fixture_test;

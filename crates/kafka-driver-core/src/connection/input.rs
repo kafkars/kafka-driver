@@ -104,6 +104,17 @@ pub enum ConnectionInput {
         /// Write effect being completed.
         effect_id: EffectId,
     },
+    /// Aborts one call that local work rejected before writer acceptance.
+    AbortUnsentCall {
+        /// Connection epoch echoed from the write effect.
+        epoch: ConnectionEpoch,
+        /// Transport resource echoed from the write effect.
+        transport_id: TransportId,
+        /// Public call identity whose unsent work is being aborted.
+        call_id: CallId,
+        /// Write effect that was never accepted by the writer.
+        effect_id: EffectId,
+    },
     /// Reports that a requested write failed before response completion.
     WriteFailed {
         /// Connection epoch echoed from the write effect.
@@ -169,6 +180,7 @@ impl ConnectionInput {
             Self::Authentication { .. } => ConnectionInputKind::Authentication,
             Self::Submit { .. } => ConnectionInputKind::Submit,
             Self::WriteSubmitted { .. } => ConnectionInputKind::WriteSubmitted,
+            Self::AbortUnsentCall { .. } => ConnectionInputKind::AbortUnsentCall,
             Self::WriteFailed { .. } => ConnectionInputKind::WriteFailed,
             Self::ResponseReceived { .. } => ConnectionInputKind::ResponseReceived,
             Self::ResponseRejected { .. } => ConnectionInputKind::ResponseRejected,
@@ -200,6 +212,8 @@ pub enum ConnectionInputKind {
     Submit,
     /// `ConnectionInput::WriteSubmitted`.
     WriteSubmitted,
+    /// `ConnectionInput::AbortUnsentCall`.
+    AbortUnsentCall,
     /// `ConnectionInput::WriteFailed`.
     WriteFailed,
     /// `ConnectionInput::ResponseReceived`.

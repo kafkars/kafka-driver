@@ -131,6 +131,19 @@ impl PendingQueue {
             .find(|call| call.write_effect == effect)
     }
 
+    pub(super) fn remove_awaiting_write(
+        &mut self,
+        call_id: CallId,
+        effect_id: EffectId,
+    ) -> Option<PendingCall> {
+        let index = self.calls.iter().position(|pending| {
+            pending.call_id == call_id
+                && pending.write_effect == effect_id
+                && pending.phase == PendingPhase::AwaitingWrite
+        })?;
+        self.calls.remove(index)
+    }
+
     pub(super) fn by_timer(&self, timer: TimerId) -> Option<&PendingCall> {
         self.calls.iter().find(|call| call.deadline_timer == timer)
     }

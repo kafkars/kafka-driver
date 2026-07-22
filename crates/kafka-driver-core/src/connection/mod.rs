@@ -42,6 +42,8 @@ mod response_test;
 mod scenario_support_test;
 #[cfg(test)]
 mod shutdown_test;
+#[cfg(test)]
+mod unsent_abort_test;
 
 pub use correlation::CorrelationId;
 pub use effect::ConnectionEffect;

@@ -107,6 +107,47 @@ impl ConnectionMachine {
         Decision::applied(Vec::new())
     }
 
+    pub(super) fn abort_unsent_call(
+        &mut self,
+        epoch: ConnectionEpoch,
+        transport_id: TransportId,
+        call_id: CallId,
+        effect_id: EffectId,
+    ) -> Decision {
+        let StateData::Active { mode, connection } = &mut self.state else {
+            return Decision::stale();
+        };
+        if epoch != connection.epoch || transport_id != connection.transport_id {
+            return Decision::stale();
+        }
+        let Some(aborted) = connection.pending.remove_awaiting_write(call_id, effect_id) else {
+            return Decision::stale();
+        };
+        let mut effects = vec![
+            ConnectionEffect::CancelDeadline {
+                timer_id: aborted.deadline_timer(),
+            },
+            ConnectionEffect::FailCall {
+                call_id,
+                failure: CallFailure::LocallyRejected,
+                delivery: Delivery::NotSent,
+            },
+        ];
+        if *mode == ActiveMode::Draining && connection.pending.is_empty() {
+            self.state = StateData::Closing {
+                epoch,
+                transport_id,
+                reason: CloseReason::Drained,
+            };
+            effects.push(ConnectionEffect::CloseTransport {
+                epoch,
+                transport_id,
+                reason: CloseReason::Drained,
+            });
+        }
+        Decision::applied(effects)
+    }
+
     pub(super) fn write_failed(
         &mut self,
         epoch: ConnectionEpoch,

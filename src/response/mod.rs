@@ -2,6 +2,7 @@
 
 mod envelope;
 mod error;
+mod local_rejection;
 mod outcome;
 mod registry;
 mod slot;
@@ -12,6 +13,8 @@ mod admission_test;
 mod dispatch_test;
 #[cfg(test)]
 mod end_to_end_test;
+#[cfg(test)]
+mod local_rejection_test;
 
 pub(crate) use envelope::ResponseEnvelope;
 pub(crate) use error::{

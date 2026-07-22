@@ -172,6 +172,12 @@ impl ConnectionMachine {
                 transport_id,
                 effect_id,
             } => Ok(self.write_submitted(epoch, transport_id, effect_id)),
+            ConnectionInput::AbortUnsentCall {
+                epoch,
+                transport_id,
+                call_id,
+                effect_id,
+            } => Ok(self.abort_unsent_call(epoch, transport_id, call_id, effect_id)),
             ConnectionInput::WriteFailed {
                 epoch,
                 transport_id,

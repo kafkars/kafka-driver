@@ -91,6 +91,8 @@ pub enum CallFailure {
     CorrelationSpaceExhausted,
     /// The call deadline had already elapsed or fired while pending.
     DeadlineExceeded,
+    /// Local preparation or bounded writer admission rejected an unsent call.
+    LocallyRejected,
     /// The connection epoch ended before this call completed.
     ConnectionClosed {
         /// Connection-level reason shared by the failed pending set.
