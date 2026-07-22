@@ -120,7 +120,9 @@ impl ConnectionMachine {
                 mode: ActiveMode::Ready,
                 ..
             } => CallFailure::NotReady,
-            StateData::Closing { .. } | StateData::Closed { .. } => CallFailure::Closed,
+            StateData::Closing { reason, .. } | StateData::Closed { reason, .. } => {
+                CallFailure::ConnectionClosed { reason: *reason }
+            }
         }
     }
 }

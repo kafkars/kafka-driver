@@ -26,6 +26,8 @@ mod admission_test;
 #[cfg(test)]
 mod authentication_lifecycle_test;
 #[cfg(test)]
+mod authentication_rejection_test;
+#[cfg(test)]
 mod authentication_test;
 #[cfg(test)]
 mod correlation_test;

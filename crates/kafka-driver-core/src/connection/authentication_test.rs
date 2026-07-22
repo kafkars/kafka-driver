@@ -19,7 +19,7 @@ use super::{
     ConnectionPhase, ConnectionState, CorrelationId,
 };
 
-const AUTHENTICATION_EFFECT: crate::EffectId = crate::EffectId::from_raw(20);
+pub(super) const AUTHENTICATION_EFFECT: crate::EffectId = crate::EffectId::from_raw(20);
 pub(super) const AUTHENTICATION_TIMER: crate::TimerId = crate::TimerId::from_raw(21);
 const HANDSHAKE_API: ApiKey = ApiKey::new(17);
 const AUTHENTICATE_API: ApiKey = ApiKey::new(36);
@@ -232,7 +232,7 @@ pub(super) fn authenticating_machine() -> ConnectionMachine {
     machine
 }
 
-fn exchanging_machine() -> ConnectionMachine {
+pub(super) fn exchanging_machine() -> ConnectionMachine {
     let mut machine = authenticating_machine();
     apply(
         &mut machine,
@@ -278,7 +278,7 @@ pub(super) const fn authentication_deadline() -> Moment {
     Moment::from_nanos(200)
 }
 
-fn round(value: u8) -> AuthenticationRound {
+pub(super) fn round(value: u8) -> AuthenticationRound {
     AuthenticationRound::new(
         NonZeroU8::new(value).unwrap_or_else(|| panic!("round must be nonzero")),
     )
