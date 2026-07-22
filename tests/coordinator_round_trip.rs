@@ -6,7 +6,7 @@ mod support;
 
 use std::{io::Write, time::Duration};
 
-use kafka_driver::{CoordinatorKey, CoordinatorKind, Driver, Route};
+use kafka_driver::{CoordinatorKey, CoordinatorKind, Driver, Route, RouteReceipt};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
 };
@@ -54,8 +54,8 @@ fn exact_group_key_discovers_then_routes_to_the_advertised_coordinator() {
     let key = CoordinatorKey::new(CoordinatorKind::Group, "orders-readers")
         .unwrap_or_else(|error| panic!("valid coordinator key rejected: {error}"));
     let call = driver
-        .request(
-            Route::Coordinator { key },
+        .request_tracked(
+            Route::Coordinator { key: key.clone() },
             ApiVersionsRequest::default(),
             Duration::from_secs(10),
         )
@@ -90,5 +90,12 @@ fn exact_group_key_discovers_then_routes_to_the_advertised_coordinator() {
         "read coordinator response",
     );
 
-    assert_eq!(call.wait(), Ok(Ok(response)));
+    let outcome = call
+        .wait()
+        .unwrap_or_else(|error| panic!("observe tracked coordinator call: {error}"));
+    assert_eq!(outcome.result(), &Ok(response));
+    assert!(matches!(
+        outcome.receipt(),
+        Some(RouteReceipt::Coordinator { route }) if route.key() == &key
+    ));
 }

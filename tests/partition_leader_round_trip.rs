@@ -6,7 +6,7 @@ mod support;
 
 use std::{io::Write, time::Duration};
 
-use kafka_driver::{Driver, PartitionId, Route, TopicName};
+use kafka_driver::{Driver, PartitionId, Route, RouteReceipt, TopicName};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
 };
@@ -57,7 +57,7 @@ fn missing_partition_fact_fetches_exact_topic_then_routes_to_its_leader() {
     let partition =
         PartitionId::new(3).unwrap_or_else(|error| panic!("valid partition rejected: {error}"));
     let call = driver
-        .request(
+        .request_tracked(
             Route::PartitionLeader {
                 topic: topic.clone(),
                 partition,
@@ -102,5 +102,13 @@ fn missing_partition_fact_fetches_exact_topic_then_routes_to_its_leader() {
         .unwrap_or_else(|error| panic!("write leader response: {error}"));
     drive(&mut reactor, Duration::from_secs(1), "read leader response");
 
-    assert_eq!(call.wait(), Ok(Ok(response)));
+    let outcome = call
+        .wait()
+        .unwrap_or_else(|error| panic!("observe tracked partition call: {error}"));
+    assert_eq!(outcome.result(), &Ok(response));
+    assert!(matches!(
+        outcome.receipt(),
+        Some(RouteReceipt::PartitionLeader { route })
+            if route.topic() == &topic && route.partition() == partition
+    ));
 }

@@ -6,7 +6,7 @@ mod support;
 
 use std::{io::Write, net::TcpListener, time::Duration};
 
-use kafka_driver::{Driver, Reactor, Route, TrafficClass};
+use kafka_driver::{Driver, Reactor, Route, RouteReceipt, TrafficClass};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
 };
@@ -21,7 +21,7 @@ use support::complete_negotiation;
 fn controller_call_opens_the_advertised_broker_and_completes_there() {
     let (driver, mut reactor, controller_listener) = ready_cluster();
     let call = driver
-        .request(
+        .request_tracked(
             Route::Controller,
             ApiVersionsRequest::default(),
             Duration::from_secs(10),
@@ -32,7 +32,14 @@ fn controller_call_opens_the_advertised_broker_and_completes_there() {
     complete_negotiation(&mut controller, &mut reactor);
     let response = reply(&mut controller, &mut reactor);
 
-    assert_eq!(call.wait(), Ok(Ok(response)));
+    let outcome = call
+        .wait()
+        .unwrap_or_else(|error| panic!("observe tracked controller call: {error}"));
+    assert_eq!(outcome.result(), &Ok(response));
+    assert!(matches!(
+        outcome.receipt(),
+        Some(RouteReceipt::Controller { .. })
+    ));
 }
 
 #[test]
