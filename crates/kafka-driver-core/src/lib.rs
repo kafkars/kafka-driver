@@ -8,6 +8,7 @@ mod broker;
 mod capability;
 mod connection;
 mod delivery;
+mod directory;
 mod endpoint;
 mod identity;
 mod time;
@@ -39,7 +40,14 @@ pub use connection::{
     TransitionSequence, TransportFailure,
 };
 pub use delivery::Delivery;
+pub use directory::{
+    BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryError, BrokerDirectoryLimits,
+    BrokerRoute, BrokerRouteError,
+};
 pub use endpoint::{BrokerEndpoint, HostName, HostNameError, IpAddress, ResolvedAddress};
-pub use identity::{CallId, ConnectionEpoch, EffectId, OperationId, TimerId, TransportId};
+pub use identity::{
+    BrokerId, BrokerIdError, CallId, ConnectionEpoch, EffectId, MetadataGeneration, OperationId,
+    TimerId, TransportId,
+};
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use time::Moment;
