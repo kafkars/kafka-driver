@@ -3,7 +3,8 @@
 use std::{thread, time::Duration};
 
 use kafka_driver::{
-    Call, CallFailure, Delivery, Driver, DriverHost, RequestError, Route, SaslConfig, TrafficClass,
+    Call, CallFailure, Delivery, Driver, DriverHost, RequestError, Route, SaslConfig,
+    TlsClientConfig, TrafficClass,
 };
 use kafka_wire::{API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse};
 
@@ -35,6 +36,13 @@ impl ProbeSession {
         sasl: SaslConfig,
     ) -> Result<Self, ProbeError> {
         Self::spawn_builder(Driver::builder().bootstrap(bootstrap).sasl(sasl))
+    }
+
+    pub(crate) fn spawn_tls(
+        address: std::net::SocketAddr,
+        tls: TlsClientConfig,
+    ) -> Result<Self, ProbeError> {
+        Self::spawn_builder(Driver::builder().rustls_broker(address, tls))
     }
 
     fn spawn_builder(builder: kafka_driver::DriverBuilder) -> Result<Self, ProbeError> {

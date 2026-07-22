@@ -1,6 +1,7 @@
 //! Curated real-broker scenarios over only the public driver surface.
 
 mod authentication;
+mod encryption;
 mod measurement;
 mod readiness;
 mod reconnect;

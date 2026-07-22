@@ -1,6 +1,6 @@
 //! Conversion from one operator endpoint into bounded driver bootstrap ownership.
 
-use std::{error::Error, fmt, num::NonZeroU16};
+use std::{error::Error, fmt, net::SocketAddr, num::NonZeroU16};
 
 use kafka_driver::{BootstrapLimits, BootstrapSet, BrokerEndpoint, HostName};
 
@@ -17,6 +17,10 @@ pub(crate) fn bootstrap(value: &str) -> Result<BootstrapSet, EndpointError> {
         BootstrapLimits::default(),
     )
     .map_err(|_| EndpointError::Bootstrap)
+}
+
+pub(crate) fn socket(value: &str) -> Result<SocketAddr, EndpointError> {
+    value.parse().map_err(|_| EndpointError::Socket)
 }
 
 fn split(value: &str) -> Option<(String, &str)> {
@@ -36,6 +40,7 @@ pub(crate) enum EndpointError {
     Host,
     Port,
     Bootstrap,
+    Socket,
 }
 
 impl fmt::Display for EndpointError {
@@ -47,6 +52,7 @@ impl fmt::Display for EndpointError {
             Self::Host => formatter.write_str("bootstrap host is invalid"),
             Self::Port => formatter.write_str("bootstrap port must be between 1 and 65535"),
             Self::Bootstrap => formatter.write_str("bootstrap endpoint exceeded driver admission"),
+            Self::Socket => formatter.write_str("direct endpoint must be a numeric IP and port"),
         }
     }
 }

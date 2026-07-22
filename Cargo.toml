@@ -31,6 +31,7 @@ kafka-driver-transport = { path = "crates/kafka-driver-transport" }
 kafka-wire-core = { path = "../kafka-protocol/crates/kafka-wire-core" }
 mio = { version = "1.2", default-features = false, features = ["net", "os-poll"] }
 ring = "0.17.14"
+rustls = { version = "0.23.42", default-features = false, features = ["ring", "std"] }
 serde = { version = "1.0", features = ["derive"] }
 stringprep = "0.1.5"
 syn = { version = "2.0", features = ["full"] }
@@ -60,7 +61,7 @@ kafka-wire = { path = "../kafka-protocol/crates/kafka-wire" }
 kafka-wire-core.workspace = true
 mio.workspace = true
 ring.workspace = true
-rustls = { version = "0.23.42", default-features = false, features = ["ring", "std"], optional = true }
+rustls = { workspace = true, optional = true }
 stringprep.workspace = true
 zeroize.workspace = true
 

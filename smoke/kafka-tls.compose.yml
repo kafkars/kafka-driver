@@ -1,0 +1,36 @@
+services:
+  kafka:
+    image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+    ports:
+      - "127.0.0.1:${KAFKA_HOST_PORT}:9092"
+    volumes:
+      - ${KAFKA_SSL_SECRETS}:/etc/kafka/secrets:ro
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:19092,SSL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,SSL://localhost:${KAFKA_HOST_PORT}
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,SSL:SSL
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@127.0.0.1:9093
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka-driver.p12
+      KAFKA_SSL_KEY_CREDENTIALS: key-password
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: store-password
+      KAFKA_SSL_KEYSTORE_TYPE: PKCS12
+      KAFKA_SSL_CLIENT_AUTH: none
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_NUM_PARTITIONS: "1"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /opt/kafka/bin/kafka-broker-api-versions.sh
+          --bootstrap-server 127.0.0.1:19092 >/dev/null 2>&1
+      interval: 1s
+      timeout: 5s
+      retries: 60
+      start_period: 10s

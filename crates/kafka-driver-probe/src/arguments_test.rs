@@ -75,6 +75,25 @@ fn authentication_rejects_an_unsupported_sasl_mechanism() {
 }
 
 #[test]
+fn tls_retains_address_trust_anchor_and_server_identity() {
+    let parsed = Arguments::parse(strings([
+        "tls",
+        "127.0.0.1:9093",
+        "/tmp/test-ca.pem",
+        "broker.test",
+    ]));
+
+    assert_eq!(
+        parsed,
+        Ok(Arguments::Tls {
+            address: "127.0.0.1:9093".to_owned(),
+            certificate: "/tmp/test-ca.pem".to_owned(),
+            server_name: "broker.test".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn partial_or_expanded_commands_are_rejected() {
     assert_eq!(
         Arguments::parse(strings(["readiness"])),
@@ -90,6 +109,10 @@ fn partial_or_expanded_commands_are_rejected() {
     );
     assert_eq!(
         Arguments::parse(strings(["reconnect", "one:1", "two:2"])),
+        Err(ArgumentError::Shape)
+    );
+    assert_eq!(
+        Arguments::parse(strings(["tls", "one:1", "ca.pem"])),
         Err(ArgumentError::Shape)
     );
 }

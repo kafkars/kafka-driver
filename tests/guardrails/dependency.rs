@@ -75,12 +75,24 @@ fn rustls_is_a_runtime_neutral_optional_transport_feature() {
         .parse::<toml::Value>()
         .unwrap_or_else(|error| panic!("parse Cargo.toml: {error}"));
     let rustls = &value["dependencies"]["rustls"];
+    let policy = &value["workspace"]["dependencies"]["rustls"];
     let transport_feature = value["features"]["tls-rustls"]
         .as_array()
         .unwrap_or_else(|| panic!("tls-rustls must be an explicit feature"));
+    let policy_features = policy["features"]
+        .as_array()
+        .unwrap_or_else(|| panic!("workspace rustls policy must name exact features"));
 
+    assert_eq!(rustls["workspace"].as_bool(), Some(true));
     assert_eq!(rustls["optional"].as_bool(), Some(true));
-    assert_eq!(rustls["default-features"].as_bool(), Some(false));
+    assert_eq!(policy["default-features"].as_bool(), Some(false));
+    assert_eq!(
+        policy_features,
+        &[
+            toml::Value::String("ring".to_owned()),
+            toml::Value::String("std".to_owned()),
+        ]
+    );
     assert_eq!(
         transport_feature,
         &[toml::Value::String("dep:rustls".to_owned())]
@@ -132,7 +144,7 @@ fn simulator_depends_only_on_the_deterministic_core() {
 }
 
 #[test]
-fn real_broker_probe_depends_only_on_public_driver_and_protocol_surfaces() {
+fn real_broker_probe_depends_only_on_public_driver_protocol_and_tls_surfaces() {
     let root = workspace_root();
     let guardrails = load_guardrails(&root);
     let dependencies = manifest_dependencies(&root.join("crates/kafka-driver-probe/Cargo.toml"));
