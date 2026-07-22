@@ -15,6 +15,7 @@ pub struct ResolverLimits {
     outcome_capacity: NonZeroUsize,
     outcome_budget: NonZeroUsize,
     max_addresses: NonZeroUsize,
+    pending_capacity: NonZeroUsize,
 }
 
 impl ResolverLimits {
@@ -39,7 +40,14 @@ impl ResolverLimits {
             outcome_capacity,
             outcome_budget,
             max_addresses,
+            pending_capacity: derived_pending_capacity(request_capacity, outcome_capacity),
         }
+    }
+
+    /// Replaces the maximum identity-to-owner entries retained for outstanding work.
+    pub const fn with_pending_capacity(mut self, pending_capacity: NonZeroUsize) -> Self {
+        self.pending_capacity = pending_capacity;
+        self
     }
 
     /// Returns the maximum unresolved requests retained by the worker queue.
@@ -61,6 +69,22 @@ impl ResolverLimits {
     pub const fn max_addresses(self) -> NonZeroUsize {
         self.max_addresses
     }
+
+    /// Returns the maximum outstanding DNS effects tracked by the reactor.
+    pub const fn pending_capacity(self) -> NonZeroUsize {
+        self.pending_capacity
+    }
+}
+
+const fn derived_pending_capacity(requests: NonZeroUsize, outcomes: NonZeroUsize) -> NonZeroUsize {
+    let capacity = requests
+        .get()
+        .saturating_add(outcomes.get())
+        .saturating_add(1);
+    let Some(capacity) = NonZeroUsize::new(capacity) else {
+        panic!("derived resolver ownership capacity must be nonzero");
+    };
+    capacity
 }
 
 impl Default for ResolverLimits {
