@@ -5,7 +5,8 @@ use std::num::NonZeroUsize;
 use kafka_driver_core::{ConnectionEpoch, TransportId};
 
 use super::{
-    ResourceAdmissionFailure, ResourceIdentity, ResourceToken, registry::ResourceRegistry,
+    ResourceAdmissionFailure, ResourceIdentity, ResourceNamespace, ResourceToken,
+    registry::ResourceRegistry,
 };
 
 #[test]
@@ -127,6 +128,26 @@ fn exhausted_generation_space_is_explicit_and_preserves_ownership() {
     );
     assert_eq!(error.into_resource(), "socket-2");
     assert_eq!(registry.len(), 0);
+}
+
+#[test]
+fn broker_namespaces_make_equal_local_slots_and_generations_globally_disjoint() {
+    let owners = nonzero(2);
+    let left_namespace =
+        ResourceNamespace::new(0, owners).unwrap_or_else(|| panic!("left namespace must fit"));
+    let right_namespace =
+        ResourceNamespace::new(1, owners).unwrap_or_else(|| panic!("right namespace must fit"));
+    let mut left = ResourceRegistry::in_namespace(nonzero(1), left_namespace);
+    let mut right = ResourceRegistry::in_namespace(nonzero(1), right_namespace);
+
+    let left_token = admit(&mut left, identity(1, 1), "left");
+    let right_token = admit(&mut right, identity(1, 1), "right");
+
+    assert_ne!(left_token, right_token);
+    assert_eq!(left_token.owner(1, owners.get()), Some(0));
+    assert_eq!(right_token.owner(1, owners.get()), Some(1));
+    assert!(left.get_mut(right_token).is_none());
+    assert!(right.get_mut(left_token).is_none());
 }
 
 fn registry<R>(capacity: usize) -> ResourceRegistry<R> {

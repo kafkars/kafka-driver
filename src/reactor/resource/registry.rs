@@ -4,22 +4,34 @@ use std::{mem, num::NonZeroUsize};
 
 use kafka_driver_core::TransportId;
 
-use super::{ResourceAdmissionError, ResourceAdmissionFailure, ResourceIdentity, ResourceToken};
+use super::{
+    ResourceAdmissionError, ResourceAdmissionFailure, ResourceIdentity, ResourceNamespace,
+    ResourceToken,
+};
 
 /// Single-owner registry for resources associated with poll readiness tokens.
 #[derive(Debug)]
 pub(in crate::reactor) struct ResourceRegistry<R> {
     slots: Vec<ResourceSlot<R>>,
     active: usize,
+    namespace: ResourceNamespace,
 }
 
 impl<R> ResourceRegistry<R> {
     pub(in crate::reactor) fn new(capacity: NonZeroUsize) -> Self {
+        Self::in_namespace(capacity, ResourceNamespace::single())
+    }
+
+    pub(in crate::reactor) fn in_namespace(
+        capacity: NonZeroUsize,
+        namespace: ResourceNamespace,
+    ) -> Self {
         Self {
             slots: (0..capacity.get())
                 .map(|_| ResourceSlot::Vacant { generation: 0 })
                 .collect(),
             active: 0,
+            namespace,
         }
     }
 
@@ -64,7 +76,7 @@ impl<R> ResourceRegistry<R> {
         &mut self,
         token: ResourceToken,
     ) -> Option<(ResourceIdentity, &mut R)> {
-        let (slot_index, generation) = token.decode(self.slots.len())?;
+        let (slot_index, generation) = token.decode_in(self.slots.len(), self.namespace)?;
         let ResourceSlot::Occupied {
             generation: current,
             identity,
@@ -88,9 +100,12 @@ impl<R> ResourceRegistry<R> {
                     generation,
                     identity: current,
                     ..
-                } if *current == identity => {
-                    ResourceToken::encode(self.slots.len(), slot_index, *generation)
-                }
+                } if *current == identity => ResourceToken::encode_in(
+                    self.slots.len(),
+                    self.namespace,
+                    slot_index,
+                    *generation,
+                ),
                 ResourceSlot::Vacant { .. }
                 | ResourceSlot::Occupied { .. }
                 | ResourceSlot::Exhausted => None,
@@ -102,7 +117,7 @@ impl<R> ResourceRegistry<R> {
         token: ResourceToken,
     ) -> Option<(ResourceIdentity, R)> {
         let capacity = self.slots.len();
-        let (slot_index, generation) = token.decode(capacity)?;
+        let (slot_index, generation) = token.decode_in(capacity, self.namespace)?;
         let slot = self.slots.get_mut(slot_index)?;
         let current = mem::replace(slot, ResourceSlot::Exhausted);
         let ResourceSlot::Occupied {
@@ -123,7 +138,7 @@ impl<R> ResourceRegistry<R> {
             return None;
         }
 
-        *slot = next_slot(capacity, slot_index, current_generation);
+        *slot = next_slot(capacity, self.namespace, slot_index, current_generation);
         self.active -= 1;
         Some((identity, resource))
     }
@@ -151,7 +166,7 @@ impl<R> ResourceRegistry<R> {
                 let ResourceSlot::Vacant { generation } = slot else {
                     return None;
                 };
-                ResourceToken::encode(self.slots.len(), slot_index, *generation)
+                ResourceToken::encode_in(self.slots.len(), self.namespace, slot_index, *generation)
                     .map(|token| (slot_index, *generation, token))
             })
     }
@@ -163,15 +178,21 @@ impl<R> ResourceRegistry<R> {
                 .map(|_| ResourceSlot::Vacant { generation })
                 .collect(),
             active: 0,
+            namespace: ResourceNamespace::single(),
         }
     }
 }
 
-fn next_slot<R>(capacity: usize, slot_index: usize, generation: usize) -> ResourceSlot<R> {
+fn next_slot<R>(
+    capacity: usize,
+    namespace: ResourceNamespace,
+    slot_index: usize,
+    generation: usize,
+) -> ResourceSlot<R> {
     let Some(next_generation) = generation.checked_add(1) else {
         return ResourceSlot::Exhausted;
     };
-    if ResourceToken::encode(capacity, slot_index, next_generation).is_none() {
+    if ResourceToken::encode_in(capacity, namespace, slot_index, next_generation).is_none() {
         return ResourceSlot::Exhausted;
     }
     ResourceSlot::Vacant {
