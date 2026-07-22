@@ -12,3 +12,4 @@ mod registry_test;
 
 pub(in crate::reactor) use error::{ResourceAdmissionError, ResourceAdmissionFailure};
 pub(in crate::reactor) use identity::{ResourceIdentity, ResourceToken};
+pub(in crate::reactor) use plaintext::{PlaintextResources, ResourceOpenError};
