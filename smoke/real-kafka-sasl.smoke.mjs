@@ -3,10 +3,12 @@ import { expect, smoke } from "smoque";
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 const USERNAME = "kafka_driver";
 const PASSWORD = "kafka-driver-smoke-secret";
+const REJECTED_PASSWORD = "kafka-driver-rejected-smoke-secret";
 const MECHANISMS = ["plain", "scram-sha-256", "scram-sha-512"];
 
 smoke.suite("real Kafka SASL authentication", { tags: ["real-kafka-sasl"] }, async (t) => {
   t.redact(PASSWORD);
+  t.redact(REJECTED_PASSWORD);
   const root = t.repoRoot();
   const composeFile = root.path("smoke", "kafka-sasl.compose.yml");
   const probe = root.path("target", "debug", PROBE);
@@ -78,6 +80,20 @@ smoke.suite("real Kafka SASL authentication", { tags: ["real-kafka-sasl"] }, asy
         timeout: "30s",
       });
       expect.value(result.stdout).toContain(`PASS ${label(mechanism)} authentication`);
+    });
+  }
+
+  for (const mechanism of MECHANISMS) {
+    await t.step(`reject invalid ${mechanism} credentials`, async () => {
+      const result = await t.cmd(probe, ["reject-authentication", mechanism, endpoint], {
+        cwd: root,
+        env: {
+          KAFKA_DRIVER_SASL_USERNAME: USERNAME,
+          KAFKA_DRIVER_SASL_PASSWORD: REJECTED_PASSWORD,
+        },
+        timeout: "30s",
+      });
+      expect.value(result.stdout).toContain(`PASS ${label(mechanism)} authentication rejection`);
     });
   }
 });
