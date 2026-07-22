@@ -53,8 +53,9 @@ pub use directory::{
 };
 pub use endpoint::{BrokerEndpoint, HostName, HostNameError, IpAddress, ResolvedAddress};
 pub use identity::{
-    BrokerId, BrokerIdError, CallId, ConnectionEpoch, EffectId, MetadataGeneration, OperationId,
-    TimerId, TransportId,
+    BrokerId, BrokerIdError, CallId, ConnectionEpoch, EffectId, LeaderEpoch, LeaderEpochError,
+    MetadataGeneration, OperationId, PartitionId, PartitionIdError, TimerId, TopicName,
+    TopicNameError, TransportId,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use metadata::{MetadataSnapshot, MetadataSnapshotError};
