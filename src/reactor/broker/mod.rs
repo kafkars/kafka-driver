@@ -17,6 +17,8 @@ mod submission;
 mod terminal;
 
 #[cfg(test)]
+mod authentication_fixture_test;
+#[cfg(test)]
 mod authentication_test;
 #[cfg(test)]
 mod deadline_test;
