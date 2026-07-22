@@ -26,7 +26,7 @@ pub enum TurnOutcome {
     Progress {
         /// Number of commands processed during this turn.
         commands: usize,
-        /// Whether the mailbox still contains admitted commands.
+        /// Whether bounded command, timer, or retained I/O work remains.
         more_work: bool,
     },
     /// Shutdown reached its terminal state.

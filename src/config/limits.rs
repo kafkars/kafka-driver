@@ -1,4 +1,4 @@
-//! Count limits for the M1 command path and reactor turn.
+//! Public host-admission and selector-fairness limits.
 
 use std::num::NonZeroUsize;
 
