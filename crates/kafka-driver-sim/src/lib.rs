@@ -29,7 +29,8 @@ mod simulation_test;
 pub use clock::{ClockError, SimClock};
 pub use dns::{
     BrokerEndpoint, DnsFailure, DnsOutcome, DnsRequest, DnsScriptError, DnsStep, HostName,
-    HostNameError, IpAddress, ResolvedAddress, ScriptedDns,
+    HostNameError, IpAddress, ResolutionLimits, ResolvedAddress, ResolvedAddressSet,
+    ResolvedAddressSetError, ScriptedDns,
 };
 pub use event::{Scheduled, SimEventId};
 pub use limits::SimulationLimits;

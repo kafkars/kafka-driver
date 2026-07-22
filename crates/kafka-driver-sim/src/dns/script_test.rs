@@ -6,7 +6,7 @@ use kafka_driver_core::{ConnectionEpoch, EffectId, Moment};
 
 use super::{
     BrokerEndpoint, DnsFailure, DnsOutcome, DnsRequest, DnsScriptError, DnsStep, HostName,
-    IpAddress, ResolvedAddress, ScriptedDns,
+    IpAddress, ResolutionLimits, ResolvedAddress, ResolvedAddressSet, ScriptedDns,
 };
 use crate::Simulator;
 
@@ -18,7 +18,7 @@ const EFFECT: EffectId = EffectId::from_raw(11);
 fn matching_request_schedules_its_outcome_in_virtual_time() {
     let request = request(CURRENT_EPOCH, EFFECT);
     let address = resolved([127, 0, 0, 1]);
-    let outcome = DnsOutcome::new(CURRENT_EPOCH, EFFECT, Ok(vec![address]));
+    let outcome = DnsOutcome::new(CURRENT_EPOCH, EFFECT, Ok(addresses([address])));
     let mut dns = ScriptedDns::new([DnsStep::new(
         request.clone(),
         Duration::from_nanos(5),
@@ -39,7 +39,7 @@ fn matching_request_schedules_its_outcome_in_virtual_time() {
     };
 
     assert_eq!(scheduled.at(), Moment::from_nanos(5));
-    assert_eq!(scheduled.event().result(), &Ok(vec![address]));
+    assert_eq!(scheduled.event().result(), &Ok(addresses([address])));
     assert!(dns.is_complete());
 }
 
@@ -100,6 +100,11 @@ fn endpoint() -> BrokerEndpoint {
 
 fn resolved(octets: [u8; 4]) -> ResolvedAddress {
     ResolvedAddress::new(IpAddress::V4(octets), port())
+}
+
+fn addresses<const N: usize>(items: [ResolvedAddress; N]) -> ResolvedAddressSet {
+    ResolvedAddressSet::try_from_iter(items, ResolutionLimits::default())
+        .unwrap_or_else(|error| panic!("test resolver result must be valid: {error}"))
 }
 
 const fn port() -> NonZeroU16 {

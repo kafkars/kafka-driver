@@ -12,6 +12,7 @@ mod delivery;
 mod directory;
 mod endpoint;
 mod identity;
+mod resolution;
 mod time;
 
 #[cfg(test)]
@@ -52,4 +53,8 @@ pub use identity::{
     TimerId, TransportId,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
+pub use resolution::{
+    DnsFailure, DnsOutcome, DnsRequest, ResolutionLimits, ResolvedAddressSet,
+    ResolvedAddressSetError,
+};
 pub use time::Moment;

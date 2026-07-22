@@ -6,6 +6,9 @@ mod script;
 #[cfg(test)]
 mod script_test;
 
-pub use kafka_driver_core::{BrokerEndpoint, HostName, HostNameError, IpAddress, ResolvedAddress};
-pub use plan::{DnsFailure, DnsOutcome, DnsRequest, DnsStep};
+pub use kafka_driver_core::{
+    BrokerEndpoint, DnsFailure, DnsOutcome, DnsRequest, HostName, HostNameError, IpAddress,
+    ResolutionLimits, ResolvedAddress, ResolvedAddressSet, ResolvedAddressSetError,
+};
+pub use plan::DnsStep;
 pub use script::{DnsScriptError, ScriptedDns};
