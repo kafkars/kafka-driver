@@ -16,6 +16,10 @@ pub(crate) enum ProbeError {
     MissingApiVersions {
         route: &'static str,
     },
+    ReadinessAttempts {
+        route: &'static str,
+        attempts: usize,
+    },
 }
 
 impl ProbeError {
@@ -40,6 +44,12 @@ impl fmt::Display for ProbeError {
                     "{route} omitted ApiVersions from its capability set"
                 )
             }
+            Self::ReadinessAttempts { route, attempts } => {
+                write!(
+                    formatter,
+                    "{route} was not ready after {attempts} exact probes"
+                )
+            }
         }
     }
 }
@@ -48,7 +58,9 @@ impl Error for ProbeError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Stage { source, .. } => Some(source.as_ref()),
-            Self::Kafka { .. } | Self::MissingApiVersions { .. } => None,
+            Self::Kafka { .. }
+            | Self::MissingApiVersions { .. }
+            | Self::ReadinessAttempts { .. } => None,
         }
     }
 }
