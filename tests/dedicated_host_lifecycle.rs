@@ -1,11 +1,13 @@
 //! Public lifecycle scenarios for the dedicated reactor thread owner.
 
+use std::net::TcpListener;
+
 use kafka_driver::{Driver, DriverHostError, SubmitError};
 
 #[test]
 fn explicit_shutdown_completes_before_the_host_joins_successfully() {
     // Given
-    let (driver, host) = spawn_driver();
+    let (driver, host, _listener) = spawn_driver();
     let shutdown = driver
         .shutdown()
         .unwrap_or_else(|error| panic!("admit dedicated shutdown: {error}"));
@@ -23,7 +25,7 @@ fn explicit_shutdown_completes_before_the_host_joins_successfully() {
 #[test]
 fn dropping_the_last_driver_wakes_and_stops_the_dedicated_host() {
     // Given
-    let (driver, host) = spawn_driver();
+    let (driver, host, _listener) = spawn_driver();
 
     // When
     drop(driver);
@@ -35,7 +37,7 @@ fn dropping_the_last_driver_wakes_and_stops_the_dedicated_host() {
 #[test]
 fn dropping_join_ownership_does_not_take_shutdown_authority_from_the_driver() {
     // Given
-    let (driver, host) = spawn_driver();
+    let (driver, host, _listener) = spawn_driver();
     drop(host);
 
     // When
@@ -55,8 +57,15 @@ fn panic_failure_is_sanitized_and_has_no_source_payload() {
     assert!(std::error::Error::source(&failure).is_none());
 }
 
-fn spawn_driver() -> (Driver, kafka_driver::DriverHost) {
-    Driver::builder()
+fn spawn_driver() -> (Driver, kafka_driver::DriverHost, TcpListener) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind dedicated lifecycle broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read dedicated lifecycle address: {error}"));
+    let (driver, host) = Driver::builder()
+        .broker(address)
         .spawn()
-        .unwrap_or_else(|error| panic!("spawn dedicated driver host: {error}"))
+        .unwrap_or_else(|error| panic!("spawn dedicated driver host: {error}"));
+    (driver, host, listener)
 }

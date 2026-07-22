@@ -23,7 +23,7 @@ use support::complete_negotiation;
 
 #[test]
 fn embedded_shutdown_completes_once_and_closes_admission() {
-    let (driver, mut reactor) = build_reactor(DriverLimits::default());
+    let (driver, mut reactor, _listener) = build_reactor(DriverLimits::default());
     let call = driver.shutdown();
     assert!(call.is_ok());
 
@@ -43,7 +43,7 @@ fn embedded_shutdown_completes_once_and_closes_admission() {
 #[test]
 fn mailbox_capacity_rejects_a_second_pending_shutdown() {
     let limits = DriverLimits::new(NonZeroUsize::MIN, NonZeroUsize::MIN);
-    let (driver, mut reactor) = build_reactor(limits);
+    let (driver, mut reactor, _listener) = build_reactor(limits);
     let first = driver.shutdown();
 
     let second = driver.shutdown();
@@ -62,7 +62,7 @@ fn mailbox_capacity_rejects_a_second_pending_shutdown() {
 #[test]
 fn full_request_mailbox_cannot_reject_or_delay_shutdown() {
     let limits = DriverLimits::new(NonZeroUsize::MIN, NonZeroUsize::MIN);
-    let (driver, mut reactor) = build_reactor(limits);
+    let (driver, mut reactor, _listener) = build_reactor(limits);
     let request = driver
         .call(ApiVersionsRequest::default(), Duration::from_secs(1))
         .unwrap_or_else(|error| panic!("fill request mailbox: {error}"));
@@ -86,7 +86,11 @@ fn full_request_mailbox_cannot_reject_or_delay_shutdown() {
 
 #[test]
 fn cross_thread_admission_wakes_a_blocked_reactor_turn() {
-    let (driver, mut reactor) = build_reactor(DriverLimits::default());
+    let (driver, mut reactor, listener) = build_reactor(DriverLimits::default());
+    let (mut peer, _) = listener
+        .accept()
+        .unwrap_or_else(|error| panic!("accept lifecycle connection: {error}"));
+    complete_negotiation(&mut peer, &mut reactor);
     let owner = thread::spawn(move || reactor.turn(Duration::from_secs(30)));
 
     let call = driver.shutdown();
@@ -100,7 +104,11 @@ fn cross_thread_admission_wakes_a_blocked_reactor_turn() {
 
 #[test]
 fn explicit_wake_releases_an_idle_embedded_turn() {
-    let (_driver, mut reactor) = build_reactor(DriverLimits::default());
+    let (_driver, mut reactor, listener) = build_reactor(DriverLimits::default());
+    let (mut peer, _) = listener
+        .accept()
+        .unwrap_or_else(|error| panic!("accept lifecycle connection: {error}"));
+    complete_negotiation(&mut peer, &mut reactor);
     let wake = reactor.wake_handle();
     assert!(wake.wake().is_ok());
 
@@ -113,7 +121,11 @@ fn explicit_wake_releases_an_idle_embedded_turn() {
 
 #[test]
 fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
-    let (driver, mut reactor) = build_reactor(DriverLimits::default());
+    let (driver, mut reactor, listener) = build_reactor(DriverLimits::default());
+    let (mut peer, _) = listener
+        .accept()
+        .unwrap_or_else(|error| panic!("accept lifecycle connection: {error}"));
+    complete_negotiation(&mut peer, &mut reactor);
     let owner = thread::spawn(move || reactor.turn(Duration::from_secs(30)));
 
     drop(driver);
@@ -125,8 +137,8 @@ fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
 }
 
 #[test]
-fn generated_call_before_broker_configuration_is_not_sent_or_left_pending() {
-    let (driver, mut reactor) = build_reactor(DriverLimits::default());
+fn generated_call_before_broker_readiness_is_not_sent_or_left_pending() {
+    let (driver, mut reactor, _listener) = build_reactor(DriverLimits::default());
     let call = driver.call(ApiVersionsRequest::default(), Duration::from_secs(1));
     let Ok(call) = call else {
         panic!("request command must enter the mailbox");
@@ -189,11 +201,20 @@ fn generated_call_reaches_a_ready_configured_broker_owner() {
     ));
 }
 
-fn build_reactor(limits: DriverLimits) -> (Driver, Reactor) {
-    let Ok(pair) = Driver::builder().limits(limits).build_reactor() else {
+fn build_reactor(limits: DriverLimits) -> (Driver, Reactor, TcpListener) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind lifecycle broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read lifecycle broker address: {error}"));
+    let Ok((driver, reactor)) = Driver::builder()
+        .limits(limits)
+        .broker(address)
+        .build_reactor()
+    else {
         panic!("host must provide a Mio selector");
     };
-    pair
+    (driver, reactor, listener)
 }
 
 struct NoopWake;

@@ -1,27 +1,39 @@
-//! Public construction failure for operating-system reactor resources.
+//! Public construction failures before one driver owns a usable target.
 
 use std::{fmt, io};
 
-/// Why the driver could not create its purpose-built I/O shard.
+/// Why one driver target and its purpose-built I/O shard could not be built.
+#[non_exhaustive]
 #[derive(Debug)]
-pub struct DriverBuildError {
-    source: io::Error,
+pub enum DriverBuildError {
+    /// No direct broker or bootstrap set was configured.
+    MissingTarget,
+    /// The purpose-built reactor could not acquire its operating-system resources.
+    Reactor(io::Error),
 }
 
 impl DriverBuildError {
     pub(crate) const fn new(source: io::Error) -> Self {
-        Self { source }
+        Self::Reactor(source)
     }
 }
 
 impl fmt::Display for DriverBuildError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("failed to create the driver I/O shard")
+        match self {
+            Self::MissingTarget => {
+                formatter.write_str("a direct broker or bootstrap target is required")
+            }
+            Self::Reactor(_) => formatter.write_str("failed to create the driver I/O shard"),
+        }
     }
 }
 
 impl std::error::Error for DriverBuildError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.source)
+        match self {
+            Self::Reactor(source) => Some(source),
+            Self::MissingTarget => None,
+        }
     }
 }

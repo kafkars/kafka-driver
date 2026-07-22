@@ -76,12 +76,15 @@ impl DriverBuilder {
 
     /// Builds a driver handle and an embedded, caller-driven reactor.
     pub fn build_reactor(self) -> Result<(Driver, Reactor), DriverBuildError> {
-        let target = self.target.map(|target| target.with_sasl(self.sasl));
+        let Some(target) = self.target else {
+            return Err(DriverBuildError::MissingTarget);
+        };
+        let target = target.with_sasl(self.sasl);
         let call_ids = Arc::new(CallIds::new());
         let observation = Arc::new(Observation::default());
         let (commands, reactor) = Reactor::new(
             self.limits,
-            target,
+            Some(target),
             Arc::clone(&call_ids),
             Arc::clone(&observation),
         )
