@@ -6,6 +6,7 @@ mod broker_set;
 mod clock;
 mod command;
 mod coordinator;
+mod entropy;
 mod error;
 mod host;
 mod mailbox;
@@ -24,6 +25,8 @@ mod wake;
 
 #[cfg(test)]
 mod clock_test;
+#[cfg(test)]
+mod entropy_test;
 #[cfg(test)]
 mod mailbox_test;
 

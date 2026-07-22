@@ -1,19 +1,22 @@
-//! Reactor-owned entropy reduced to data before reconnect policy sees it.
+//! Reactor-owned entropy reduced to deterministic jitter input data.
 
-use std::{collections::hash_map::RandomState, hash::BuildHasher, net::SocketAddr};
+use std::{
+    collections::hash_map::RandomState,
+    hash::{BuildHasher, Hash},
+};
 
 use kafka_driver_core::JitterSample;
 
 #[derive(Debug)]
-pub(super) struct BackoffEntropy {
+pub(super) struct JitterEntropy {
     state: u64,
 }
 
-impl BackoffEntropy {
-    pub(super) fn for_broker(address: SocketAddr) -> Self {
+impl JitterEntropy {
+    pub(super) fn for_value(value: &impl Hash) -> Self {
         let random = RandomState::new();
         Self {
-            state: random.hash_one(address),
+            state: random.hash_one(value),
         }
     }
 

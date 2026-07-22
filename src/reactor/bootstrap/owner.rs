@@ -1,7 +1,9 @@
 //! Bootstrap-machine ownership and conversion of resolved addresses into broker policy.
 
 use kafka_driver_core::{
-    BootstrapEffect, BootstrapInput, BootstrapMachine, ConnectionEpoch, DnsOutcome, EffectId,
+    BackoffPolicy, BootstrapEffect, BootstrapInput, BootstrapMachine, BootstrapRetryEffect,
+    BootstrapRetryInput, BootstrapRetryMachine, ConnectionEpoch, DnsOutcome, EffectId,
+    JitterSample, Moment,
 };
 
 use crate::config::{BootstrapConfig, BrokerConfig, BrokerTemplate};
@@ -12,13 +14,14 @@ use super::BootstrapOwnerError;
 pub(in crate::reactor) enum BootstrapAction {
     Resolve(kafka_driver_core::DnsRequest),
     Install(BrokerConfig),
-    Exhausted,
+    RetryScheduled,
 }
 
 /// Reactor-side owner joining pure bootstrap policy to the blocking DNS worker.
 #[derive(Debug)]
 pub(in crate::reactor) struct BootstrapOwner {
     machine: BootstrapMachine,
+    retry: BootstrapRetryMachine,
     broker: BrokerTemplate,
     next_epoch: Option<u64>,
 }
@@ -31,6 +34,7 @@ impl BootstrapOwner {
         let (endpoints, broker) = config.into_parts();
         let mut owner = Self {
             machine: BootstrapMachine::new(endpoints),
+            retry: BootstrapRetryMachine::new(BackoffPolicy::default()),
             broker,
             next_epoch: Some(2),
         };
@@ -48,12 +52,14 @@ impl BootstrapOwner {
         &mut self,
         outcome: DnsOutcome,
         retry_effect_id: EffectId,
+        now: Moment,
+        jitter: JitterSample,
     ) -> Result<BootstrapAction, BootstrapOwnerError> {
         let transition = self.machine.apply(BootstrapInput::ResolutionCompleted {
             outcome,
             retry_effect_id,
         });
-        self.interpret(transition.effects())
+        self.interpret_completion(transition.effects(), now, jitter)
     }
 
     pub(in crate::reactor) fn restart(
@@ -72,12 +78,46 @@ impl BootstrapOwner {
         Ok(request)
     }
 
+    pub(in crate::reactor) const fn retry_deadline(&self) -> Option<Moment> {
+        self.retry.deadline()
+    }
+
+    pub(in crate::reactor) fn retry_elapsed(
+        &mut self,
+        now: Moment,
+        effect_id: EffectId,
+    ) -> Result<Option<kafka_driver_core::DnsRequest>, BootstrapOwnerError> {
+        let transition = self.retry.apply(BootstrapRetryInput::Elapsed { now })?;
+        match transition.effects() {
+            [BootstrapRetryEffect::Restart] => self.restart(effect_id).map(Some),
+            [BootstrapRetryEffect::WaitUntil { .. }] | [] => Ok(None),
+            _ => Err(BootstrapOwnerError::UnexpectedEffect),
+        }
+    }
+
+    fn interpret_completion(
+        &mut self,
+        effects: &[BootstrapEffect],
+        now: Moment,
+        jitter: JitterSample,
+    ) -> Result<BootstrapAction, BootstrapOwnerError> {
+        if matches!(effects, [BootstrapEffect::Exhausted { .. }]) {
+            let transition = self
+                .retry
+                .apply(BootstrapRetryInput::Exhausted { now, jitter })?;
+            return match transition.effects() {
+                [BootstrapRetryEffect::WaitUntil { .. }] => Ok(BootstrapAction::RetryScheduled),
+                _ => Err(BootstrapOwnerError::UnexpectedEffect),
+            };
+        }
+        self.interpret(effects)
+    }
+
     fn interpret(
-        &self,
+        &mut self,
         effects: &[BootstrapEffect],
     ) -> Result<BootstrapAction, BootstrapOwnerError> {
         match effects {
-            [BootstrapEffect::Exhausted { .. }] => Ok(BootstrapAction::Exhausted),
             [BootstrapEffect::Resolve { request }] => Ok(BootstrapAction::Resolve(request.clone())),
             [
                 BootstrapEffect::Resolved {
@@ -85,11 +125,14 @@ impl BootstrapOwner {
                     addresses,
                     ..
                 },
-            ] => Ok(BootstrapAction::Install(
-                self.broker
-                    .clone()
-                    .at_resolved(endpoint.clone(), addresses.clone()),
-            )),
+            ] => {
+                let _ = self.retry.apply(BootstrapRetryInput::Succeeded)?;
+                Ok(BootstrapAction::Install(
+                    self.broker
+                        .clone()
+                        .at_resolved(endpoint.clone(), addresses.clone()),
+                ))
+            }
             _ => Err(BootstrapOwnerError::UnexpectedEffect),
         }
     }

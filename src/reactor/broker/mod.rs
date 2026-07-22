@@ -5,7 +5,6 @@ mod address_rotation;
 mod authentication;
 mod construction;
 mod deadline;
-mod entropy;
 mod error;
 mod failure;
 mod identity;
@@ -30,8 +29,6 @@ mod authentication_fixture_test;
 mod authentication_test;
 #[cfg(test)]
 mod deadline_test;
-#[cfg(test)]
-mod entropy_test;
 #[cfg(test)]
 mod identity_test;
 #[cfg(test)]

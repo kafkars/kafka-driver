@@ -40,6 +40,11 @@ impl Reactor {
             .next_deadline()
             .into_iter()
             .chain(
+                self.resolution
+                    .as_ref()
+                    .and_then(super::resolution::NameResolution::next_deadline),
+            )
+            .chain(
                 self.metadata
                     .as_ref()
                     .and_then(super::super::metadata::MetadataOwner::next_wait_deadline),

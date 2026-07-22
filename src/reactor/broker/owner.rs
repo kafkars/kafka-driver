@@ -13,6 +13,7 @@ use kafka_wire_core::{ApiKey, ApiVersion};
 use crate::negotiation::{NegotiationExchange, NegotiationLimits};
 use crate::reactor::{
     PollEvent, Poller,
+    entropy::JitterEntropy,
     resource::{ResourceIdentity, ResourceToken, TransportResources},
     tcp::ConnectProgress,
     timer::{DeadlineTimer, TimerHeap},
@@ -25,8 +26,8 @@ use crate::{
 };
 
 use super::{
-    BrokerError, BrokerIds, address_rotation::AddressRotation, entropy::BackoffEntropy,
-    failure::transport_failure, limits::BrokerLimits, terminal::expect_no_effects,
+    BrokerError, BrokerIds, address_rotation::AddressRotation, failure::transport_failure,
+    limits::BrokerLimits, terminal::expect_no_effects,
 };
 
 /// Single-owner adapter for one broker and its replaceable connection epoch.
@@ -40,7 +41,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) connection_limits: kafka_driver_core::ConnectionLimits,
     pub(super) authentication_limits: AuthenticationLimits,
     pub(super) ids: BrokerIds,
-    pub(super) entropy: BackoffEntropy,
+    pub(super) entropy: JitterEntropy,
     pub(super) resources: TransportResources,
     pub(super) resource_token: Option<ResourceToken>,
     pub(super) responses: ResponseRegistry,

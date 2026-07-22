@@ -1,6 +1,6 @@
 //! Shard-owned DNS identity, worker, bootstrap routing, and broker installation.
 
-use kafka_driver_core::{DnsOutcome, DnsRequest, EffectId};
+use kafka_driver_core::{DnsOutcome, DnsRequest, EffectId, Moment};
 
 use crate::{
     ResolverLimits,
@@ -9,16 +9,22 @@ use crate::{
         ReactorError, WakeHandle,
         bootstrap::{BootstrapAction, BootstrapOwner},
         broker_set::BrokerLane,
+        entropy::JitterEntropy,
         resolver::{ResolutionOwner, Resolver, ResolverEffectIds, ResolverOwnership},
     },
 };
 
-use super::{Reactor, resolution_error::NameResolutionError};
+use super::{
+    Reactor,
+    resolution_error::NameResolutionError,
+    resolution_progress::{BrokerDnsOutcome, ResolutionProgress, ResolutionTurn},
+};
 
 pub(super) struct NameResolution {
     resolver: Resolver,
     bootstrap: BootstrapOwner,
     bootstrap_in_flight: bool,
+    entropy: JitterEntropy,
     effect_ids: ResolverEffectIds,
     ownership: ResolverOwnership,
     outcomes: Vec<DnsOutcome>,
@@ -40,6 +46,7 @@ impl NameResolution {
             resolver,
             bootstrap,
             bootstrap_in_flight: true,
+            entropy: JitterEntropy::for_value(&"bootstrap"),
             effect_ids,
             ownership,
             outcomes: Vec::with_capacity(limits.outcome_budget().get()),
@@ -78,7 +85,9 @@ impl NameResolution {
     fn drive(
         &mut self,
         broker_outcomes: &mut Vec<BrokerDnsOutcome>,
+        now: Moment,
     ) -> Result<ResolutionProgress, NameResolutionError> {
+        let restarted = self.restart_exhausted_bootstrap(now)?;
         self.outcomes.clear();
         let drained = self.resolver.drain_into(&mut self.outcomes);
         let mut broker = None;
@@ -94,7 +103,12 @@ impl NameResolution {
                 ResolutionOwner::Bootstrap => {
                     self.bootstrap_in_flight = false;
                     let retry_effect_id = self.reserve_effect()?;
-                    match self.bootstrap.complete(outcome, retry_effect_id)? {
+                    match self.bootstrap.complete(
+                        outcome,
+                        retry_effect_id,
+                        now,
+                        self.entropy.next_sample(),
+                    )? {
                         BootstrapAction::Resolve(request) => {
                             self.submit_owned(ResolutionOwner::Bootstrap, request)?;
                             self.bootstrap_in_flight = true;
@@ -108,7 +122,7 @@ impl NameResolution {
                                     .into(),
                             );
                         }
-                        BootstrapAction::Exhausted => {}
+                        BootstrapAction::RetryScheduled => {}
                     }
                 }
             }
@@ -118,7 +132,30 @@ impl NameResolution {
             outcomes: drained.outcomes(),
             more_work: drained.more_work(),
             broker,
+            restarted,
         })
+    }
+
+    pub(super) const fn next_deadline(&self) -> Option<Moment> {
+        self.bootstrap.retry_deadline()
+    }
+
+    fn restart_exhausted_bootstrap(&mut self, now: Moment) -> Result<bool, NameResolutionError> {
+        if self.bootstrap_in_flight
+            || self
+                .bootstrap
+                .retry_deadline()
+                .is_none_or(|deadline| deadline > now)
+        {
+            return Ok(false);
+        }
+        let effect_id = self.reserve_effect()?;
+        let Some(request) = self.bootstrap.retry_elapsed(now, effect_id)? else {
+            return Ok(false);
+        };
+        self.submit_owned(ResolutionOwner::Bootstrap, request)?;
+        self.bootstrap_in_flight = true;
+        Ok(true)
     }
 
     fn submit_owned(
@@ -142,9 +179,10 @@ impl Reactor {
         let Some(resolution) = &mut self.resolution else {
             return Ok(ResolutionTurn::idle());
         };
+        let now = self.clock.now().map_err(ReactorError::clock)?;
         self.broker_dns_outcomes.clear();
         let progress = resolution
-            .drive(&mut self.broker_dns_outcomes)
+            .drive(&mut self.broker_dns_outcomes, now)
             .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
         let turn = ResolutionTurn {
             made_progress: scheduled || progress.made_progress(),
@@ -153,7 +191,6 @@ impl Reactor {
         if let Some(config) = progress.broker {
             self.install_broker(config)?;
         }
-        let now = self.clock.now().map_err(ReactorError::clock)?;
         for completed in self.broker_dns_outcomes.drain(..) {
             self.brokers
                 .complete_resolution(completed.lane, completed.outcome, &self.poller, now)
@@ -173,45 +210,6 @@ impl Reactor {
         self.brokers
             .install_seed(config, &self.poller, now)
             .map_err(ReactorError::broker_set)
-    }
-}
-
-pub(super) struct BrokerDnsOutcome {
-    lane: BrokerLane,
-    outcome: DnsOutcome,
-}
-
-struct ResolutionProgress {
-    outcomes: usize,
-    more_work: bool,
-    broker: Option<BrokerConfig>,
-}
-
-impl ResolutionProgress {
-    const fn made_progress(&self) -> bool {
-        self.outcomes != 0 || self.broker.is_some()
-    }
-}
-
-pub(super) struct ResolutionTurn {
-    made_progress: bool,
-    more_work: bool,
-}
-
-impl ResolutionTurn {
-    const fn idle() -> Self {
-        Self {
-            made_progress: false,
-            more_work: false,
-        }
-    }
-
-    pub(super) const fn made_progress(&self) -> bool {
-        self.made_progress
-    }
-
-    pub(super) const fn more_work(&self) -> bool {
-        self.more_work
     }
 }
 

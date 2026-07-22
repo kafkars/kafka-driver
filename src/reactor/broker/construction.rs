@@ -6,6 +6,7 @@ use kafka_wire_core::DecodeLimits;
 use crate::{
     config::BrokerConfig,
     reactor::{
+        entropy::JitterEntropy,
         resource::{ResourceNamespace, TransportResources},
         scram_proof::ScramProofSender,
         timer::TimerHeap,
@@ -14,7 +15,7 @@ use crate::{
 };
 
 use super::address_rotation::AddressRotation;
-use super::{BrokerLimits, entropy::BackoffEntropy, owner::SingleBroker};
+use super::{BrokerLimits, owner::SingleBroker};
 
 impl SingleBroker {
     #[cfg(test)]
@@ -68,7 +69,7 @@ impl SingleBroker {
         );
         Self {
             limits,
-            entropy: BackoffEntropy::for_broker(primary),
+            entropy: JitterEntropy::for_value(&primary),
             addresses,
             address_refresh: None,
             broker: BrokerMachine::new(epoch, limits.backoff()),

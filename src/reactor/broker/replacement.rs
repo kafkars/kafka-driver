@@ -3,11 +3,13 @@
 use kafka_driver_core::{BrokerMachine, ConnectionEpoch};
 use kafka_wire_core::DecodeLimits;
 
-use crate::{config::BrokerConfig, reactor::timer::TimerHeap, response::ResponseRegistry};
-
-use super::{
-    BrokerError, address_rotation::AddressRotation, entropy::BackoffEntropy, owner::SingleBroker,
+use crate::{
+    config::BrokerConfig,
+    reactor::{entropy::JitterEntropy, timer::TimerHeap},
+    response::ResponseRegistry,
 };
+
+use super::{BrokerError, address_rotation::AddressRotation, owner::SingleBroker};
 
 impl SingleBroker {
     pub(in crate::reactor) fn reconfigure(
@@ -21,7 +23,7 @@ impl SingleBroker {
         let (addresses, security, sasl) = config.into_parts();
         let addresses = AddressRotation::new(addresses);
         let primary = addresses.primary().ok_or(BrokerError::MissingEffect)?;
-        self.entropy = BackoffEntropy::for_broker(primary);
+        self.entropy = JitterEntropy::for_value(&primary);
         self.addresses = addresses;
         self.address_refresh = None;
         self.broker = BrokerMachine::new(epoch, self.limits.backoff());

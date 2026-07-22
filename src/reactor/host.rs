@@ -8,6 +8,7 @@ mod debug;
 mod metadata;
 mod resolution;
 mod resolution_error;
+mod resolution_progress;
 mod routing;
 mod scram_proof;
 mod state;
@@ -35,7 +36,8 @@ use super::{
     scram_proof::{ScramProofOutcome, ScramProofWorker},
 };
 
-use resolution::{BrokerDnsOutcome, NameResolution};
+use resolution::NameResolution;
+use resolution_progress::BrokerDnsOutcome;
 use state::{HostState, ShutdownWaiters};
 
 /// Result of one bounded reactor turn.
