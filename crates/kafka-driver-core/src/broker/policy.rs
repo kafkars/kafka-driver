@@ -1,8 +1,8 @@
-//! Bounded exponential reconnect delay with deterministic injected jitter.
+//! Bounded exponential retry delay with deterministic injected jitter.
 
 use std::{error::Error, fmt, time::Duration};
 
-/// One reactor-supplied entropy sample used by deterministic backoff policy.
+/// One reactor-supplied entropy sample used by deterministic retry policy.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct JitterSample(u64);
@@ -14,7 +14,7 @@ impl JitterSample {
     }
 }
 
-/// One-based reconnect attempt number after a failed connection generation.
+/// One-based retry attempt number after a failed external-work pass.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RetryOrdinal(u32);
@@ -25,11 +25,11 @@ impl RetryOrdinal {
         if value == 0 { None } else { Some(Self(value)) }
     }
 
-    pub(super) const fn first() -> Self {
+    pub(crate) const fn first() -> Self {
         Self(1)
     }
 
-    pub(super) const fn next(self) -> Option<Self> {
+    pub(crate) const fn next(self) -> Option<Self> {
         match self.0.checked_add(1) {
             Some(value) => Some(Self(value)),
             None => None,
@@ -42,7 +42,7 @@ impl RetryOrdinal {
     }
 }
 
-/// Minimum and maximum reconnect delay policy.
+/// Minimum and maximum retry delay policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BackoffPolicy {
     base_nanos: u64,
@@ -66,7 +66,7 @@ impl BackoffPolicy {
         })
     }
 
-    pub(super) fn delay(self, retry: RetryOrdinal, jitter: JitterSample) -> Duration {
+    pub(crate) fn delay(self, retry: RetryOrdinal, jitter: JitterSample) -> Duration {
         let exponent = retry.get().saturating_sub(1).min(63);
         let multiplier = 1_u64.checked_shl(exponent).unwrap_or(u64::MAX);
         let cap = self
@@ -91,7 +91,7 @@ impl Default for BackoffPolicy {
 /// Why reconnect bounds could not form a valid policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackoffPolicyError {
-    /// A zero base could create an unbounded reconnect spin.
+    /// A zero base could create an unbounded retry spin.
     ZeroBase,
     /// The cap must not be smaller than the first retry delay.
     MaxBelowBase,
@@ -102,10 +102,10 @@ pub enum BackoffPolicyError {
 impl fmt::Display for BackoffPolicyError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ZeroBase => formatter.write_str("reconnect base delay must be nonzero"),
-            Self::MaxBelowBase => formatter.write_str("reconnect maximum delay is below its base"),
+            Self::ZeroBase => formatter.write_str("retry base delay must be nonzero"),
+            Self::MaxBelowBase => formatter.write_str("retry maximum delay is below its base"),
             Self::DurationTooLarge => {
-                formatter.write_str("reconnect delay exceeds the driver clock domain")
+                formatter.write_str("retry delay exceeds the driver clock domain")
             }
         }
     }

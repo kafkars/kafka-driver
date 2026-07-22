@@ -34,7 +34,9 @@ pub use authentication::{
 };
 pub use bootstrap::{
     BootstrapCursor, BootstrapDisposition, BootstrapEffect, BootstrapError, BootstrapInput,
-    BootstrapLimits, BootstrapMachine, BootstrapSet, BootstrapState, BootstrapTransition,
+    BootstrapLimits, BootstrapMachine, BootstrapRetryDisposition, BootstrapRetryEffect,
+    BootstrapRetryError, BootstrapRetryInput, BootstrapRetryMachine, BootstrapRetryState,
+    BootstrapRetryTransition, BootstrapSet, BootstrapState, BootstrapTransition,
 };
 pub use broker::{
     BackoffPolicy, BackoffPolicyError, BrokerCloseReason, BrokerDisposition, BrokerEffect,
