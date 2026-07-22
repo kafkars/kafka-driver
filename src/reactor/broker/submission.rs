@@ -22,8 +22,8 @@ impl SingleBroker {
     ) -> Result<(), BrokerError> {
         let call_id = request.call_id();
         let api_key = request.api_key();
-        let version = self.machine.negotiated_version(api_key);
-        if self.machine.state().phase() == ConnectionPhase::Ready && version.is_none() {
+        let version = self.connection.negotiated_version(api_key);
+        if self.connection.state().phase() == ConnectionPhase::Ready && version.is_none() {
             request.fail(RequestError::ApiUnavailable { api_key });
             return Ok(());
         }
@@ -35,14 +35,15 @@ impl SingleBroker {
             request.fail(RequestError::IdentityConflict);
             return Err(BrokerError::IdentityExhausted);
         };
-        let transition = self.machine.apply(ConnectionInput::Submit {
+        let transition = self.connection.apply(ConnectionInput::Submit {
             call_id,
             write_effect: ids.write_effect,
             deadline_timer: ids.deadline_timer,
             now,
             deadline,
         })?;
-        self.interpret_submission(poller, request, version, transition.into_effects())
+        self.interpret_submission(poller, request, version, transition.into_effects())?;
+        self.reconcile_connection(poller, now)
     }
 
     fn interpret_submission(
@@ -68,7 +69,7 @@ impl SingleBroker {
                     let deadline = DeadlineTimer::for_call(timer_id, epoch, call_id, at);
                     if self.timers.schedule(deadline).is_err() {
                         fail_unprepared(&mut request, RequestError::IdentityConflict);
-                        let Some(pending) = self.machine.pending_call(call_id) else {
+                        let Some(pending) = self.connection.pending_call(call_id) else {
                             return Err(BrokerError::MissingEffect);
                         };
                         self.abort_write(poller, pending.write_effect(), Some(submitted_call))?;
@@ -124,7 +125,7 @@ impl SingleBroker {
                         self.abort_write(poller, effect_id, None)?;
                         return Ok(());
                     }
-                    let transition = self.machine.apply(ConnectionInput::WriteSubmitted {
+                    let transition = self.connection.apply(ConnectionInput::WriteSubmitted {
                         epoch,
                         transport_id,
                         effect_id,
@@ -163,11 +164,11 @@ impl SingleBroker {
             epoch,
             transport_id,
             ..
-        } = self.machine.state()
+        } = self.connection.state()
         else {
             return Err(BrokerError::MissingEffect);
         };
-        let transition = self.machine.apply(ConnectionInput::WriteFailed {
+        let transition = self.connection.apply(ConnectionInput::WriteFailed {
             epoch,
             transport_id,
             effect_id,

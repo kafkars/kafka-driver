@@ -2,7 +2,7 @@
 
 use std::{fmt, io};
 
-use kafka_driver_core::{CallId, ConnectionEffect, ConnectionMachineError};
+use kafka_driver_core::{BrokerEffect, CallId, ConnectionEffect, ConnectionMachineError};
 
 use crate::reactor::timer::TimerScheduleError;
 use crate::response::{ResponseDispatchError, ResponseFailError};
@@ -16,6 +16,8 @@ pub(in crate::reactor) enum BrokerError {
     Machine(ConnectionMachineError),
     /// A transition emitted work that is invalid at the current adapter seam.
     UnexpectedEffect(ConnectionEffect),
+    /// Long-lived broker policy emitted work invalid at the current adapter seam.
+    UnexpectedBrokerEffect(BrokerEffect),
     /// A transition omitted work required by the current adapter seam.
     MissingEffect,
     /// An effect named request ownership not carried by the current exchange.
@@ -43,6 +45,9 @@ impl fmt::Display for BrokerError {
             }
             Self::UnexpectedEffect(effect) => {
                 write!(formatter, "unexpected connection effect: {effect:?}")
+            }
+            Self::UnexpectedBrokerEffect(effect) => {
+                write!(formatter, "unexpected broker effect: {effect:?}")
             }
             Self::MissingEffect => formatter.write_str("required connection effect was missing"),
             Self::RequestOwnership { expected, observed } => write!(
@@ -73,6 +78,7 @@ impl std::error::Error for BrokerError {
             Self::IdentityExhausted
             | Self::Machine(_)
             | Self::UnexpectedEffect(_)
+            | Self::UnexpectedBrokerEffect(_)
             | Self::MissingEffect
             | Self::DeadlineOverflow
             | Self::RequestOwnership { .. } => None,

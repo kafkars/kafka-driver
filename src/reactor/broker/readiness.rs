@@ -36,7 +36,17 @@ impl SingleBroker {
         Ok(progress)
     }
 
-    pub(in crate::reactor) fn continue_io(&mut self, poller: &Poller) -> Result<bool, BrokerError> {
+    pub(in crate::reactor) fn continue_io(
+        &mut self,
+        poller: &Poller,
+        now: kafka_driver_core::Moment,
+    ) -> Result<bool, BrokerError> {
+        let progress = self.continue_connection_io(poller)?;
+        self.reconcile_connection(poller, now)?;
+        Ok(progress)
+    }
+
+    fn continue_connection_io(&mut self, poller: &Poller) -> Result<bool, BrokerError> {
         let Some(token) = self.resource_token else {
             self.retry_read = false;
             self.retry_write = false;

@@ -57,10 +57,12 @@ impl Reactor {
         let poller = Poller::new(limits.poll_event_budget())?;
         let wake = WakeHandle::new(poller.wake_handle());
         let (sender, commands) = mailbox(limits.mailbox_capacity(), wake);
+        let clock = ReactorClock::new();
+        let now = clock.now().map_err(std::io::Error::other)?;
         let mut broker =
             broker_address.map(|address| SingleBroker::new(address, BrokerLimits::default()));
         if let Some(broker) = &mut broker {
-            broker.start(&poller).map_err(std::io::Error::other)?;
+            broker.start(&poller, now).map_err(std::io::Error::other)?;
         }
         let reactor = Self {
             command_batch: Vec::with_capacity(limits.command_budget().get()),
@@ -69,7 +71,7 @@ impl Reactor {
             limits,
             poller,
             broker,
-            clock: ReactorClock::new(),
+            clock,
             state: HostState::Running,
             shutdown_waiters: ShutdownWaiters::new(limits.mailbox_capacity()),
         };
@@ -155,9 +157,10 @@ impl Reactor {
     }
 
     fn continue_broker_io(&mut self) -> Result<bool, ReactorError> {
+        let now = self.clock.now().map_err(ReactorError::clock)?;
         self.broker.as_mut().map_or(Ok(false), |broker| {
             broker
-                .continue_io(&self.poller)
+                .continue_io(&self.poller, now)
                 .map_err(ReactorError::broker)
         })
     }
@@ -204,7 +207,11 @@ impl std::fmt::Debug for Reactor {
         formatter
             .debug_struct("Reactor")
             .field("limits", &self.limits)
-            .field("broker", &self.broker.as_ref().map(SingleBroker::state))
+            .field(
+                "broker",
+                &self.broker.as_ref().map(SingleBroker::broker_state),
+            )
+            .field("connection", &self.broker.as_ref().map(SingleBroker::state))
             .field("state", &self.state)
             .finish_non_exhaustive()
     }

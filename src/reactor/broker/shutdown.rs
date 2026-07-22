@@ -1,18 +1,23 @@
 //! Machine-owned drain initiation and terminal-state observation.
 
-use kafka_driver_core::{ConnectionInput, ConnectionPhase};
+use kafka_driver_core::{BrokerInput, BrokerPhase, Moment};
 
 use crate::reactor::Poller;
 
 use super::{BrokerError, owner::SingleBroker};
 
 impl SingleBroker {
-    pub(in crate::reactor) fn begin_drain(&mut self, poller: &Poller) -> Result<(), BrokerError> {
-        let transition = self.machine.apply(ConnectionInput::BeginDrain)?;
-        self.interpret_close(poller, transition.into_effects(), None)
+    pub(in crate::reactor) fn begin_drain(
+        &mut self,
+        poller: &Poller,
+        now: Moment,
+    ) -> Result<(), BrokerError> {
+        let transition = self.broker.apply(BrokerInput::BeginDrain);
+        self.interpret_broker_effects(poller, transition.into_effects())?;
+        self.reconcile_connection(poller, now)
     }
 
     pub(in crate::reactor) fn is_terminal(&self) -> bool {
-        self.machine.state().phase() == ConnectionPhase::Closed
+        self.broker.state().phase() == BrokerPhase::Closed
     }
 }

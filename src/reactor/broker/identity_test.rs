@@ -19,6 +19,9 @@ fn given_fresh_sources_when_work_is_reserved_then_each_domain_advances_independe
     let Some(submission) = ids.reserve_submission() else {
         panic!("fresh submission identities must exist");
     };
+    let Some(reconnect) = ids.reserve_reconnect_timer() else {
+        panic!("fresh reconnect timer must exist");
+    };
 
     // Then
     assert_eq!(open.effect_id, EffectId::from_raw(1));
@@ -27,6 +30,7 @@ fn given_fresh_sources_when_work_is_reserved_then_each_domain_advances_independe
     assert_eq!(negotiation.deadline_timer, TimerId::from_raw(1));
     assert_eq!(submission.write_effect, EffectId::from_raw(3));
     assert_eq!(submission.deadline_timer, TimerId::from_raw(2));
+    assert_eq!(reconnect, TimerId::from_raw(3));
 }
 
 #[test]

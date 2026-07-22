@@ -1,6 +1,7 @@
 //! Single-broker ownership above deterministic policy and below the host.
 
 mod deadline;
+mod entropy;
 mod error;
 mod failure;
 mod identity;
@@ -8,6 +9,7 @@ mod limits;
 mod negotiation;
 mod owner;
 mod readiness;
+mod reconnect;
 mod response;
 mod shutdown;
 mod submission;
@@ -16,6 +18,8 @@ mod terminal;
 #[cfg(test)]
 mod deadline_test;
 #[cfg(test)]
+mod entropy_test;
+#[cfg(test)]
 mod identity_test;
 #[cfg(test)]
 mod lifecycle_test;
@@ -23,6 +27,8 @@ mod lifecycle_test;
 mod limits_test;
 #[cfg(test)]
 mod negotiation_test;
+#[cfg(test)]
+mod reconnect_test;
 #[cfg(test)]
 mod round_trip_test;
 #[cfg(test)]

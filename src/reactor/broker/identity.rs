@@ -72,6 +72,12 @@ impl BrokerIds {
         })
     }
 
+    pub(in crate::reactor) fn reserve_reconnect_timer(&mut self) -> Option<TimerId> {
+        let timer = self.timer?;
+        self.timer = timer.checked_add(1);
+        Some(TimerId::from_raw(timer))
+    }
+
     const fn with_next(effect: Option<u64>, timer: Option<u64>, transport: Option<u64>) -> Self {
         Self {
             effect,

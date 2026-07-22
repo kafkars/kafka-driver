@@ -2,7 +2,7 @@
 
 use std::{num::NonZeroUsize, time::Duration};
 
-use kafka_driver_core::ConnectionLimits;
+use kafka_driver_core::{BackoffPolicy, ConnectionLimits};
 use kafka_wire::OutboundFrameLimits;
 
 use crate::negotiation::NegotiationLimits;
@@ -29,6 +29,7 @@ pub(in crate::reactor) struct BrokerLimits {
     write_budget: WriteBudget,
     negotiation: NegotiationLimits,
     negotiation_timeout: Duration,
+    backoff: BackoffPolicy,
 }
 
 impl BrokerLimits {
@@ -75,6 +76,10 @@ impl BrokerLimits {
     pub(in crate::reactor) const fn negotiation_timeout(self) -> Duration {
         self.negotiation_timeout
     }
+
+    pub(in crate::reactor) const fn backoff(self) -> BackoffPolicy {
+        self.backoff
+    }
 }
 
 impl Default for BrokerLimits {
@@ -91,6 +96,7 @@ impl Default for BrokerLimits {
             write_budget: WriteBudget::new(WRITE_BYTES),
             negotiation: NegotiationLimits::default(),
             negotiation_timeout: NEGOTIATION_TIMEOUT,
+            backoff: BackoffPolicy::default(),
         }
     }
 }

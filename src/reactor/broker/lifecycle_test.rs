@@ -2,7 +2,7 @@
 
 use std::{net::TcpListener, num::NonZeroUsize};
 
-use kafka_driver_core::ConnectionState;
+use kafka_driver_core::{ConnectionState, Moment};
 
 use crate::reactor::{Poller, broker::limits::BrokerLimits};
 
@@ -20,7 +20,7 @@ fn given_a_loopback_broker_when_readiness_is_reported_then_the_machine_becomes_r
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));
     let mut broker = SingleBroker::new(address, BrokerLimits::default());
     broker
-        .start(&poller)
+        .start(&poller, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("start broker connection: {error}"));
     assert!(matches!(broker.state(), ConnectionState::Opening { .. }));
     let (mut peer, _) = listener

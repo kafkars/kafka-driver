@@ -1,0 +1,184 @@
+//! Interpretation of long-lived broker effects across connection generations.
+
+use kafka_driver_core::{
+    BrokerDisposition, BrokerEffect, BrokerInput, BrokerPhase, ConnectionEffect, ConnectionEpoch,
+    ConnectionInput, ConnectionMachine, ConnectionPhase, Moment, ReconnectSchedule, TimerId,
+};
+
+use crate::reactor::{Poller, resource::ResourceIdentity, timer::DeadlineTimer};
+
+use super::{BrokerError, failure::open_failure, owner::SingleBroker};
+
+impl SingleBroker {
+    pub(in crate::reactor) fn start(
+        &mut self,
+        poller: &Poller,
+        now: Moment,
+    ) -> Result<(), BrokerError> {
+        let transition = self.broker.apply(BrokerInput::Start);
+        require_applied(transition.disposition())?;
+        self.interpret_broker_effects(poller, transition.into_effects())?;
+        self.reconcile_connection(poller, now)
+    }
+
+    pub(super) fn mark_connection_ready(
+        &mut self,
+        epoch: ConnectionEpoch,
+    ) -> Result<(), BrokerError> {
+        let transition = self.broker.apply(BrokerInput::ConnectionReady { epoch });
+        require_applied(transition.disposition())?;
+        expect_no_broker_effects(&transition.into_effects())
+    }
+
+    pub(super) fn deliver_reconnect(
+        &mut self,
+        poller: &Poller,
+        failed_epoch: ConnectionEpoch,
+        timer_id: TimerId,
+        now: Moment,
+    ) -> Result<(), BrokerError> {
+        let transition = self.broker.apply(BrokerInput::ReconnectElapsed {
+            failed_epoch,
+            timer_id,
+            now,
+        });
+        self.interpret_broker_effects(poller, transition.into_effects())
+    }
+
+    pub(super) fn reconcile_connection(
+        &mut self,
+        poller: &Poller,
+        now: Moment,
+    ) -> Result<(), BrokerError> {
+        while self.connection.state().phase() == ConnectionPhase::Closed {
+            let epoch = self.connection.epoch();
+            let input = match self.broker.state().phase() {
+                BrokerPhase::Connecting | BrokerPhase::Available => {
+                    let Some(timer_id) = self.ids.reserve_reconnect_timer() else {
+                        return Err(BrokerError::IdentityExhausted);
+                    };
+                    BrokerInput::ConnectionFailed {
+                        epoch,
+                        reconnect: ReconnectSchedule::new(
+                            timer_id,
+                            now,
+                            self.entropy.next_sample(),
+                        ),
+                    }
+                }
+                BrokerPhase::Draining => BrokerInput::ConnectionDrained { epoch },
+                BrokerPhase::Dormant | BrokerPhase::Backoff | BrokerPhase::Closed => break,
+            };
+            let transition = self.broker.apply(input);
+            require_applied(transition.disposition())?;
+            self.interpret_broker_effects(poller, transition.into_effects())?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn interpret_broker_effects(
+        &mut self,
+        poller: &Poller,
+        effects: Vec<BrokerEffect>,
+    ) -> Result<(), BrokerError> {
+        for effect in effects {
+            match effect {
+                BrokerEffect::OpenConnection { epoch } => {
+                    self.open_connection(poller, epoch)?;
+                }
+                BrokerEffect::ScheduleReconnect {
+                    failed_epoch,
+                    timer_id,
+                    at,
+                } => self.timers.schedule(DeadlineTimer::for_reconnect(
+                    timer_id,
+                    failed_epoch,
+                    at,
+                ))?,
+                BrokerEffect::CancelReconnect { timer_id } => {
+                    self.timers.cancel(timer_id);
+                }
+                BrokerEffect::DrainConnection { epoch } => {
+                    if epoch != self.connection.epoch() {
+                        return Err(BrokerError::MissingEffect);
+                    }
+                    let transition = self.connection.apply(ConnectionInput::BeginDrain)?;
+                    self.interpret_close(poller, transition.into_effects(), None)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn open_connection(
+        &mut self,
+        poller: &Poller,
+        epoch: ConnectionEpoch,
+    ) -> Result<(), BrokerError> {
+        if self.resource_token.is_some() {
+            return Err(BrokerError::MissingEffect);
+        }
+        self.connection = ConnectionMachine::new(epoch, self.connection_limits);
+        self.negotiation_exchange = None;
+        self.frames.clear();
+        self.completed_writes.clear();
+        self.retry_read = false;
+        self.retry_write = false;
+
+        let Some(open) = self.ids.reserve_open() else {
+            return Err(BrokerError::IdentityExhausted);
+        };
+        let transition = self.connection.apply(ConnectionInput::Start {
+            effect_id: open.effect_id,
+            transport_id: open.transport_id,
+        })?;
+        let effects = transition.into_effects();
+        let [
+            ConnectionEffect::OpenTransport {
+                epoch: opened_epoch,
+                effect_id,
+                transport_id,
+            },
+        ] = effects.as_slice()
+        else {
+            return Err(unexpected_connection_effect(&effects));
+        };
+        if *opened_epoch != epoch
+            || *effect_id != open.effect_id
+            || *transport_id != open.transport_id
+        {
+            return Err(BrokerError::MissingEffect);
+        }
+        let identity = ResourceIdentity::new(*transport_id, epoch);
+        match self.resources.open(poller, identity, self.address) {
+            Ok(token) => self.resource_token = Some(token),
+            Err(error) => {
+                self.apply_open_failed(epoch, *effect_id, *transport_id, open_failure(&error))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn require_applied(disposition: BrokerDisposition) -> Result<(), BrokerError> {
+    match disposition {
+        BrokerDisposition::Applied => Ok(()),
+        BrokerDisposition::Ignored | BrokerDisposition::IgnoredStale => {
+            Err(BrokerError::MissingEffect)
+        }
+    }
+}
+
+fn expect_no_broker_effects(effects: &[BrokerEffect]) -> Result<(), BrokerError> {
+    match effects.first().copied() {
+        Some(effect) => Err(BrokerError::UnexpectedBrokerEffect(effect)),
+        None => Ok(()),
+    }
+}
+
+fn unexpected_connection_effect(effects: &[ConnectionEffect]) -> BrokerError {
+    effects
+        .first()
+        .copied()
+        .map_or(BrokerError::MissingEffect, BrokerError::UnexpectedEffect)
+}

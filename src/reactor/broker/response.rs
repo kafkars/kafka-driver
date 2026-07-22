@@ -36,7 +36,7 @@ impl SingleBroker {
         identity: ResourceIdentity,
         frame: FrameBody,
     ) -> Result<(), BrokerError> {
-        if self.machine.state().phase() == kafka_driver_core::ConnectionPhase::Negotiating {
+        if self.connection.state().phase() == kafka_driver_core::ConnectionPhase::Negotiating {
             return self.process_negotiation_frame(poller, identity, frame);
         }
         let envelope = match self.responses.inspect_front(frame) {
@@ -48,7 +48,7 @@ impl SingleBroker {
                 return self.reject_frame(poller, identity, ResponseFault::Malformed);
             }
         };
-        let transition = self.machine.apply(ConnectionInput::ResponseReceived {
+        let transition = self.connection.apply(ConnectionInput::ResponseReceived {
             epoch: identity.epoch(),
             transport_id: identity.transport_id(),
             correlation_id: envelope.correlation_id(),
@@ -62,7 +62,7 @@ impl SingleBroker {
         identity: ResourceIdentity,
         fault: ResponseFault,
     ) -> Result<(), BrokerError> {
-        let transition = self.machine.apply(ConnectionInput::ResponseRejected {
+        let transition = self.connection.apply(ConnectionInput::ResponseRejected {
             epoch: identity.epoch(),
             transport_id: identity.transport_id(),
             fault,

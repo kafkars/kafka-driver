@@ -9,6 +9,8 @@ pub(in crate::reactor) enum DeadlineSubject {
     Call(CallId),
     /// Initial API version negotiation.
     Negotiation,
+    /// Delay before creating a fresh connection generation.
+    Reconnect,
 }
 
 /// One scheduled connection deadline and the identities its event must echo.
@@ -44,6 +46,19 @@ impl DeadlineTimer {
             timer_id,
             epoch,
             subject: DeadlineSubject::Negotiation,
+            at,
+        }
+    }
+
+    pub(in crate::reactor) const fn for_reconnect(
+        timer_id: TimerId,
+        failed_epoch: ConnectionEpoch,
+        at: Moment,
+    ) -> Self {
+        Self {
+            timer_id,
+            epoch: failed_epoch,
+            subject: DeadlineSubject::Reconnect,
             at,
         }
     }

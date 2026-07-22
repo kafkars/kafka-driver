@@ -29,7 +29,7 @@ impl SingleBroker {
         let Some(deadline) = now.checked_add(self.negotiation_timeout) else {
             return Err(BrokerError::DeadlineOverflow);
         };
-        let transition = self.machine.apply(ConnectionInput::TransportOpened {
+        let transition = self.connection.apply(ConnectionInput::TransportOpened {
             epoch: identity.epoch(),
             effect_id: open_effect,
             transport_id: identity.transport_id(),
@@ -141,17 +141,20 @@ impl SingleBroker {
                 return self.fail_negotiation(poller, identity, effect_id, error.failure());
             }
         };
-        let transition = self.machine.apply(ConnectionInput::ApiVersionsNegotiated {
-            epoch: identity.epoch(),
-            transport_id: identity.transport_id(),
-            effect_id,
-            capabilities,
-        })?;
+        let transition = self
+            .connection
+            .apply(ConnectionInput::ApiVersionsNegotiated {
+                epoch: identity.epoch(),
+                transport_id: identity.transport_id(),
+                effect_id,
+                capabilities,
+            })?;
         let effects = transition.into_effects();
         let [ConnectionEffect::CancelDeadline { timer_id }] = effects.as_slice() else {
             return Err(unexpected_or_missing(&effects));
         };
         self.timers.cancel(*timer_id);
+        self.mark_connection_ready(identity.epoch())?;
         let Some(token) = self.resource_token else {
             return Err(BrokerError::MissingEffect);
         };
@@ -173,7 +176,7 @@ impl SingleBroker {
         failure: NegotiationFailure,
     ) -> Result<(), BrokerError> {
         self.negotiation_exchange = None;
-        let transition = self.machine.apply(ConnectionInput::ApiVersionsFailed {
+        let transition = self.connection.apply(ConnectionInput::ApiVersionsFailed {
             epoch: identity.epoch(),
             transport_id: identity.transport_id(),
             effect_id,

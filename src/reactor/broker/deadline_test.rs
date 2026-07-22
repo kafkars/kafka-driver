@@ -2,7 +2,7 @@
 
 use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
 
-use kafka_driver_core::{CallFailure, CallId, ConnectionPhase, Delivery, Moment};
+use kafka_driver_core::{BrokerPhase, CallFailure, CallId, ConnectionPhase, Delivery, Moment};
 use kafka_wire::ApiVersionsRequest;
 
 use crate::{
@@ -25,7 +25,7 @@ fn given_an_in_flight_call_when_virtual_deadline_fires_then_the_epoch_closes() {
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));
     let mut broker = SingleBroker::new(address, BrokerLimits::default());
     broker
-        .start(&poller)
+        .start(&poller, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("start broker connection: {error}"));
     let (mut peer, _) = listener
         .accept()
@@ -49,7 +49,8 @@ fn given_an_in_flight_call_when_virtual_deadline_fires_then_the_epoch_closes() {
     assert!(progress.made_progress());
     assert!(!progress.more_due());
     assert_eq!(broker.state().phase(), ConnectionPhase::Closed);
-    assert_eq!(broker.admitted_counts(), (0, 0, 0));
+    assert_eq!(broker.broker_state().phase(), BrokerPhase::Backoff);
+    assert_eq!(broker.admitted_counts(), (0, 1, 0));
     assert_eq!(
         call.wait(),
         Ok(Err(RequestError::Rejected {

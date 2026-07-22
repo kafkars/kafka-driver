@@ -45,6 +45,7 @@ impl SingleBroker {
         let mut due = std::mem::take(&mut self.due_timers);
         for deadline in due.drain(..) {
             self.deliver_deadline(poller, now, deadline)?;
+            self.reconcile_connection(poller, now)?;
         }
         self.due_timers = due;
         Ok(DeadlineProgress {
@@ -63,7 +64,10 @@ impl SingleBroker {
         now: Moment,
         deadline: DeadlineTimer,
     ) -> Result<(), BrokerError> {
-        let transition = self.machine.apply(ConnectionInput::DeadlineElapsed {
+        if deadline.subject() == DeadlineSubject::Reconnect {
+            return self.deliver_reconnect(poller, deadline.epoch(), deadline.timer_id(), now);
+        }
+        let transition = self.connection.apply(ConnectionInput::DeadlineElapsed {
             epoch: deadline.epoch(),
             timer_id: deadline.timer_id(),
             now,

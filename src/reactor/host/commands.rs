@@ -59,8 +59,9 @@ impl Reactor {
     fn start_drain(&mut self) -> Result<(), ReactorError> {
         self.close_admission()?;
         if let Some(broker) = &mut self.broker {
+            let now = self.clock.now().map_err(ReactorError::clock)?;
             broker
-                .begin_drain(&self.poller)
+                .begin_drain(&self.poller, now)
                 .map_err(ReactorError::broker)?;
         }
         self.state = HostState::Draining;

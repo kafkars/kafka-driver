@@ -3,8 +3,8 @@
 use std::{net::SocketAddr, num::NonZeroUsize};
 
 use kafka_driver_core::{
-    ConnectionEffect, ConnectionEpoch, ConnectionInput, ConnectionMachine, ConnectionPhase,
-    ConnectionState,
+    BrokerMachine, ConnectionEffect, ConnectionEpoch, ConnectionInput, ConnectionMachine,
+    ConnectionPhase, ConnectionState,
 };
 use kafka_driver_transport::FrameBody;
 use kafka_wire::OutboundFrameLimits;
@@ -20,17 +20,19 @@ use crate::reactor::{
 use crate::response::ResponseRegistry;
 
 use super::{
-    BrokerError, BrokerIds,
-    failure::{open_failure, plaintext_failure},
+    BrokerError, BrokerIds, entropy::BackoffEntropy, failure::plaintext_failure,
     limits::BrokerLimits,
 };
 
-/// Single-owner adapter for one broker connection epoch.
+/// Single-owner adapter for one broker and its replaceable connection epoch.
 #[derive(Debug)]
 pub(in crate::reactor) struct SingleBroker {
     pub(super) address: SocketAddr,
-    pub(super) machine: ConnectionMachine,
+    pub(super) broker: BrokerMachine,
+    pub(super) connection: ConnectionMachine,
+    pub(super) connection_limits: kafka_driver_core::ConnectionLimits,
     pub(super) ids: BrokerIds,
+    pub(super) entropy: BackoffEntropy,
     pub(super) resources: PlaintextResources,
     pub(super) resource_token: Option<ResourceToken>,
     pub(super) responses: ResponseRegistry,
@@ -53,8 +55,11 @@ impl SingleBroker {
     pub(in crate::reactor) fn new(address: SocketAddr, limits: BrokerLimits) -> Self {
         Self {
             address,
-            machine: ConnectionMachine::new(ConnectionEpoch::from_raw(1), limits.connection()),
+            broker: BrokerMachine::new(ConnectionEpoch::from_raw(1), limits.backoff()),
+            connection: ConnectionMachine::new(ConnectionEpoch::from_raw(1), limits.connection()),
+            connection_limits: limits.connection(),
             ids: BrokerIds::new(),
+            entropy: BackoffEntropy::for_broker(address),
             resources: PlaintextResources::new(limits.resource_capacity(), limits.plaintext()),
             resource_token: None,
             responses: ResponseRegistry::new(limits.response_capacity(), DecodeLimits::default()),
@@ -74,37 +79,18 @@ impl SingleBroker {
         }
     }
 
-    pub(in crate::reactor) fn start(&mut self, poller: &Poller) -> Result<(), BrokerError> {
-        let Some(open) = self.ids.reserve_open() else {
-            return Err(BrokerError::IdentityExhausted);
-        };
-        let transition = self.machine.apply(ConnectionInput::Start {
-            effect_id: open.effect_id,
-            transport_id: open.transport_id,
-        })?;
-        let effects = transition.into_effects();
-        if effects.len() != 1 {
-            return Err(unexpected_or_missing(&effects));
-        }
-        let ConnectionEffect::OpenTransport {
-            epoch,
-            effect_id,
-            transport_id,
-        } = effects[0]
-        else {
-            return Err(BrokerError::UnexpectedEffect(effects[0]));
-        };
-        let identity = ResourceIdentity::new(transport_id, epoch);
-        match self.resources.open(poller, identity, self.address) {
-            Ok(token) => self.resource_token = Some(token),
-            Err(error) => {
-                self.apply_open_failed(epoch, effect_id, transport_id, open_failure(&error))?;
-            }
-        }
-        Ok(())
+    pub(in crate::reactor) fn observe(
+        &mut self,
+        poller: &Poller,
+        event: PollEvent,
+        now: kafka_driver_core::Moment,
+    ) -> Result<bool, BrokerError> {
+        let progress = self.observe_connection(poller, event, now)?;
+        self.reconcile_connection(poller, now)?;
+        Ok(progress)
     }
 
-    pub(in crate::reactor) fn observe(
+    fn observe_connection(
         &mut self,
         poller: &Poller,
         event: PollEvent,
@@ -117,7 +103,7 @@ impl SingleBroker {
             return Ok(false);
         }
         if matches!(
-            self.machine.state().phase(),
+            self.connection.state().phase(),
             ConnectionPhase::Negotiating | ConnectionPhase::Ready | ConnectionPhase::Draining
         ) {
             return self.drive_io(poller, token, readiness);
@@ -128,7 +114,7 @@ impl SingleBroker {
         let progress = connection.finish_connect();
         match progress {
             Ok(ConnectProgress::Opened | ConnectProgress::AlreadyOpen) => {
-                let ConnectionState::Opening { effect_id, .. } = self.machine.state() else {
+                let ConnectionState::Opening { effect_id, .. } = self.connection.state() else {
                     return Ok(false);
                 };
                 self.begin_negotiation(poller, identity, effect_id, now)?;
@@ -136,7 +122,7 @@ impl SingleBroker {
             }
             Ok(ConnectProgress::Pending) => Ok(false),
             Err(error) => {
-                let ConnectionState::Opening { effect_id, .. } = self.machine.state() else {
+                let ConnectionState::Opening { effect_id, .. } = self.connection.state() else {
                     return Ok(false);
                 };
                 self.apply_open_failed(
@@ -152,22 +138,28 @@ impl SingleBroker {
     }
 
     pub(in crate::reactor) fn state(&self) -> ConnectionState {
-        self.machine.state()
+        self.connection.state()
     }
 
-    fn apply_open_failed(
+    pub(in crate::reactor) const fn broker_state(&self) -> kafka_driver_core::BrokerState {
+        self.broker.state()
+    }
+
+    pub(super) fn apply_open_failed(
         &mut self,
         epoch: ConnectionEpoch,
         effect_id: kafka_driver_core::EffectId,
         transport_id: kafka_driver_core::TransportId,
         failure: kafka_driver_core::TransportFailure,
     ) -> Result<(), BrokerError> {
-        let transition = self.machine.apply(ConnectionInput::TransportOpenFailed {
-            epoch,
-            effect_id,
-            transport_id,
-            failure,
-        })?;
+        let transition = self
+            .connection
+            .apply(ConnectionInput::TransportOpenFailed {
+                epoch,
+                effect_id,
+                transport_id,
+                failure,
+            })?;
         expect_no_effects(&transition.into_effects())
     }
 
@@ -189,11 +181,4 @@ fn expect_no_effects(effects: &[ConnectionEffect]) -> Result<(), BrokerError> {
         Some(effect) => Err(BrokerError::UnexpectedEffect(effect)),
         None => Ok(()),
     }
-}
-
-fn unexpected_or_missing(effects: &[ConnectionEffect]) -> BrokerError {
-    effects
-        .first()
-        .copied()
-        .map_or(BrokerError::MissingEffect, BrokerError::UnexpectedEffect)
 }

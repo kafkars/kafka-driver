@@ -14,6 +14,8 @@ mod simulation;
 mod transport;
 
 #[cfg(test)]
+mod broker_scenario_test;
+#[cfg(test)]
 mod clock_test;
 #[cfg(test)]
 mod connection_scenario_test;

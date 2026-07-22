@@ -18,7 +18,7 @@ impl SingleBroker {
     ) -> Result<(), BrokerError> {
         self.negotiation_exchange = None;
         self.close_resource(poller, identity)?;
-        let transition = self.machine.apply(ConnectionInput::TransportClosed {
+        let transition = self.connection.apply(ConnectionInput::TransportClosed {
             epoch: identity.epoch(),
             transport_id: identity.transport_id(),
             failure,
@@ -42,7 +42,7 @@ impl SingleBroker {
                     self.negotiation_exchange = None;
                     let identity = ResourceIdentity::new(transport_id, epoch);
                     self.close_resource(poller, identity)?;
-                    let transition = self.machine.apply(ConnectionInput::TransportClosed {
+                    let transition = self.connection.apply(ConnectionInput::TransportClosed {
                         epoch,
                         transport_id,
                         failure: TransportFailure::Other,

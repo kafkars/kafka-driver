@@ -2,7 +2,7 @@
 
 use std::{net::TcpListener, num::NonZeroUsize};
 
-use kafka_driver_core::{CloseReason, ConnectionState, Moment, NegotiationFailure};
+use kafka_driver_core::{BrokerPhase, CloseReason, ConnectionState, Moment, NegotiationFailure};
 
 use crate::reactor::{Poller, broker::limits::BrokerLimits};
 
@@ -20,7 +20,7 @@ fn given_a_silent_broker_when_the_negotiation_deadline_fires_then_the_epoch_clos
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));
     let mut broker = SingleBroker::new(address, BrokerLimits::default());
     broker
-        .start(&poller)
+        .start(&poller, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("start broker connection: {error}"));
     let (_peer, _) = listener
         .accept()
@@ -41,5 +41,6 @@ fn given_a_silent_broker_when_the_negotiation_deadline_fires_then_the_epoch_clos
             reason: CloseReason::NegotiationFailed(NegotiationFailure::Timeout),
         }
     );
-    assert_eq!(broker.admitted_counts(), (0, 0, 0));
+    assert_eq!(broker.broker_state().phase(), BrokerPhase::Backoff);
+    assert_eq!(broker.admitted_counts(), (0, 1, 0));
 }
