@@ -29,7 +29,10 @@ pub use authentication::{
     AuthenticationPolicy, AuthenticationRound, AuthenticationState, AuthenticationTransition,
     ExchangeOutcome, SaslMechanism, SaslProtocol,
 };
-pub use bootstrap::{BootstrapCursor, BootstrapError, BootstrapLimits, BootstrapSet};
+pub use bootstrap::{
+    BootstrapCursor, BootstrapDisposition, BootstrapEffect, BootstrapError, BootstrapInput,
+    BootstrapLimits, BootstrapMachine, BootstrapSet, BootstrapState, BootstrapTransition,
+};
 pub use broker::{
     BackoffPolicy, BackoffPolicyError, BrokerCloseReason, BrokerDisposition, BrokerEffect,
     BrokerInput, BrokerMachine, BrokerPhase, BrokerState, BrokerTransition, JitterSample,
