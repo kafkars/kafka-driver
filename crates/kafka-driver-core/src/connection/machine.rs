@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::{CallId, ConnectionEpoch};
+use crate::{AuthenticationPolicy, CallId, ConnectionEpoch};
 use kafka_wire_core::{ApiKey, ApiVersion};
 
 use super::{
@@ -15,6 +15,7 @@ use super::{
 pub struct ConnectionMachine {
     pub(super) state: StateData,
     pub(super) limits: ConnectionLimits,
+    pub(super) authentication: Option<AuthenticationPolicy>,
     trace: TransitionTrace,
     next_sequence: Option<u64>,
 }
@@ -25,6 +26,22 @@ impl ConnectionMachine {
         Self {
             state: StateData::Dormant { epoch },
             limits,
+            authentication: None,
+            trace: TransitionTrace::new(limits.max_trace_records()),
+            next_sequence: Some(0),
+        }
+    }
+
+    /// Creates a dormant epoch that must authenticate after API negotiation.
+    pub fn new_authenticated(
+        epoch: ConnectionEpoch,
+        limits: ConnectionLimits,
+        authentication: AuthenticationPolicy,
+    ) -> Self {
+        Self {
+            state: StateData::Dormant { epoch },
+            limits,
+            authentication: Some(authentication),
             trace: TransitionTrace::new(limits.max_trace_records()),
             next_sequence: Some(0),
         }
@@ -123,12 +140,26 @@ impl ConnectionMachine {
                 effect_id,
                 capabilities,
             } => Ok(self.api_versions_negotiated(epoch, transport_id, effect_id, capabilities)),
+            ConnectionInput::ApiVersionsNegotiatedWithAuthentication {
+                epoch,
+                transport_id,
+                effect_id,
+                capabilities,
+                authentication,
+            } => Ok(self.begin_authentication(
+                epoch,
+                transport_id,
+                effect_id,
+                capabilities,
+                authentication,
+            )),
             ConnectionInput::ApiVersionsFailed {
                 epoch,
                 transport_id,
                 effect_id,
                 failure,
             } => Ok(self.api_versions_failed(epoch, transport_id, effect_id, failure)),
+            ConnectionInput::Authentication { input } => Ok(self.authentication_input(input)),
             ConnectionInput::Submit {
                 call_id,
                 write_effect,

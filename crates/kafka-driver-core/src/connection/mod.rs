@@ -1,6 +1,7 @@
 //! Deterministic lifecycle, FIFO response, and failure policy for one socket epoch.
 
 mod active;
+mod authentication;
 mod close;
 mod correlation;
 mod effect;
@@ -14,11 +15,17 @@ mod negotiation;
 mod pending;
 mod response;
 mod state;
+mod state_data;
 mod trace;
 mod transition;
+mod transport_close;
 
 #[cfg(test)]
 mod admission_test;
+#[cfg(test)]
+mod authentication_lifecycle_test;
+#[cfg(test)]
+mod authentication_test;
 #[cfg(test)]
 mod correlation_test;
 #[cfg(test)]
@@ -54,6 +61,6 @@ pub use transition::ConnectionTransition;
 use active::{ActiveConnection, ActiveMode};
 use correlation::CorrelationAllocator;
 use pending::PendingQueue;
-use state::StateData;
+use state_data::StateData;
 use trace::TransitionTrace;
 use transition::Decision;

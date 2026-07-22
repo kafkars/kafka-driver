@@ -1,6 +1,9 @@
 //! Data-only inputs accepted by one deterministic connection machine.
 
-use crate::{CallId, ConnectionEpoch, EffectId, Moment, TimerId, TransportId};
+use crate::{
+    AuthenticationAttempt, AuthenticationInput, CallId, ConnectionEpoch, EffectId, Moment, TimerId,
+    TransportId,
+};
 
 use super::{
     CorrelationId, NegotiationAttempt, NegotiationFailure, ResponseFault, TransportFailure,
@@ -50,6 +53,19 @@ pub enum ConnectionInput {
         /// Immutable capability set for this connection epoch.
         capabilities: NegotiatedCapabilities,
     },
+    /// Reports capabilities and starts required connection authentication.
+    ApiVersionsNegotiatedWithAuthentication {
+        /// Epoch echoed from the negotiation effect.
+        epoch: ConnectionEpoch,
+        /// Transport echoed from the negotiation effect.
+        transport_id: TransportId,
+        /// Negotiation effect being completed.
+        effect_id: EffectId,
+        /// Immutable capability set for this connection epoch.
+        capabilities: NegotiatedCapabilities,
+        /// Reserved identities and timing for the authentication phase.
+        authentication: AuthenticationAttempt,
+    },
     /// Reports terminal failure of the initial `ApiVersions` exchange.
     ApiVersionsFailed {
         /// Epoch echoed from the negotiation effect.
@@ -60,6 +76,11 @@ pub enum ConnectionInput {
         effect_id: EffectId,
         /// Sanitized negotiation failure category.
         failure: NegotiationFailure,
+    },
+    /// Applies one secret-free outcome to the connection-owned authentication child.
+    Authentication {
+        /// Child-machine input carrying epoch, effect, round, or timer identity.
+        input: AuthenticationInput,
     },
     /// Admits one call for ordered write and response tracking.
     Submit {
@@ -141,7 +162,11 @@ impl ConnectionInput {
             Self::TransportOpened { .. } => ConnectionInputKind::TransportOpened,
             Self::TransportOpenFailed { .. } => ConnectionInputKind::TransportOpenFailed,
             Self::ApiVersionsNegotiated { .. } => ConnectionInputKind::ApiVersionsNegotiated,
+            Self::ApiVersionsNegotiatedWithAuthentication { .. } => {
+                ConnectionInputKind::ApiVersionsNegotiatedWithAuthentication
+            }
             Self::ApiVersionsFailed { .. } => ConnectionInputKind::ApiVersionsFailed,
+            Self::Authentication { .. } => ConnectionInputKind::Authentication,
             Self::Submit { .. } => ConnectionInputKind::Submit,
             Self::WriteSubmitted { .. } => ConnectionInputKind::WriteSubmitted,
             Self::WriteFailed { .. } => ConnectionInputKind::WriteFailed,
@@ -165,8 +190,12 @@ pub enum ConnectionInputKind {
     TransportOpenFailed,
     /// `ConnectionInput::ApiVersionsNegotiated`.
     ApiVersionsNegotiated,
+    /// `ConnectionInput::ApiVersionsNegotiatedWithAuthentication`.
+    ApiVersionsNegotiatedWithAuthentication,
     /// `ConnectionInput::ApiVersionsFailed`.
     ApiVersionsFailed,
+    /// `ConnectionInput::Authentication`.
+    Authentication,
     /// `ConnectionInput::Submit`.
     Submit,
     /// `ConnectionInput::WriteSubmitted`.

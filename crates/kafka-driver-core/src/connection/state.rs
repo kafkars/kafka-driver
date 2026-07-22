@@ -1,8 +1,8 @@
 //! Valid lifecycle states and connection-local active-session ownership.
 
-use crate::{ConnectionEpoch, EffectId, Moment, TimerId, TransportId};
+use crate::{AuthenticationState, ConnectionEpoch, EffectId, Moment, TimerId, TransportId};
 
-use super::{ActiveConnection, ActiveMode, CloseReason};
+use super::CloseReason;
 
 /// Stable lifecycle name used by diagnostics and state inspection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -13,6 +13,8 @@ pub enum ConnectionPhase {
     Opening,
     /// Initial API version negotiation is outstanding.
     Negotiating,
+    /// SASL mechanism handshake or authentication exchange is outstanding.
+    Authenticating,
     /// Calls may be admitted and responses are tracked in FIFO order.
     Ready,
     /// Existing calls may complete but new calls are rejected.
@@ -52,6 +54,17 @@ pub enum ConnectionState {
         deadline_timer: TimerId,
         /// Absolute driver-relative negotiation deadline.
         deadline: Moment,
+    },
+    /// API negotiation completed and SASL authentication is outstanding.
+    Authenticating {
+        /// Epoch being authenticated.
+        epoch: ConnectionEpoch,
+        /// Opened transport resource.
+        transport_id: TransportId,
+        /// Secret-free child-machine state.
+        authentication: AuthenticationState,
+        /// Mutually supported APIs retained for this epoch.
+        capabilities: usize,
     },
     /// The transport accepts new calls.
     Ready {
@@ -100,127 +113,11 @@ impl ConnectionState {
             Self::Dormant { .. } => ConnectionPhase::Dormant,
             Self::Opening { .. } => ConnectionPhase::Opening,
             Self::Negotiating { .. } => ConnectionPhase::Negotiating,
+            Self::Authenticating { .. } => ConnectionPhase::Authenticating,
             Self::Ready { .. } => ConnectionPhase::Ready,
             Self::Draining { .. } => ConnectionPhase::Draining,
             Self::Closing { .. } => ConnectionPhase::Closing,
             Self::Closed { .. } => ConnectionPhase::Closed,
-        }
-    }
-}
-
-pub(super) enum StateData {
-    Dormant {
-        epoch: ConnectionEpoch,
-    },
-    Opening {
-        epoch: ConnectionEpoch,
-        effect_id: EffectId,
-        transport_id: TransportId,
-    },
-    Negotiating {
-        epoch: ConnectionEpoch,
-        transport_id: TransportId,
-        effect_id: EffectId,
-        deadline_timer: TimerId,
-        deadline: Moment,
-    },
-    Active {
-        mode: ActiveMode,
-        connection: ActiveConnection,
-    },
-    Closing {
-        epoch: ConnectionEpoch,
-        transport_id: TransportId,
-        reason: CloseReason,
-    },
-    Closed {
-        epoch: ConnectionEpoch,
-        reason: CloseReason,
-    },
-}
-
-impl StateData {
-    pub(super) const fn epoch(&self) -> ConnectionEpoch {
-        match self {
-            Self::Dormant { epoch }
-            | Self::Opening { epoch, .. }
-            | Self::Negotiating { epoch, .. }
-            | Self::Closing { epoch, .. }
-            | Self::Closed { epoch, .. } => *epoch,
-            Self::Active { connection, .. } => connection.epoch,
-        }
-    }
-
-    pub(super) const fn phase(&self) -> ConnectionPhase {
-        match self {
-            Self::Dormant { .. } => ConnectionPhase::Dormant,
-            Self::Opening { .. } => ConnectionPhase::Opening,
-            Self::Negotiating { .. } => ConnectionPhase::Negotiating,
-            Self::Active {
-                mode: ActiveMode::Ready,
-                ..
-            } => ConnectionPhase::Ready,
-            Self::Active {
-                mode: ActiveMode::Draining,
-                ..
-            } => ConnectionPhase::Draining,
-            Self::Closing { .. } => ConnectionPhase::Closing,
-            Self::Closed { .. } => ConnectionPhase::Closed,
-        }
-    }
-
-    pub(super) fn snapshot(&self) -> ConnectionState {
-        match self {
-            Self::Dormant { epoch } => ConnectionState::Dormant { epoch: *epoch },
-            Self::Opening {
-                epoch,
-                effect_id,
-                transport_id,
-            } => ConnectionState::Opening {
-                epoch: *epoch,
-                effect_id: *effect_id,
-                transport_id: *transport_id,
-            },
-            Self::Negotiating {
-                epoch,
-                transport_id,
-                effect_id,
-                deadline_timer,
-                deadline,
-            } => ConnectionState::Negotiating {
-                epoch: *epoch,
-                transport_id: *transport_id,
-                effect_id: *effect_id,
-                deadline_timer: *deadline_timer,
-                deadline: *deadline,
-            },
-            Self::Active { mode, connection } => match mode {
-                ActiveMode::Ready => ConnectionState::Ready {
-                    epoch: connection.epoch,
-                    transport_id: connection.transport_id,
-                    pending: connection.pending.len(),
-                    capabilities: connection.capabilities.len(),
-                },
-                ActiveMode::Draining => ConnectionState::Draining {
-                    epoch: connection.epoch,
-                    transport_id: connection.transport_id,
-                    pending: connection.pending.len(),
-                    capabilities: connection.capabilities.len(),
-                },
-            },
-            Self::Closing {
-                epoch,
-                transport_id,
-                reason,
-            } => ConnectionState::Closing {
-                epoch: *epoch,
-                transport_id: *transport_id,
-                reason: *reason,
-            },
-            Self::Closed { epoch, reason } => ConnectionState::Closed {
-                epoch: *epoch,
-                reason: *reason,
-            },
         }
     }
 }

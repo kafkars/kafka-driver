@@ -1,6 +1,6 @@
 //! Open, drain, external-close, and terminal lifecycle transitions.
 
-use crate::{ConnectionEpoch, EffectId, TransportId};
+use crate::{AuthenticationEffect, ConnectionEpoch, EffectId, TransportId};
 
 use super::{
     ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, Decision,
@@ -128,6 +128,7 @@ impl ConnectionMachine {
                     },
                 ])
             }
+            StateData::Authenticating { .. } => self.begin_authentication_drain(),
             StateData::Active {
                 mode: ActiveMode::Ready,
                 connection,
@@ -155,65 +156,39 @@ impl ConnectionMachine {
         }
     }
 
-    pub(super) fn transport_closed(
-        &mut self,
-        epoch: ConnectionEpoch,
-        transport_id: TransportId,
-        failure: TransportFailure,
-    ) -> Decision {
-        if epoch != self.state.epoch() {
+    fn begin_authentication_drain(&mut self) -> Decision {
+        let StateData::Authenticating {
+            epoch,
+            transport_id,
+            authentication,
+            ..
+        } = &self.state
+        else {
             return Decision::stale();
+        };
+        let epoch = *epoch;
+        let transport_id = *transport_id;
+        let deadline_timer = authentication.deadline_timer();
+        self.state = StateData::Closing {
+            epoch,
+            transport_id,
+            reason: CloseReason::Requested,
+        };
+        let mut effects = vec![ConnectionEffect::CloseTransport {
+            epoch,
+            transport_id,
+            reason: CloseReason::Requested,
+        }];
+        if let Some(timer_id) = deadline_timer {
+            effects.push(ConnectionEffect::Authentication {
+                effect: AuthenticationEffect::CancelDeadline { timer_id },
+            });
         }
-        match &self.state {
-            StateData::Opening {
-                transport_id: expected,
-                ..
-            } if *expected == transport_id => {
-                self.state = StateData::Closed {
-                    epoch,
-                    reason: CloseReason::TransportLost(failure),
-                };
-                Decision::applied(Vec::new())
-            }
-            StateData::Negotiating {
-                transport_id: expected,
-                deadline_timer,
-                ..
-            } if *expected == transport_id => {
-                let deadline_timer = *deadline_timer;
-                self.state = StateData::Closed {
-                    epoch,
-                    reason: CloseReason::TransportLost(failure),
-                };
-                Decision::applied(vec![ConnectionEffect::CancelDeadline {
-                    timer_id: deadline_timer,
-                }])
-            }
-            StateData::Active { connection, .. } if connection.transport_id == transport_id => {
-                let reason = CloseReason::TransportLost(failure);
-                let effects = self.finish_active_close(reason, None);
-                Decision::applied(effects)
-            }
-            StateData::Closing {
-                transport_id: expected,
-                reason,
-                ..
-            } if *expected == transport_id => {
-                let reason = *reason;
-                self.state = StateData::Closed { epoch, reason };
-                Decision::applied(Vec::new())
-            }
-            StateData::Dormant { .. }
-            | StateData::Opening { .. }
-            | StateData::Negotiating { .. }
-            | StateData::Active { .. }
-            | StateData::Closing { .. }
-            | StateData::Closed { .. } => Decision::stale(),
-        }
+        Decision::applied(effects)
     }
 
-    pub(super) const fn failure_for_closed_state(&self) -> CallFailure {
-        match self.state {
+    pub(super) fn failure_for_closed_state(&self) -> CallFailure {
+        match &self.state {
             StateData::Active {
                 mode: ActiveMode::Draining,
                 ..
@@ -221,6 +196,7 @@ impl ConnectionMachine {
             StateData::Dormant { .. }
             | StateData::Opening { .. }
             | StateData::Negotiating { .. }
+            | StateData::Authenticating { .. }
             | StateData::Active {
                 mode: ActiveMode::Ready,
                 ..

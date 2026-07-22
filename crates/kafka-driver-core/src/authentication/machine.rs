@@ -71,6 +71,16 @@ impl AuthenticationMachine {
         self.state
     }
 
+    pub(crate) const fn deadline_timer(&self) -> Option<TimerId> {
+        match self.state {
+            AuthenticationState::Handshaking { deadline_timer, .. }
+            | AuthenticationState::Exchanging { deadline_timer, .. } => Some(deadline_timer),
+            AuthenticationState::Dormant
+            | AuthenticationState::Succeeded
+            | AuthenticationState::Failed { .. } => None,
+        }
+    }
+
     pub(super) fn matches(
         &self,
         epoch: ConnectionEpoch,

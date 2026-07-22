@@ -1,6 +1,9 @@
 //! Initial API negotiation transitions and capability ownership.
 
-use crate::{ConnectionEpoch, EffectId, Moment, NegotiatedCapabilities, TimerId, TransportId};
+use crate::{
+    AuthenticationFailure, ConnectionEpoch, EffectId, Moment, NegotiatedCapabilities, TimerId,
+    TransportId,
+};
 
 use super::{
     ActiveConnection, ActiveMode, CloseReason, ConnectionEffect, ConnectionMachine, Decision,
@@ -104,6 +107,9 @@ impl ConnectionMachine {
         if capabilities.len() > self.limits.max_capabilities().get() {
             return self.finish_negotiation_failure(NegotiationFailure::Capacity);
         }
+        if self.authentication.is_some() {
+            return self.finish_authentication_setup_failure(AuthenticationFailure::Protocol);
+        }
         self.state = StateData::Active {
             mode: ActiveMode::Ready,
             connection: ActiveConnection::new(epoch, transport_id, capabilities, self.limits),
@@ -138,7 +144,7 @@ impl ConnectionMachine {
         self.finish_negotiation_failure(failure)
     }
 
-    fn finish_negotiation_failure(&mut self, failure: NegotiationFailure) -> Decision {
+    pub(super) fn finish_negotiation_failure(&mut self, failure: NegotiationFailure) -> Decision {
         let StateData::Negotiating {
             epoch,
             transport_id,

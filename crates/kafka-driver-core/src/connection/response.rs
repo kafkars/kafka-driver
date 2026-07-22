@@ -1,6 +1,6 @@
 //! FIFO response verification, completion, draining, and deadline expiry.
 
-use crate::{ConnectionEpoch, Moment, TimerId, TransportId};
+use crate::{AuthenticationInput, ConnectionEpoch, Moment, TimerId, TransportId};
 
 use super::{
     ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, CorrelationId,
@@ -99,6 +99,13 @@ impl ConnectionMachine {
         timer_id: TimerId,
         now: Moment,
     ) -> Decision {
+        if matches!(&self.state, StateData::Authenticating { .. }) {
+            return self.authentication_input(AuthenticationInput::DeadlineElapsed {
+                epoch,
+                timer_id,
+                now,
+            });
+        }
         if let StateData::Negotiating {
             epoch: expected_epoch,
             transport_id,

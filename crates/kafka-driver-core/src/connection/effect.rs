@@ -1,6 +1,8 @@
 //! Data-only external work and call outcomes emitted by connection policy.
 
-use crate::{CallId, ConnectionEpoch, Delivery, EffectId, Moment, TimerId, TransportId};
+use crate::{
+    AuthenticationEffect, CallId, ConnectionEpoch, Delivery, EffectId, Moment, TimerId, TransportId,
+};
 
 use super::{CallFailure, CloseReason, CorrelationId};
 
@@ -35,6 +37,11 @@ pub enum ConnectionEffect {
         effect_id: EffectId,
         /// Correlation reserved for this bootstrap exchange.
         correlation_id: CorrelationId,
+    },
+    /// Interprets one secret-free effect from the connection-owned SASL child.
+    Authentication {
+        /// Authentication work or terminal child outcome.
+        effect: AuthenticationEffect,
     },
     /// Registers a call deadline before its frame is written.
     ScheduleDeadline {

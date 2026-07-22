@@ -20,7 +20,7 @@ pub use failure::AuthenticationFailure;
 pub use input::{AuthenticationAttempt, AuthenticationInput, ExchangeOutcome};
 pub use limits::AuthenticationLimits;
 pub use machine::AuthenticationMachine;
-pub use mechanism::{SaslMechanism, SaslProtocol};
+pub use mechanism::{AuthenticationPolicy, SaslMechanism, SaslProtocol};
 pub use state::{AuthenticationPhase, AuthenticationRound, AuthenticationState};
 pub use transition::{AuthenticationDisposition, AuthenticationTransition};
 

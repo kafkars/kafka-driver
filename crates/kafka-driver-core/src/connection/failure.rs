@@ -1,6 +1,6 @@
 //! Sanitized connection-close and per-call failure vocabulary.
 
-use crate::CallId;
+use crate::{AuthenticationFailure, CallId};
 
 use super::CorrelationId;
 
@@ -44,6 +44,8 @@ pub enum CloseReason {
     TransportLost(TransportFailure),
     /// Initial API negotiation failed after the transport opened.
     NegotiationFailed(NegotiationFailure),
+    /// SASL authentication failed before ordinary calls were admitted.
+    AuthenticationFailed(AuthenticationFailure),
     /// A response did not match the FIFO queue front.
     CorrelationMismatch {
         /// Correlation required by the queue front.
