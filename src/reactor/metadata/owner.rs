@@ -11,7 +11,7 @@ use crate::{
     api::CallIds,
     metadata::snapshot_from_response,
     reactor::{Poller, broker::SingleBroker},
-    request::erased_request,
+    request::erased_request_in,
 };
 
 use super::{
@@ -186,8 +186,9 @@ impl MetadataOwner {
         let call_id = call_ids
             .allocate()
             .ok_or(MetadataOwnerError::CallIdentityExhausted)?;
-        let (call, request) = erased_request(
+        let (call, request) = erased_request_in(
             call_id,
+            crate::TrafficClass::Control,
             metadata_request(
                 &fetch.query,
                 broker.negotiated_version(METADATA_API_DESCRIPTOR.api_key),

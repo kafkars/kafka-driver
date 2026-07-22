@@ -7,16 +7,16 @@ use kafka_driver_core::{
     HostName, MetadataGeneration,
 };
 
-use crate::{MetadataLimits, reactor::broker::BrokerLimits};
+use crate::{MetadataLimits, TrafficClass, reactor::broker::BrokerLimits};
 
 use super::{BrokerSet, BrokerSetError};
 
 #[test]
-fn discovered_broker_capacity_reserves_one_additional_seed_slot() {
+fn every_broker_lane_reserves_a_disjoint_slot_after_the_seed() {
     let set = BrokerSet::new(BrokerLimits::default(), metadata_limits(7), None)
         .unwrap_or_else(|error| panic!("representable broker set: {error}"));
 
-    assert_eq!(set.owner_capacity(), nonzero(8));
+    assert_eq!(set.owner_capacity(), nonzero(7 * TrafficClass::COUNT + 1));
     assert!(!set.has_seed());
 }
 

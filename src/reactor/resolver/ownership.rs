@@ -2,12 +2,14 @@
 
 use std::{collections::BTreeMap, fmt, num::NonZeroUsize};
 
-use kafka_driver_core::{BrokerId, EffectId};
+use kafka_driver_core::EffectId;
+
+use crate::reactor::broker_set::BrokerLane;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) enum ResolutionOwner {
     Bootstrap,
-    Broker(BrokerId),
+    Broker(BrokerLane),
 }
 
 pub(in crate::reactor) struct ResolverOwnership {

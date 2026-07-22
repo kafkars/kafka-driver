@@ -10,7 +10,7 @@ use crate::{
     api::CallIds,
     coordinator::find_coordinator_request,
     reactor::{Poller, broker::SingleBroker},
-    request::erased_request,
+    request::erased_request_in,
 };
 
 use super::{CoordinatorOwner, CoordinatorOwnerError, entry::PendingCoordinator};
@@ -78,7 +78,12 @@ impl CoordinatorOwner {
         let call_id = call_ids
             .allocate()
             .ok_or(CoordinatorOwnerError::CallIdentityExhausted)?;
-        let (call, request) = erased_request(call_id, request, self.limits.request_timeout());
+        let (call, request) = erased_request_in(
+            call_id,
+            crate::TrafficClass::Control,
+            request,
+            self.limits.request_timeout(),
+        );
         broker
             .submit(poller, request, now)
             .map_err(CoordinatorOwnerError::Broker)?;

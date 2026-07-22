@@ -13,3 +13,9 @@ pub enum TrafficClass {
     /// Fetch and other deliberately long-held requests.
     LongPoll,
 }
+
+impl TrafficClass {
+    pub(crate) const ALL: [Self; 4] =
+        [Self::Control, Self::Interactive, Self::Bulk, Self::LongPoll];
+    pub(crate) const COUNT: usize = Self::ALL.len();
+}

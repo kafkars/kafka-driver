@@ -1,6 +1,6 @@
 //! Generation-fenced route admission and discovered-broker DNS interpretation.
 
-use kafka_driver_core::{BrokerId, BrokerRoute, DnsOutcome, DnsRequest, EffectId, Moment};
+use kafka_driver_core::{BrokerRoute, DnsOutcome, DnsRequest, EffectId, Moment};
 
 use crate::{
     RequestError,
@@ -9,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    BrokerSet, BrokerSetError,
+    BrokerLane, BrokerSet, BrokerSetError,
     child::{BrokerChild, ChildResolution},
 };
 
@@ -21,7 +21,7 @@ impl BrokerSet {
         effect_id: EffectId,
         request: Box<dyn ErasedRequest>,
         now: Moment,
-    ) -> Result<Option<DnsRequest>, BrokerSetError> {
+    ) -> Result<Option<(BrokerLane, DnsRequest)>, BrokerSetError> {
         if self.broker_template.is_none() {
             request.fail(RequestError::RouteUnavailable);
             return Ok(None);
@@ -35,7 +35,8 @@ impl BrokerSet {
             request.fail(RequestError::RouteUnavailable);
             return Ok(None);
         };
-        let child = match self.child_mut(route.broker_id()) {
+        let lane = BrokerLane::new(route.broker_id(), request.traffic_class());
+        let child = match self.child_mut(lane) {
             Ok(child) => child,
             Err(BrokerSetError::ChildCapacityReached) => {
                 request.fail(RequestError::RouteUnavailable);
@@ -43,17 +44,19 @@ impl BrokerSet {
             }
             Err(error) => return Err(error),
         };
-        child.submit(poller, route, &endpoint, effect_id, request, now)
+        child
+            .submit(poller, route, &endpoint, effect_id, request, now)
+            .map(|request| request.map(|request| (lane, request)))
     }
 
     pub(in crate::reactor) fn complete_resolution(
         &mut self,
-        broker_id: BrokerId,
+        lane: BrokerLane,
         outcome: DnsOutcome,
         poller: &Poller,
         now: Moment,
     ) -> Result<bool, BrokerSetError> {
-        let Some(index) = self.child_index(broker_id) else {
+        let Some(index) = self.child_index(lane) else {
             return Ok(false);
         };
         let action = self.children[index]
@@ -82,24 +85,23 @@ impl BrokerSet {
         Ok(progress)
     }
 
-    fn child_mut(&mut self, broker_id: BrokerId) -> Result<&mut BrokerChild, BrokerSetError> {
-        let index = match self.child_index(broker_id) {
+    fn child_mut(&mut self, lane: BrokerLane) -> Result<&mut BrokerChild, BrokerSetError> {
+        let index = match self.child_index(lane) {
             Some(index) => index,
-            None => self.allocate_child(broker_id)?,
+            None => self.allocate_child(lane)?,
         };
         self.children[index]
             .as_mut()
             .ok_or(BrokerSetError::UnknownBrokerChild)
     }
 
-    fn child_index(&self, broker_id: BrokerId) -> Option<usize> {
-        self.children.iter().position(|slot| {
-            slot.as_ref()
-                .is_some_and(|child| child.broker_id() == broker_id)
-        })
+    fn child_index(&self, lane: BrokerLane) -> Option<usize> {
+        self.children
+            .iter()
+            .position(|slot| slot.as_ref().is_some_and(|child| child.lane() == lane))
     }
 
-    fn allocate_child(&mut self, broker_id: BrokerId) -> Result<usize, BrokerSetError> {
+    fn allocate_child(&mut self, lane: BrokerLane) -> Result<usize, BrokerSetError> {
         if let Some(index) = self
             .children
             .iter()
@@ -108,7 +110,7 @@ impl BrokerSet {
             let child = self.children[index]
                 .as_mut()
                 .ok_or(BrokerSetError::UnknownBrokerChild)?;
-            child.reassign(broker_id);
+            child.reassign(lane);
             return Ok(index);
         }
         let index = self
@@ -119,7 +121,7 @@ impl BrokerSet {
         let namespace = ResourceNamespace::new(index + 1, self.owner_capacity)
             .ok_or(BrokerSetError::NamespaceUnavailable)?;
         self.children[index] = Some(BrokerChild::new(
-            broker_id,
+            lane,
             namespace,
             self.broker_limits,
             self.waiting_calls,

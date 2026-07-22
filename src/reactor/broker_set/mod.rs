@@ -4,12 +4,15 @@ mod child;
 mod child_io;
 mod error;
 mod io;
+mod lane;
 mod owner;
 mod replacement;
 mod routing;
 mod seed;
 mod waiting;
 
+#[cfg(test)]
+mod lane_test;
 #[cfg(test)]
 mod owner_test;
 #[cfg(test)]
@@ -18,4 +21,5 @@ mod routing_test;
 mod waiting_test;
 
 pub(in crate::reactor) use error::BrokerSetError;
+pub(in crate::reactor) use lane::BrokerLane;
 pub(in crate::reactor) use owner::BrokerSet;

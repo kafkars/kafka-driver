@@ -5,7 +5,7 @@ use std::num::NonZeroUsize;
 use kafka_driver_core::{BrokerDirectory, MetadataGeneration};
 
 use crate::{
-    MetadataLimits,
+    MetadataLimits, TrafficClass,
     config::BrokerTemplate,
     reactor::broker::{BrokerLimits, SingleBroker},
 };
@@ -17,6 +17,7 @@ pub(in crate::reactor) struct BrokerSet {
     pub(super) seed: Option<SingleBroker>,
     pub(super) directory: Option<BrokerDirectory>,
     pub(super) broker_limits: BrokerLimits,
+    pub(super) broker_capacity: NonZeroUsize,
     pub(super) owner_capacity: NonZeroUsize,
     pub(super) children: Vec<Option<BrokerChild>>,
     pub(super) broker_template: Option<BrokerTemplate>,
@@ -32,19 +33,30 @@ impl BrokerSet {
         metadata_limits: MetadataLimits,
         broker_template: Option<BrokerTemplate>,
     ) -> Result<Self, BrokerSetError> {
-        let child_capacity = metadata_limits.broker_directory().max_brokers();
-        let capacity = child_capacity
+        let broker_capacity = metadata_limits.broker_directory().max_brokers();
+        let lane_capacity = broker_capacity
+            .get()
+            .checked_mul(TrafficClass::COUNT)
+            .and_then(NonZeroUsize::new)
+            .ok_or(BrokerSetError::OwnerCapacityOverflow)?;
+        let capacity = lane_capacity
             .get()
             .checked_add(1)
             .and_then(NonZeroUsize::new)
+            .ok_or(BrokerSetError::OwnerCapacityOverflow)?;
+        broker_limits
+            .resource_capacity()
+            .get()
+            .checked_mul(capacity.get())
             .ok_or(BrokerSetError::OwnerCapacityOverflow)?;
         Ok(Self {
             seed: None,
             directory: None,
             broker_limits,
+            broker_capacity,
             owner_capacity: capacity,
             children: std::iter::repeat_with(|| None)
-                .take(child_capacity.get())
+                .take(lane_capacity.get())
                 .collect(),
             broker_template,
             waiting_calls: metadata_limits.waiting_calls(),
@@ -58,7 +70,7 @@ impl BrokerSet {
         &mut self,
         directory: &BrokerDirectory,
     ) -> Result<bool, BrokerSetError> {
-        let limit = self.owner_capacity.get() - 1;
+        let limit = self.broker_capacity.get();
         if directory.len() > limit {
             return Err(BrokerSetError::DirectoryCapacity {
                 observed: directory.len(),
@@ -90,11 +102,11 @@ impl BrokerSet {
         self.directory.as_ref().map_or(0, BrokerDirectory::len)
     }
 
-    pub(in crate::reactor) fn allocated_children(&self) -> usize {
+    pub(in crate::reactor) fn allocated_lanes(&self) -> usize {
         self.children.iter().filter(|slot| slot.is_some()).count()
     }
 
-    pub(in crate::reactor) fn connected_children(&self) -> usize {
+    pub(in crate::reactor) fn connected_lanes(&self) -> usize {
         self.children
             .iter()
             .filter_map(Option::as_ref)
@@ -102,7 +114,7 @@ impl BrokerSet {
             .count()
     }
 
-    pub(in crate::reactor) fn resolving_children(&self) -> usize {
+    pub(in crate::reactor) fn resolving_lanes(&self) -> usize {
         self.children
             .iter()
             .filter_map(Option::as_ref)
@@ -131,24 +143,21 @@ impl BrokerSet {
     #[cfg(test)]
     pub(super) fn child_endpoint(
         &self,
-        broker_id: kafka_driver_core::BrokerId,
+        lane: super::BrokerLane,
     ) -> Option<&kafka_driver_core::BrokerEndpoint> {
         self.children
             .iter()
             .filter_map(Option::as_ref)
-            .find(|child| child.broker_id() == broker_id)
+            .find(|child| child.lane() == lane)
             .and_then(|child| child.endpoint.as_ref())
     }
 
     #[cfg(test)]
-    pub(super) fn child_resource_token(
-        &self,
-        broker_id: kafka_driver_core::BrokerId,
-    ) -> Option<usize> {
+    pub(super) fn child_resource_token(&self, lane: super::BrokerLane) -> Option<usize> {
         self.children
             .iter()
             .filter_map(Option::as_ref)
-            .find(|child| child.broker_id() == broker_id)
+            .find(|child| child.lane() == lane)
             .and_then(|child| child.connection.as_ref())
             .and_then(super::super::broker::SingleBroker::resource_token_for_test)
     }

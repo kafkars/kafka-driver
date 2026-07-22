@@ -10,13 +10,13 @@ use kafka_driver_core::{
 use kafka_wire::ApiVersionsRequest;
 
 use crate::{
-    MetadataLimits, RequestError,
+    MetadataLimits, RequestError, TrafficClass,
     config::BrokerTemplate,
     reactor::{Poller, broker::BrokerLimits},
     request::erased_request,
 };
 
-use super::BrokerSet;
+use super::{BrokerLane, BrokerSet};
 
 #[test]
 fn calls_for_one_unresolved_broker_share_one_dns_request_and_fail_together() {
@@ -31,7 +31,7 @@ fn calls_for_one_unresolved_broker_share_one_dns_request_and_fail_together() {
     let poller = Poller::new(nonzero(1)).unwrap_or_else(|error| panic!("test poller: {error}"));
     let (first_call, first) = request(1);
 
-    let dns = brokers
+    let (lane, dns) = brokers
         .submit_route(&poller, route, EffectId::from_raw(1), first, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("first route demand: {error}"))
         .unwrap_or_else(|| panic!("first demand must resolve"));
@@ -49,7 +49,7 @@ fn calls_for_one_unresolved_broker_share_one_dns_request_and_fail_together() {
     assert!(coalesced.is_none());
     brokers
         .complete_resolution(
-            broker_id(7),
+            lane,
             DnsOutcome::new(
                 ConnectionEpoch::from_raw(1),
                 dns.effect_id(),
@@ -85,7 +85,7 @@ fn retired_dormant_slot_is_reassigned_to_new_membership() {
         .unwrap_or_else(|| panic!("first route"));
     let poller = Poller::new(nonzero(1)).unwrap_or_else(|error| panic!("test poller: {error}"));
     let (first_call, first) = request(1);
-    let first_dns = brokers
+    let (first_lane, first_dns) = brokers
         .submit_route(
             &poller,
             first_route,
@@ -97,7 +97,7 @@ fn retired_dormant_slot_is_reassigned_to_new_membership() {
         .unwrap_or_else(|| panic!("first DNS request"));
     brokers
         .complete_resolution(
-            broker_id(7),
+            first_lane,
             DnsOutcome::new(
                 first_dns.epoch(),
                 first_dns.effect_id(),
@@ -150,7 +150,7 @@ fn changed_endpoint_replaces_the_child_without_reusing_its_poll_token() {
         .unwrap_or_else(|| panic!("first route"));
     let poller = Poller::new(nonzero(1)).unwrap_or_else(|error| panic!("test poller: {error}"));
     let (first_call, first) = request(1);
-    let first_dns = brokers
+    let (first_lane, first_dns) = brokers
         .submit_route(
             &poller,
             first_route,
@@ -162,7 +162,7 @@ fn changed_endpoint_replaces_the_child_without_reusing_its_poll_token() {
         .unwrap_or_else(|| panic!("first DNS request"));
     brokers
         .complete_resolution(
-            broker_id(7),
+            first_lane,
             DnsOutcome::new(
                 first_dns.epoch(),
                 first_dns.effect_id(),
@@ -173,7 +173,7 @@ fn changed_endpoint_replaces_the_child_without_reusing_its_poll_token() {
         )
         .unwrap_or_else(|error| panic!("first resolution: {error}"));
     let stale_token = brokers
-        .child_resource_token(broker_id(7))
+        .child_resource_token(lane(7))
         .unwrap_or_else(|| panic!("first child token"));
     let second_directory = directory(2, 7, "127.0.0.1", second_port);
     brokers
@@ -184,7 +184,7 @@ fn changed_endpoint_replaces_the_child_without_reusing_its_poll_token() {
         .route_to(broker_id(7))
         .unwrap_or_else(|| panic!("second route"));
     let (second_call, second) = request(2);
-    let second_dns = brokers
+    let (second_lane, second_dns) = brokers
         .submit_route(
             &poller,
             second_route,
@@ -197,7 +197,7 @@ fn changed_endpoint_replaces_the_child_without_reusing_its_poll_token() {
 
     brokers
         .complete_resolution(
-            broker_id(7),
+            second_lane,
             DnsOutcome::new(
                 second_dns.epoch(),
                 second_dns.effect_id(),
@@ -209,13 +209,11 @@ fn changed_endpoint_replaces_the_child_without_reusing_its_poll_token() {
         .unwrap_or_else(|error| panic!("replacement resolution: {error}"));
 
     let current_token = brokers
-        .child_resource_token(broker_id(7))
+        .child_resource_token(lane(7))
         .unwrap_or_else(|| panic!("replacement child token"));
     assert_ne!(current_token, stale_token);
     assert_eq!(
-        brokers
-            .child_endpoint(broker_id(7))
-            .map(BrokerEndpoint::port),
+        brokers.child_endpoint(lane(7)).map(BrokerEndpoint::port),
         Some(nonzero_port(second_port))
     );
     drop(second_call);
@@ -270,6 +268,10 @@ fn request(
 
 fn broker_id(raw: i32) -> BrokerId {
     BrokerId::new(raw).unwrap_or_else(|error| panic!("valid broker ID: {error}"))
+}
+
+fn lane(raw: i32) -> BrokerLane {
+    BrokerLane::new(broker_id(raw), TrafficClass::Interactive)
 }
 
 fn nonzero(value: usize) -> NonZeroUsize {

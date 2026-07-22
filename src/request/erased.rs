@@ -6,7 +6,7 @@ use kafka_driver_core::{CallId, CorrelationId};
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::{ApiKey, ApiVersion, Bytes};
 
-use crate::{RequestError, response::ResponseRegistry};
+use crate::{RequestError, TrafficClass, response::ResponseRegistry};
 
 /// One generated request whose response type remains owned behind its completion.
 pub(crate) trait ErasedRequest: Send {
@@ -15,6 +15,9 @@ pub(crate) trait ErasedRequest: Send {
 
     /// Returns the generated Kafka API key whose version must be negotiated.
     fn api_key(&self) -> ApiKey;
+
+    /// Returns the semantic connection lane that must own this call.
+    fn traffic_class(&self) -> TrafficClass;
 
     /// Returns the relative timeout to map onto the reactor clock at admission.
     fn timeout(&self) -> Duration;

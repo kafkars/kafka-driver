@@ -8,7 +8,7 @@ use kafka_wire::{OutboundFrameLimits, RequestResponsePair, encode_request};
 use kafka_wire_core::{ApiVersion, Bytes};
 
 use crate::{
-    Call, RequestError,
+    Call, RequestError, TrafficClass,
     completion::{CompletionSender, completion_pair},
     response::{ResponseAdmissionError, ResponseRegistry},
 };
@@ -26,10 +26,24 @@ where
     R: RequestResponsePair + Send + 'static,
     R::Response: Send + 'static,
 {
+    erased_request_in(call_id, TrafficClass::Interactive, request, timeout)
+}
+
+pub(crate) fn erased_request_in<R>(
+    call_id: CallId,
+    traffic_class: TrafficClass,
+    request: R,
+    timeout: Duration,
+) -> ErasedRequestPair<R::Response>
+where
+    R: RequestResponsePair + Send + 'static,
+    R::Response: Send + 'static,
+{
     let (receiver, completion) = completion_pair();
     let retained_bytes = retained_bytes(&request);
     let request = TypedRequest {
         call_id,
+        traffic_class,
         request,
         timeout,
         retained_bytes,
@@ -43,6 +57,7 @@ where
     R: RequestResponsePair,
 {
     call_id: CallId,
+    traffic_class: TrafficClass,
     request: R,
     timeout: Duration,
     retained_bytes: usize,
@@ -60,6 +75,10 @@ where
 
     fn api_key(&self) -> kafka_wire_core::ApiKey {
         R::API_KEY
+    }
+
+    fn traffic_class(&self) -> TrafficClass {
+        self.traffic_class
     }
 
     fn timeout(&self) -> Duration {

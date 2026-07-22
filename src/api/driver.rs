@@ -9,10 +9,10 @@ use crate::{
     completion::completion_pair,
     config::{BootstrapConfig, BrokerConfig, DriverLimits, DriverTarget},
     reactor::{Command, MailboxSender, Reactor, TrySendError},
-    request::erased_request,
+    request::{erased_request, erased_request_in},
 };
 
-use super::{Call, DriverBuildError, RequestError, Route, identity::CallIds};
+use super::{Call, DriverBuildError, RequestError, Route, TrafficClass, identity::CallIds};
 
 /// Cloneable command-admission handle for one driver reactor.
 #[derive(Clone, Debug)]
@@ -64,6 +64,31 @@ impl Driver {
             return Err(SubmitError::IdentityExhausted);
         };
         let (call, request) = erased_request(call_id, request, timeout);
+        self.commands
+            .try_send(Command::Submit { route, request })
+            .map_err(SubmitError::from)?;
+        Ok(call)
+    }
+
+    /// Submits one generated cluster request through an explicit isolation lane.
+    ///
+    /// Discovered-broker routes lazily own a physical connection per class. The
+    /// bootstrap-oriented [`Route::AnyBroker`] path continues to use its seed.
+    pub fn request_in<R>(
+        &self,
+        traffic_class: TrafficClass,
+        route: Route,
+        request: R,
+        timeout: Duration,
+    ) -> Result<Call<Result<R::Response, RequestError>>, SubmitError>
+    where
+        R: RequestResponsePair + Send + 'static,
+        R::Response: Send + 'static,
+    {
+        let Some(call_id) = self.call_ids.allocate() else {
+            return Err(SubmitError::IdentityExhausted);
+        };
+        let (call, request) = erased_request_in(call_id, traffic_class, request, timeout);
         self.commands
             .try_send(Command::Submit { route, request })
             .map_err(SubmitError::from)?;

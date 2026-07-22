@@ -23,7 +23,7 @@ impl fmt::Display for BrokerSetError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::OwnerCapacityOverflow => {
-                formatter.write_str("broker owner capacity cannot reserve its seed slot")
+                formatter.write_str("broker lane token namespace cannot be represented")
             }
             Self::DirectoryCapacity { observed, limit } => write!(
                 formatter,

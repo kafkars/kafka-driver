@@ -166,13 +166,13 @@ impl Reactor {
             .brokers
             .submit_route(&self.poller, route, effect_id, request, now)
             .map_err(ReactorError::broker_set)?;
-        let Some(dns) = dns else {
+        let Some((lane, dns)) = dns else {
             return Ok(());
         };
         let rejected = DnsOutcome::new(dns.epoch(), dns.effect_id(), Err(DnsFailure::Temporary));
-        if resolution.submit_broker(route.broker_id(), dns).is_err() {
+        if resolution.submit_broker(lane, dns).is_err() {
             self.brokers
-                .complete_resolution(route.broker_id(), rejected, &self.poller, now)
+                .complete_resolution(lane, rejected, &self.poller, now)
                 .map_err(ReactorError::broker_set)?;
         }
         Ok(())

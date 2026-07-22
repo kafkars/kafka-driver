@@ -1,13 +1,13 @@
 //! Broker-slot retirement, reassignment, and deferred resolved-child installation.
 
 use kafka_driver_core::{
-    BrokerEndpoint, BrokerId, BrokerResolutionMachine, BrokerResolutionState, BrokerRoute,
-    ConnectionEpoch, ResolvedAddress,
+    BrokerEndpoint, BrokerResolutionMachine, BrokerResolutionState, BrokerRoute, ConnectionEpoch,
+    ResolvedAddress,
 };
 
 use crate::RequestError;
 
-use super::child::BrokerChild;
+use super::{BrokerLane, child::BrokerChild};
 
 pub(super) struct PendingBroker {
     pub(super) route: BrokerRoute,
@@ -59,9 +59,9 @@ impl BrokerChild {
                 .is_none_or(super::super::broker::SingleBroker::is_terminal)
     }
 
-    pub(super) fn reassign(&mut self, broker_id: BrokerId) {
-        self.broker_id = broker_id;
-        self.resolution = BrokerResolutionMachine::new(broker_id);
+    pub(super) fn reassign(&mut self, lane: BrokerLane) {
+        self.lane = lane;
+        self.resolution = BrokerResolutionMachine::new(lane.broker_id());
         self.endpoint = None;
         self.retired = false;
         self.retirement_started = false;

@@ -1,6 +1,6 @@
 //! Shard-owned DNS identity, worker, bootstrap routing, and broker installation.
 
-use kafka_driver_core::{BrokerId, DnsOutcome, DnsRequest, EffectId};
+use kafka_driver_core::{DnsOutcome, DnsRequest, EffectId};
 
 use crate::{
     ResolverLimits,
@@ -8,6 +8,7 @@ use crate::{
     reactor::{
         ReactorError, WakeHandle,
         bootstrap::{BootstrapAction, BootstrapOwner},
+        broker_set::BrokerLane,
         resolver::{ResolutionOwner, Resolver, ResolverEffectIds, ResolverOwnership},
     },
 };
@@ -55,10 +56,10 @@ impl NameResolution {
 
     pub(super) fn submit_broker(
         &mut self,
-        broker_id: BrokerId,
+        lane: BrokerLane,
         request: DnsRequest,
     ) -> Result<(), NameResolutionError> {
-        self.submit_owned(ResolutionOwner::Broker(broker_id), request)
+        self.submit_owned(ResolutionOwner::Broker(lane), request)
     }
 
     fn drive(
@@ -74,8 +75,8 @@ impl NameResolution {
                 continue;
             };
             match owner {
-                ResolutionOwner::Broker(broker_id) => {
-                    broker_outcomes.push(BrokerDnsOutcome { broker_id, outcome });
+                ResolutionOwner::Broker(lane) => {
+                    broker_outcomes.push(BrokerDnsOutcome { lane, outcome });
                 }
                 ResolutionOwner::Bootstrap => {
                     let retry_effect_id = self.reserve_effect()?;
@@ -139,7 +140,7 @@ impl Reactor {
         let now = self.clock.now().map_err(ReactorError::clock)?;
         for completed in self.broker_dns_outcomes.drain(..) {
             self.brokers
-                .complete_resolution(completed.broker_id, completed.outcome, &self.poller, now)
+                .complete_resolution(completed.lane, completed.outcome, &self.poller, now)
                 .map_err(ReactorError::broker_set)?;
         }
         Ok(turn)
@@ -159,7 +160,7 @@ impl Reactor {
 }
 
 pub(super) struct BrokerDnsOutcome {
-    broker_id: BrokerId,
+    lane: BrokerLane,
     outcome: DnsOutcome,
 }
 

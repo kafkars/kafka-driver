@@ -60,7 +60,7 @@ impl MetadataLimits {
         self
     }
 
-    /// Replaces per-broker waiting count, encoded bytes, and turn admission bounds.
+    /// Replaces per-lane waiting count, encoded bytes, and turn admission bounds.
     pub const fn with_waiting_limits(
         mut self,
         waiting_calls: NonZeroUsize,
@@ -106,12 +106,12 @@ impl MetadataLimits {
         self.request_timeout
     }
 
-    /// Returns maximum calls waiting for one broker connection.
+    /// Returns maximum calls waiting for one broker traffic lane.
     pub const fn waiting_calls(self) -> NonZeroUsize {
         self.waiting_calls
     }
 
-    /// Returns maximum encoded request bytes waiting for one broker connection.
+    /// Returns maximum encoded request bytes waiting for one broker traffic lane.
     pub const fn waiting_bytes(self) -> NonZeroUsize {
         self.waiting_bytes
     }

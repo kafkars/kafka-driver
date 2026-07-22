@@ -1,4 +1,4 @@
-//! One broker identity's DNS policy, wait queue, and lazy connection child.
+//! One broker traffic lane's DNS policy, wait queue, and lazy connection child.
 
 use kafka_driver_core::{
     BrokerEndpoint, BrokerId, BrokerPhase, BrokerResolutionEffect, BrokerResolutionInput,
@@ -18,11 +18,12 @@ use crate::{
 };
 
 use super::{
-    BrokerSetError, replacement::PendingBroker, waiting::WaitingCallOutcome, waiting::WaitingCalls,
+    BrokerLane, BrokerSetError, replacement::PendingBroker, waiting::WaitingCallOutcome,
+    waiting::WaitingCalls,
 };
 
 pub(super) struct BrokerChild {
-    pub(super) broker_id: BrokerId,
+    pub(super) lane: BrokerLane,
     pub(super) resolution: BrokerResolutionMachine,
     pub(super) connection: Option<SingleBroker>,
     pub(super) endpoint: Option<BrokerEndpoint>,
@@ -37,15 +38,15 @@ pub(super) struct BrokerChild {
 
 impl BrokerChild {
     pub(super) fn new(
-        broker_id: BrokerId,
+        lane: BrokerLane,
         namespace: ResourceNamespace,
         limits: BrokerLimits,
         waiting_calls: std::num::NonZeroUsize,
         waiting_bytes: std::num::NonZeroUsize,
     ) -> Self {
         Self {
-            broker_id,
-            resolution: BrokerResolutionMachine::new(broker_id),
+            lane,
+            resolution: BrokerResolutionMachine::new(lane.broker_id()),
             connection: None,
             endpoint: None,
             waiting: WaitingCalls::new(waiting_calls, waiting_bytes),
@@ -59,7 +60,11 @@ impl BrokerChild {
     }
 
     pub(super) const fn broker_id(&self) -> BrokerId {
-        self.broker_id
+        self.lane.broker_id()
+    }
+
+    pub(super) const fn lane(&self) -> BrokerLane {
+        self.lane
     }
 
     pub(super) fn submit(
