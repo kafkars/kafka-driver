@@ -7,6 +7,8 @@ mod limits;
 
 #[cfg(test)]
 mod decoder_test;
+#[cfg(test)]
+mod fuzz_test;
 
 pub use body::FrameBody;
 pub use decoder::FrameDecoder;
