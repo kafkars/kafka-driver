@@ -4,6 +4,7 @@
 //! reactor, or transport capabilities.
 
 mod authentication;
+mod bootstrap;
 mod broker;
 mod capability;
 mod connection;
@@ -26,6 +27,7 @@ pub use authentication::{
     AuthenticationPolicy, AuthenticationRound, AuthenticationState, AuthenticationTransition,
     ExchangeOutcome, SaslMechanism, SaslProtocol,
 };
+pub use bootstrap::{BootstrapCursor, BootstrapError, BootstrapLimits, BootstrapSet};
 pub use broker::{
     BackoffPolicy, BackoffPolicyError, BrokerCloseReason, BrokerDisposition, BrokerEffect,
     BrokerInput, BrokerMachine, BrokerPhase, BrokerState, BrokerTransition, JitterSample,
