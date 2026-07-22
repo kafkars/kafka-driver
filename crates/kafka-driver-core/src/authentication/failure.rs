@@ -9,6 +9,8 @@ pub enum AuthenticationFailure {
     Rejected,
     /// A response could not be interpreted safely.
     Malformed,
+    /// Credential-bearing work exceeded its configured byte capacity.
+    Capacity,
     /// A SCRAM server proof did not match the authenticated transcript.
     InvalidServerProof,
     /// The configured challenge-response bound was exhausted.

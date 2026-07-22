@@ -14,6 +14,8 @@ mod transition;
 
 #[cfg(test)]
 mod machine_test;
+#[cfg(test)]
+mod mechanism_test;
 
 pub use effect::AuthenticationEffect;
 pub use failure::AuthenticationFailure;

@@ -15,6 +15,17 @@ pub enum SaslMechanism {
     ScramSha512,
 }
 
+impl SaslMechanism {
+    /// Returns the exact Kafka SASL mechanism name used by `SaslHandshake`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Plain => "PLAIN",
+            Self::ScramSha256 => "SCRAM-SHA-256",
+            Self::ScramSha512 => "SCRAM-SHA-512",
+        }
+    }
+}
+
 /// Negotiated Kafka API versions used to carry one SASL mechanism.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SaslProtocol {
