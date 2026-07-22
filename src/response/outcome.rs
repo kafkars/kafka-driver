@@ -47,6 +47,11 @@ pub enum RequestError {
         /// Maximum distinct queries retained behind the active Metadata RPC.
         limit: usize,
     },
+    /// The bounded coordinator-key registry cannot retain another key.
+    CoordinatorCapacityReached {
+        /// Maximum coordinator machines retained by this shard.
+        limit: usize,
+    },
     /// Advertised broker name resolution failed without endpoint details.
     NameResolutionFailed {
         /// Sanitized resolver failure category.
@@ -94,6 +99,9 @@ impl fmt::Display for RequestError {
             Self::MetadataQueryCapacityReached { limit } => {
                 write!(formatter, "metadata query capacity {limit} reached")
             }
+            Self::CoordinatorCapacityReached { limit } => {
+                write!(formatter, "coordinator key capacity {limit} reached")
+            }
             Self::NameResolutionFailed { failure } => {
                 write!(formatter, "broker name resolution failed: {failure:?}")
             }
@@ -123,6 +131,7 @@ impl Error for RequestError {
             | Self::RouteUnavailable
             | Self::RouteCapacityReached { .. }
             | Self::MetadataQueryCapacityReached { .. }
+            | Self::CoordinatorCapacityReached { .. }
             | Self::NameResolutionFailed { .. }
             | Self::Rejected { .. }
             | Self::ConnectionClosed(_) => None,

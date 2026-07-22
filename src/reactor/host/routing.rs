@@ -1,10 +1,15 @@
 //! Semantic request routing from immutable metadata into bounded broker ownership.
 
 use kafka_driver_core::{
-    BrokerRoute, CallFailure, Delivery, DnsFailure, DnsOutcome, Moment, PartitionId, TopicName,
+    BrokerRoute, CallFailure, CoordinatorKey, CoordinatorRoute, Delivery, DnsFailure, DnsOutcome,
+    Moment, PartitionId, TopicName,
 };
 
-use crate::{RequestError, Route, reactor::metadata::PartitionWait, request::ErasedRequest};
+use crate::{
+    RequestError, Route,
+    reactor::{coordinator::CoordinatorWait, metadata::PartitionWait},
+    request::ErasedRequest,
+};
 
 use super::{Reactor, ReactorError};
 
@@ -18,10 +23,7 @@ impl Reactor {
         match route {
             Route::AnyBroker => self.submit_any_broker(request, now),
             Route::Controller => self.submit_controller(request, now),
-            Route::Coordinator { .. } => {
-                request.fail(RequestError::RouteUnavailable);
-                Ok(())
-            }
+            Route::Coordinator { key } => self.submit_coordinator(key, request, now),
             Route::PartitionLeader { topic, partition } => {
                 self.submit_partition_leader(topic, partition, request, now)
             }
@@ -93,6 +95,57 @@ impl Reactor {
             return Ok(());
         };
         self.submit_broker_route(route, request, now)
+    }
+
+    fn submit_coordinator(
+        &mut self,
+        key: CoordinatorKey,
+        request: Box<dyn ErasedRequest>,
+        now: Moment,
+    ) -> Result<(), ReactorError> {
+        let current = self
+            .coordinator
+            .as_ref()
+            .and_then(|owner| owner.current(&key))
+            .cloned();
+        if let Some(route) = current
+            .as_ref()
+            .and_then(|route| self.coordinator_broker_route(route))
+        {
+            return self.submit_broker_route(route, request, now);
+        }
+        let Some(owner) = &mut self.coordinator else {
+            request.fail(RequestError::RouteUnavailable);
+            return Ok(());
+        };
+        let Some(seed) = self.brokers.seed_mut() else {
+            request.fail(RequestError::RouteUnavailable);
+            return Ok(());
+        };
+        if let Some(route) = current {
+            owner
+                .invalidate(route, seed, &self.poller, now, &self.call_ids)
+                .map_err(ReactorError::coordinator)?;
+        }
+        owner
+            .wait_for(
+                CoordinatorWait::new(key, request),
+                seed,
+                &self.poller,
+                now,
+                &self.call_ids,
+            )
+            .map_err(ReactorError::coordinator)
+    }
+
+    pub(super) fn coordinator_broker_route(
+        &self,
+        coordinator: &CoordinatorRoute,
+    ) -> Option<BrokerRoute> {
+        let directory = self.metadata.as_ref()?.current()?.brokers();
+        let route = directory.route_to(coordinator.broker_id())?;
+        let entry = directory.resolve(route).ok()?;
+        (entry.endpoint() == coordinator.endpoint()).then_some(route)
     }
 
     pub(super) fn submit_broker_route(

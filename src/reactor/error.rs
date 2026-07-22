@@ -2,7 +2,10 @@
 
 use std::{fmt, io};
 
-use super::{broker_set::BrokerSetError, clock::ClockOverflow, metadata::MetadataOwnerError};
+use super::{
+    broker_set::BrokerSetError, clock::ClockOverflow, coordinator::CoordinatorOwnerError,
+    metadata::MetadataOwnerError,
+};
 
 /// Why one reactor turn could not observe external readiness.
 #[derive(Debug)]
@@ -40,6 +43,13 @@ impl ReactorError {
         }
     }
 
+    pub(super) fn coordinator(source: CoordinatorOwnerError) -> Self {
+        Self {
+            source: io::Error::other(source),
+            operation: ReactorOperation::Coordinator,
+        }
+    }
+
     pub(super) const fn host(source: io::Error) -> Self {
         Self {
             source,
@@ -55,6 +65,9 @@ impl fmt::Display for ReactorError {
             ReactorOperation::BrokerSet => formatter.write_str("the broker set failed"),
             ReactorOperation::Clock => formatter.write_str("the driver clock failed"),
             ReactorOperation::Metadata => formatter.write_str("the cluster metadata owner failed"),
+            ReactorOperation::Coordinator => {
+                formatter.write_str("the coordinator discovery owner failed")
+            }
             ReactorOperation::Host => formatter.write_str("the reactor host invariant failed"),
         }
     }
@@ -66,6 +79,7 @@ enum ReactorOperation {
     BrokerSet,
     Clock,
     Metadata,
+    Coordinator,
     Host,
 }
 

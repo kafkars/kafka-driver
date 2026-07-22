@@ -1,0 +1,44 @@
+//! Host-phase integration for generated coordinator discovery and waiter routing.
+
+use crate::RequestError;
+
+use super::{HostState, Reactor, ReactorError};
+
+impl Reactor {
+    pub(super) fn continue_coordinator(&mut self) -> Result<bool, ReactorError> {
+        if self.state != HostState::Running {
+            return Ok(false);
+        }
+        let now = self.clock.now().map_err(ReactorError::clock)?;
+        let (progress, waiting) = {
+            let Some(coordinator) = &mut self.coordinator else {
+                return Ok(false);
+            };
+            let Some(seed) = self.brokers.seed_mut() else {
+                return Ok(false);
+            };
+            let progress = coordinator
+                .drive(seed, &self.poller, now, &self.call_ids)
+                .map_err(ReactorError::coordinator)?;
+            let waiting = coordinator.drain_waiters(now);
+            (progress, waiting)
+        };
+        let waiting_progress = waiting.made_progress();
+        let waiting_more = waiting.more_work();
+        for routed in waiting.into_routed() {
+            let route = self.coordinator_broker_route(routed.route());
+            let request = routed.into_request();
+            match route {
+                Some(route) => self.submit_broker_route(route, request, now)?,
+                None => request.fail(RequestError::RouteUnavailable),
+            }
+        }
+        Ok(progress || waiting_progress || waiting_more)
+    }
+
+    pub(super) fn coordinator_has_local_work(&self) -> bool {
+        self.coordinator
+            .as_ref()
+            .is_some_and(super::super::coordinator::CoordinatorOwner::has_local_work)
+    }
+}

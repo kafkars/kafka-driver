@@ -5,6 +5,7 @@ mod broker;
 mod broker_set;
 mod clock;
 mod command;
+mod coordinator;
 mod error;
 mod host;
 mod mailbox;

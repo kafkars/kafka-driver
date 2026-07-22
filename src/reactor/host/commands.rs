@@ -63,6 +63,10 @@ impl Reactor {
             metadata.fail_waiters(&draining());
         }
         self.metadata = None;
+        if let Some(coordinator) = &mut self.coordinator {
+            coordinator.fail_waiters(&draining());
+        }
+        self.coordinator = None;
         let now = self.clock.now().map_err(ReactorError::clock)?;
         self.brokers
             .begin_drain(&self.poller, now)

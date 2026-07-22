@@ -1,0 +1,199 @@
+//! Bounded ownership for calls awaiting one coordinator discovery.
+
+use std::{collections::VecDeque, num::NonZeroUsize};
+
+use kafka_driver_core::{CallFailure, CallId, CoordinatorKey, CoordinatorRoute, Delivery, Moment};
+
+use crate::{RequestError, request::ErasedRequest};
+
+pub(in crate::reactor) struct CoordinatorWait {
+    key: CoordinatorKey,
+    request: Box<dyn ErasedRequest>,
+}
+
+impl CoordinatorWait {
+    pub(in crate::reactor) fn new(key: CoordinatorKey, request: Box<dyn ErasedRequest>) -> Self {
+        Self { key, request }
+    }
+
+    pub(super) const fn key(&self) -> &CoordinatorKey {
+        &self.key
+    }
+
+    pub(super) fn call_id(&self) -> CallId {
+        self.request.call_id()
+    }
+}
+
+pub(super) struct CoordinatorWaiters {
+    calls: VecDeque<WaitingCoordinatorCall>,
+    retained_bytes: usize,
+    call_limit: NonZeroUsize,
+    byte_limit: NonZeroUsize,
+    scan_remaining: usize,
+}
+
+impl CoordinatorWaiters {
+    pub(super) fn new(call_limit: NonZeroUsize, byte_limit: NonZeroUsize) -> Self {
+        Self {
+            calls: VecDeque::with_capacity(call_limit.get().min(16)),
+            retained_bytes: 0,
+            call_limit,
+            byte_limit,
+            scan_remaining: 0,
+        }
+    }
+
+    pub(super) fn admit(&mut self, waiting: CoordinatorWait, now: Moment) -> bool {
+        let CoordinatorWait { key, request } = waiting;
+        let Some(deadline) = now.checked_add(request.timeout()) else {
+            request.fail(RequestError::DeadlineOverflow);
+            return false;
+        };
+        let bytes = request.retained_bytes();
+        let Some(total) = self.retained_bytes.checked_add(bytes) else {
+            self.reject_capacity(request);
+            return false;
+        };
+        if self.calls.len() == self.call_limit.get() || total > self.byte_limit.get() {
+            self.reject_capacity(request);
+            return false;
+        }
+        self.calls.push_back(WaitingCoordinatorCall {
+            key,
+            request,
+            deadline,
+            bytes,
+        });
+        self.retained_bytes = total;
+        true
+    }
+
+    pub(super) fn retract_last(&mut self, call_id: CallId) -> Option<Box<dyn ErasedRequest>> {
+        if self.calls.back()?.request.call_id() != call_id {
+            return None;
+        }
+        let waiting = self.calls.pop_back()?;
+        self.retained_bytes -= waiting.bytes;
+        Some(waiting.request)
+    }
+
+    pub(super) fn begin_scan(&mut self) {
+        self.scan_remaining = self.calls.len();
+    }
+
+    pub(super) fn pop(&mut self, now: Moment) -> WaitingCoordinatorOutcome {
+        if self.scan_remaining == 0 {
+            return WaitingCoordinatorOutcome::Empty;
+        }
+        self.scan_remaining -= 1;
+        let Some(waiting) = self.calls.pop_front() else {
+            self.scan_remaining = 0;
+            return WaitingCoordinatorOutcome::Empty;
+        };
+        self.retained_bytes -= waiting.bytes;
+        let Some(remaining) = waiting.deadline.duration_since(now) else {
+            waiting.request.fail(deadline_exceeded());
+            return WaitingCoordinatorOutcome::Settled;
+        };
+        if remaining.is_zero() {
+            waiting.request.fail(deadline_exceeded());
+            return WaitingCoordinatorOutcome::Settled;
+        }
+        WaitingCoordinatorOutcome::Ready { waiting, remaining }
+    }
+
+    pub(super) fn retain(&mut self, waiting: WaitingCoordinatorCall) {
+        self.retained_bytes += waiting.bytes;
+        self.calls.push_back(waiting);
+    }
+
+    pub(super) fn prepare_due_scan(&mut self, now: Moment) {
+        if self.next_deadline().is_some_and(|deadline| deadline <= now) {
+            self.begin_scan();
+        }
+    }
+
+    pub(super) fn next_deadline(&self) -> Option<Moment> {
+        self.calls.iter().map(|waiting| waiting.deadline).min()
+    }
+
+    pub(super) const fn has_pending_scan(&self) -> bool {
+        self.scan_remaining != 0
+    }
+
+    pub(super) fn fail_all(&mut self, failure: &RequestError) {
+        for waiting in self.calls.drain(..) {
+            waiting.request.fail(failure.clone());
+        }
+        self.retained_bytes = 0;
+        self.scan_remaining = 0;
+    }
+
+    fn reject_capacity(&self, request: Box<dyn ErasedRequest>) {
+        request.fail(RequestError::RouteCapacityReached {
+            call_limit: self.call_limit.get(),
+            byte_limit: self.byte_limit.get(),
+        });
+    }
+}
+
+pub(super) enum WaitingCoordinatorOutcome {
+    Empty,
+    Settled,
+    Ready {
+        waiting: WaitingCoordinatorCall,
+        remaining: std::time::Duration,
+    },
+}
+
+pub(super) struct WaitingCoordinatorCall {
+    pub(super) key: CoordinatorKey,
+    pub(super) request: Box<dyn ErasedRequest>,
+    deadline: Moment,
+    bytes: usize,
+}
+
+#[derive(Default)]
+pub(in crate::reactor) struct CoordinatorWaitProgress {
+    pub(super) routed: Vec<RoutedCoordinatorCall>,
+    pub(super) examined: usize,
+    pub(super) settled: usize,
+    pub(super) more_work: bool,
+}
+
+impl CoordinatorWaitProgress {
+    pub(in crate::reactor) fn made_progress(&self) -> bool {
+        self.examined != 0 || self.settled != 0 || !self.routed.is_empty()
+    }
+
+    pub(in crate::reactor) const fn more_work(&self) -> bool {
+        self.more_work
+    }
+
+    pub(in crate::reactor) fn into_routed(self) -> Vec<RoutedCoordinatorCall> {
+        self.routed
+    }
+}
+
+pub(in crate::reactor) struct RoutedCoordinatorCall {
+    pub(super) route: CoordinatorRoute,
+    pub(super) request: Box<dyn ErasedRequest>,
+}
+
+impl RoutedCoordinatorCall {
+    pub(in crate::reactor) const fn route(&self) -> &CoordinatorRoute {
+        &self.route
+    }
+
+    pub(in crate::reactor) fn into_request(self) -> Box<dyn ErasedRequest> {
+        self.request
+    }
+}
+
+fn deadline_exceeded() -> RequestError {
+    RequestError::Rejected {
+        failure: CallFailure::DeadlineExceeded,
+        delivery: Delivery::NotSent,
+    }
+}

@@ -2,6 +2,7 @@
 
 mod broker;
 mod commands;
+mod coordinator;
 mod debug;
 mod metadata;
 mod resolution;
@@ -21,6 +22,7 @@ use super::{
     broker::BrokerLimits,
     broker_set::BrokerSet,
     clock::ReactorClock,
+    coordinator::CoordinatorOwner,
     mailbox,
     mailbox::{DrainStatus, MailboxReceiver},
     metadata::MetadataOwner,
@@ -59,6 +61,7 @@ pub struct Reactor {
     resolution: Option<NameResolution>,
     broker_dns_outcomes: Vec<BrokerDnsOutcome>,
     metadata: Option<MetadataOwner>,
+    coordinator: Option<CoordinatorOwner>,
     call_ids: Arc<CallIds>,
     clock: ReactorClock,
     state: HostState,
@@ -83,18 +86,19 @@ impl Reactor {
         let mut brokers =
             BrokerSet::new(BrokerLimits::default(), limits.metadata(), broker_template)
                 .map_err(std::io::Error::other)?;
-        let (resolution, metadata) = match target {
+        let (resolution, metadata, coordinator) = match target {
             Some(DriverTarget::Direct(config)) => {
                 brokers
                     .install_seed(config, &poller, now)
                     .map_err(std::io::Error::other)?;
-                (None, None)
+                (None, None, None)
             }
             Some(DriverTarget::Bootstrap(config)) => (
                 Some(NameResolution::start(config, limits.resolver(), wake)?),
                 Some(MetadataOwner::new(limits.metadata())),
+                Some(CoordinatorOwner::new(limits.coordinator())),
             ),
-            None => (None, None),
+            None => (None, None, None),
         };
         let reactor = Self {
             command_batch: Vec::with_capacity(limits.command_budget().get()),
@@ -106,6 +110,7 @@ impl Reactor {
             resolution,
             broker_dns_outcomes: Vec::with_capacity(limits.resolver().outcome_budget().get()),
             metadata,
+            coordinator,
             call_ids,
             clock,
             state: HostState::Running,
@@ -138,6 +143,7 @@ impl Reactor {
         progress |= processed != 0;
         progress |= self.continue_broker_io()?;
         progress |= self.continue_metadata()?;
+        progress |= self.continue_coordinator()?;
 
         if !progress && status == DrainStatus::Idle {
             self.poll_events.clear();
@@ -160,6 +166,7 @@ impl Reactor {
             more_resolution |= resolution.more_work();
             progress |= self.observe_poll_events()?;
             progress |= self.continue_metadata()?;
+            progress |= self.continue_coordinator()?;
         }
         if let Some(outcome) = self.finish_shutdown_if_terminal(processed) {
             return Ok(outcome);
@@ -171,7 +178,8 @@ impl Reactor {
                     || more_due
                     || more_resolution
                     || self.broker_has_local_io()
-                    || self.metadata_has_local_work(),
+                    || self.metadata_has_local_work()
+                    || self.coordinator_has_local_work(),
             });
         }
         Ok(TurnOutcome::Idle)
@@ -194,6 +202,7 @@ impl Reactor {
         self.state = HostState::Shutdown;
         self.resolution = None;
         self.metadata = None;
+        self.coordinator = None;
         drop(self.commands.close());
         self.shutdown_waiters.complete_all();
         Some(TurnOutcome::Shutdown { commands })

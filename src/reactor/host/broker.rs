@@ -44,6 +44,11 @@ impl Reactor {
                     .as_ref()
                     .and_then(super::super::metadata::MetadataOwner::next_wait_deadline),
             )
+            .chain(
+                self.coordinator
+                    .as_ref()
+                    .and_then(super::super::coordinator::CoordinatorOwner::next_wait_deadline),
+            )
             .min();
         Ok(ReactorClock::bounded_wait(now, deadline, host_limit))
     }

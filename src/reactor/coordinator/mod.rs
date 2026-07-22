@@ -1,0 +1,19 @@
+//! Bounded generated discovery and public-call ownership for coordinator routes.
+
+mod admission;
+mod drive;
+mod effect;
+mod entry;
+mod error;
+mod identity;
+mod invalidation;
+mod owner;
+mod routing;
+mod waiting;
+
+#[cfg(test)]
+mod waiting_test;
+
+pub(in crate::reactor) use error::CoordinatorOwnerError;
+pub(in crate::reactor) use owner::CoordinatorOwner;
+pub(in crate::reactor) use waiting::CoordinatorWait;
