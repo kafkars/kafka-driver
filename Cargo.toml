@@ -1,0 +1,61 @@
+[workspace]
+members = ["crates/kafka-driver-core", "crates/kafka-driver-sim"]
+default-members = [".", "crates/kafka-driver-core", "crates/kafka-driver-sim"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+repository = "https://github.com/zsumz/kafka-driver"
+
+[workspace.dependencies]
+kafka-driver = { path = "." }
+kafka-driver-core = { path = "crates/kafka-driver-core" }
+serde = { version = "1.0", features = ["derive"] }
+syn = { version = "2.0", features = ["full"] }
+toml = "0.8"
+
+[package]
+name = "kafka-driver"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A deterministic, runtime-neutral Kafka broker and cluster RPC engine"
+publish = false
+
+[dependencies]
+kafka-driver-core.workspace = true
+kafka-wire = { path = "../kafka-protocol/crates/kafka-wire" }
+
+[dev-dependencies]
+serde.workspace = true
+syn.workspace = true
+toml.workspace = true
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+unreachable_pub = "warn"
+unused_lifetimes = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+expect_used = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"
+
+[lints]
+workspace = true

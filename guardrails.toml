@@ -1,0 +1,59 @@
+schema = 1
+
+[paths]
+rust_roots = [
+  "src",
+  "tests",
+  "crates/kafka-driver-core/src",
+  "crates/kafka-driver-sim/src",
+]
+
+[budgets]
+# Facades are navigation, never implementation.
+facade = 100
+# A production file owns one concept. Split it before it becomes a subsystem.
+production = 240
+# A test file owns one scenario family or one executable guard.
+test = 320
+
+[dependencies]
+banned = [
+  "async-std",
+  "async-trait",
+  "smol",
+  "tokio",
+  "tokio-rustls",
+  "tokio-util",
+]
+kafka_wire_path = "../kafka-protocol/crates/kafka-wire"
+kafka_wire_repository = "kafkars/kafka-wire"
+kafka_wire_revision = "857d58a84094e79ae15dfffc2e4773313bcd4c31"
+driver_allowed = ["kafka-driver-core", "kafka-wire"]
+core_allowed = ["kafka-wire"]
+
+[[capabilities]]
+root = "crates/kafka-driver-core/src"
+forbidden = [
+  "mio",
+  "rustls",
+  "std::fs",
+  "std::net",
+  "std::process",
+  "std::thread",
+  "std::time::Instant",
+  "std::time::SystemTime",
+]
+
+[[capabilities]]
+root = "crates/kafka-driver-sim/src"
+forbidden = [
+  "kafka_wire",
+  "mio",
+  "rustls",
+  "std::fs",
+  "std::net",
+  "std::process",
+  "std::thread",
+  "std::time::Instant",
+  "std::time::SystemTime",
+]
