@@ -1,6 +1,15 @@
 [workspace]
-members = ["crates/kafka-driver-core", "crates/kafka-driver-sim"]
-default-members = [".", "crates/kafka-driver-core", "crates/kafka-driver-sim"]
+members = [
+  "crates/kafka-driver-core",
+  "crates/kafka-driver-sim",
+  "crates/kafka-driver-transport",
+]
+default-members = [
+  ".",
+  "crates/kafka-driver-core",
+  "crates/kafka-driver-sim",
+  "crates/kafka-driver-transport",
+]
 resolver = "2"
 
 [workspace.package]
@@ -11,8 +20,11 @@ license = "Apache-2.0"
 repository = "https://github.com/zsumz/kafka-driver"
 
 [workspace.dependencies]
+bytes = "1.10"
 kafka-driver = { path = "." }
 kafka-driver-core = { path = "crates/kafka-driver-core" }
+kafka-driver-transport = { path = "crates/kafka-driver-transport" }
+kafka-wire-core = { path = "../kafka-protocol/crates/kafka-wire-core" }
 serde = { version = "1.0", features = ["derive"] }
 syn = { version = "2.0", features = ["full"] }
 toml = "0.8"

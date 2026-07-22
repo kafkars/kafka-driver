@@ -53,6 +53,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kafka-driver-transport"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "kafka-wire-core",
+]
+
+[[package]]
 name = "kafka-wire"
 version = "0.1.0"
 dependencies = [

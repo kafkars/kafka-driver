@@ -51,6 +51,7 @@ jobs:
           --package kafka-driver
           --package kafka-driver-core
           --package kafka-driver-sim
+          --package kafka-driver-transport
           -- --check
 
       - name: Run Clippy

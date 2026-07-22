@@ -45,8 +45,12 @@ fn kafka_wire_remains_the_local_protocol_authority() {
     let path = value["dependencies"]["kafka-wire"]["path"]
         .as_str()
         .unwrap_or_else(|| panic!("kafka-wire must be a path dependency"));
+    let core_path = value["workspace"]["dependencies"]["kafka-wire-core"]["path"]
+        .as_str()
+        .unwrap_or_else(|| panic!("kafka-wire-core must be a workspace path dependency"));
 
     assert_eq!(path, guardrails.dependencies.kafka_wire_path);
+    assert_eq!(core_path, guardrails.dependencies.kafka_wire_core_path);
 }
 
 #[test]
@@ -79,6 +83,21 @@ fn deterministic_core_depends_only_on_protocol_authority() {
         violations.is_empty(),
         "the deterministic core acquired forbidden dependencies: {violations:?}"
     );
+}
+
+#[test]
+fn transport_primitives_depend_only_on_wire_primitives() {
+    let root = workspace_root();
+    let guardrails = load_guardrails(&root);
+    let dependencies =
+        manifest_dependencies(&root.join("crates/kafka-driver-transport/Cargo.toml"));
+    let allowed = guardrails
+        .dependencies
+        .transport_allowed
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(dependencies, allowed);
 }
 
 #[test]
