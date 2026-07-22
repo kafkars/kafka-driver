@@ -1,5 +1,12 @@
 import { expect, smoke } from "smoque";
 
+import {
+  awaitBroker,
+  startBroker,
+  stopBroker,
+  upBroker,
+} from "./support/kafka-cluster.mjs";
+
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 
 smoke.suite("real Kafka multi-broker failover", { tags: ["real-kafka-multi-broker"] }, async (t) => {
@@ -113,46 +120,5 @@ async function requireOutput(t, process, expected) {
       return process.stdout();
     },
     { timeout: "2m", interval: "250ms" },
-  );
-}
-
-async function awaitBroker(t, docker, stack, composeFile, env, broker) {
-  await t.poll(
-    `${broker} accepts a Kafka RPC after restart`,
-    async () => {
-      const result = await composeCommand(t, docker, stack, composeFile, env, [
-        "exec",
-        "--no-TTY",
-        broker,
-        "/opt/kafka/bin/kafka-broker-api-versions.sh",
-        "--bootstrap-server",
-        "127.0.0.1:19092",
-      ], false);
-      if (result.exitCode !== 0) {
-        throw new Error(result.stderr || result.stdout || `${broker} is not ready`);
-      }
-      return result;
-    },
-    { timeout: "2m", interval: "1s" },
-  );
-}
-
-async function stopBroker(t, docker, stack, composeFile, env, broker) {
-  await composeCommand(t, docker, stack, composeFile, env, ["stop", "--timeout", "1", broker]);
-}
-
-async function startBroker(t, docker, stack, composeFile, env, broker) {
-  await composeCommand(t, docker, stack, composeFile, env, ["start", broker]);
-}
-
-async function upBroker(t, docker, stack, composeFile, env, broker) {
-  await composeCommand(t, docker, stack, composeFile, env, ["up", "--detach", broker]);
-}
-
-async function composeCommand(t, docker, stack, composeFile, env, args, check = true) {
-  return await t.cmd(
-    docker,
-    ["compose", "--project-name", stack.projectName, "--file", composeFile, ...args],
-    { cwd: t.repoRoot(), env, check, timeout: "2m" },
   );
 }
