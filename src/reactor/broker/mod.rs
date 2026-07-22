@@ -6,6 +6,7 @@ mod identity;
 mod limits;
 mod owner;
 mod submission;
+mod terminal;
 
 #[cfg(test)]
 mod identity_test;

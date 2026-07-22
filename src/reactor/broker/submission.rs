@@ -10,7 +10,7 @@ use crate::{
     request::ErasedRequest,
 };
 
-use super::{BrokerError, owner::SingleBroker};
+use super::{BrokerError, owner::SingleBroker, terminal::expect_no_effects};
 
 impl SingleBroker {
     pub(in crate::reactor) fn submit(
@@ -113,7 +113,7 @@ impl SingleBroker {
                         transport_id,
                         effect_id,
                     })?;
-                    ensure_no_effects(&transition.into_effects())?;
+                    expect_no_effects(&transition.into_effects())?;
                 }
                 ConnectionEffect::FailCall {
                     call_id,
@@ -160,45 +160,6 @@ impl SingleBroker {
         self.interpret_close(poller, transition.into_effects(), settled_call)
     }
 
-    fn interpret_close(
-        &mut self,
-        poller: &Poller,
-        effects: Vec<ConnectionEffect>,
-        settled_call: Option<CallId>,
-    ) -> Result<(), BrokerError> {
-        for effect in effects {
-            match effect {
-                ConnectionEffect::CloseTransport {
-                    epoch,
-                    transport_id,
-                    ..
-                } => {
-                    self.close_resource(poller, ResourceIdentity::new(transport_id, epoch))?;
-                    let transition = self.machine.apply(ConnectionInput::TransportClosed {
-                        epoch,
-                        transport_id,
-                        failure: TransportFailure::Other,
-                    })?;
-                    ensure_no_effects(&transition.into_effects())?;
-                }
-                ConnectionEffect::CancelDeadline { timer_id } => {
-                    self.timers.cancel(timer_id);
-                }
-                ConnectionEffect::FailCall { call_id, .. } if settled_call == Some(call_id) => {}
-                ConnectionEffect::FailCall {
-                    call_id,
-                    failure,
-                    delivery,
-                } => {
-                    self.responses
-                        .fail_verified(call_id, RequestError::Rejected { failure, delivery })?;
-                }
-                unexpected => return Err(BrokerError::UnexpectedEffect(unexpected)),
-            }
-        }
-        Ok(())
-    }
-
     #[cfg(test)]
     pub(super) fn admitted_counts(&mut self) -> (usize, usize, usize) {
         let queued = self
@@ -217,11 +178,4 @@ fn fail_unprepared(request: &mut Option<Box<dyn ErasedRequest>>, failure: Reques
 
 fn ownership_error(expected: CallId, observed: CallId) -> BrokerError {
     BrokerError::RequestOwnership { expected, observed }
-}
-
-fn ensure_no_effects(effects: &[ConnectionEffect]) -> Result<(), BrokerError> {
-    match effects.first().copied() {
-        Some(effect) => Err(BrokerError::UnexpectedEffect(effect)),
-        None => Ok(()),
-    }
 }
