@@ -11,35 +11,35 @@ use super::{HostState, Reactor, ReactorError};
 impl Reactor {
     pub(super) fn process_commands(&mut self) -> Result<usize, ReactorError> {
         let mut processed = 0;
-        for command in self.command_batch.drain(..) {
-            processed += 1;
-            match command {
-                Command::Submit { request } if self.state == HostState::Running => {
-                    let now = self.clock.now().map_err(ReactorError::clock)?;
-                    if self.brokers.has_seed() {
-                        self.brokers
-                            .submit_seed(&self.poller, request, now)
-                            .map_err(ReactorError::broker_set)?;
-                    } else {
-                        request.fail(not_ready());
+        let mut commands = std::mem::take(&mut self.command_batch);
+        let result = (|| {
+            for command in commands.drain(..) {
+                processed += 1;
+                match command {
+                    Command::Submit { route, request } if self.state == HostState::Running => {
+                        let now = self.clock.now().map_err(ReactorError::clock)?;
+                        self.submit_request(route, request, now)?;
                     }
-                }
-                Command::Submit { request } => request.fail(draining()),
-                Command::Shutdown { completion } => {
-                    self.shutdown_waiters
-                        .admit(completion)
-                        .map_err(|completion| {
-                            drop(completion);
-                            ReactorError::host(io::Error::other(
-                                "shutdown waiter capacity exceeded mailbox capacity",
-                            ))
-                        })?;
-                    if self.state == HostState::Running {
-                        self.state = HostState::DrainRequested;
+                    Command::Submit { request, .. } => request.fail(draining()),
+                    Command::Shutdown { completion } => {
+                        self.shutdown_waiters
+                            .admit(completion)
+                            .map_err(|completion| {
+                                drop(completion);
+                                ReactorError::host(io::Error::other(
+                                    "shutdown waiter capacity exceeded mailbox capacity",
+                                ))
+                            })?;
+                        if self.state == HostState::Running {
+                            self.state = HostState::DrainRequested;
+                        }
                     }
                 }
             }
-        }
+            Ok(())
+        })();
+        self.command_batch = commands;
+        result?;
         if self.state == HostState::DrainRequested {
             self.start_drain()?;
         }
@@ -58,6 +58,8 @@ impl Reactor {
 
     fn start_drain(&mut self) -> Result<(), ReactorError> {
         self.close_admission()?;
+        self.resolution = None;
+        self.metadata = None;
         let now = self.clock.now().map_err(ReactorError::clock)?;
         self.brokers
             .begin_drain(&self.poller, now)
@@ -69,7 +71,7 @@ impl Reactor {
     fn close_admission(&mut self) -> Result<(), ReactorError> {
         for command in self.commands.close() {
             match command {
-                Command::Submit { request } => request.fail(draining()),
+                Command::Submit { request, .. } => request.fail(draining()),
                 Command::Shutdown { completion } => {
                     self.shutdown_waiters
                         .admit(completion)
@@ -83,13 +85,6 @@ impl Reactor {
             }
         }
         Ok(())
-    }
-}
-
-fn not_ready() -> RequestError {
-    RequestError::Rejected {
-        failure: CallFailure::NotReady,
-        delivery: Delivery::NotSent,
     }
 }
 

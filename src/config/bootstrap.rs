@@ -24,6 +24,10 @@ impl BootstrapConfig {
         self
     }
 
+    pub(crate) const fn broker_template(&self) -> &BrokerTemplate {
+        &self.broker
+    }
+
     pub(crate) fn into_parts(self) -> (BootstrapSet, BrokerTemplate) {
         (self.endpoints, self.broker)
     }

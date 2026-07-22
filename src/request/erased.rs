@@ -19,6 +19,12 @@ pub(crate) trait ErasedRequest: Send {
     /// Returns the relative timeout to map onto the reactor clock at admission.
     fn timeout(&self) -> Duration;
 
+    /// Replaces the remaining timeout after time spent in a route wait queue.
+    fn set_timeout(&mut self, timeout: Duration);
+
+    /// Returns an encoded-work estimate used by bounded waiting queues.
+    fn retained_bytes(&self) -> usize;
+
     /// Encodes the request and transfers its typed completion into FIFO ownership.
     fn prepare(
         self: Box<Self>,

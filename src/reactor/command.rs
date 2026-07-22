@@ -1,9 +1,13 @@
 //! Administrative commands admitted through the bounded driver mailbox.
 
-use crate::completion::CompletionSender;
-use crate::request::ErasedRequest;
+use crate::{Route, completion::CompletionSender, request::ErasedRequest};
 
 pub(crate) enum Command {
-    Submit { request: Box<dyn ErasedRequest> },
-    Shutdown { completion: CompletionSender<()> },
+    Submit {
+        route: Route,
+        request: Box<dyn ErasedRequest>,
+    },
+    Shutdown {
+        completion: CompletionSender<()>,
+    },
 }

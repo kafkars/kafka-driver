@@ -27,10 +27,12 @@ where
     R::Response: Send + 'static,
 {
     let (receiver, completion) = completion_pair();
+    let retained_bytes = retained_bytes(&request);
     let request = TypedRequest {
         call_id,
         request,
         timeout,
+        retained_bytes,
         completion,
     };
     (Call::new(receiver), Box::new(request))
@@ -43,6 +45,7 @@ where
     call_id: CallId,
     request: R,
     timeout: Duration,
+    retained_bytes: usize,
     completion: CompletionSender<Result<R::Response, RequestError>>,
 }
 
@@ -61,6 +64,14 @@ where
 
     fn timeout(&self) -> Duration {
         self.timeout
+    }
+
+    fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
+    }
+
+    fn retained_bytes(&self) -> usize {
+        self.retained_bytes
     }
 
     fn prepare(
@@ -105,6 +116,21 @@ where
     fn fail(self: Box<Self>, failure: RequestError) {
         drop(self.completion.complete(Err(failure)));
     }
+}
+
+fn retained_bytes<R>(request: &R) -> usize
+where
+    R: RequestResponsePair,
+{
+    let descriptor = R::API_DESCRIPTOR;
+    let version = descriptor
+        .latest_stable_version()
+        .unwrap_or(descriptor.supported_versions.max());
+    request
+        .encoded_len(version)
+        .ok()
+        .and_then(|encoded| encoded.checked_add(size_of::<TypedRequest<R>>()))
+        .unwrap_or(usize::MAX)
 }
 
 fn fail<T>(

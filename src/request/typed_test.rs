@@ -104,6 +104,18 @@ fn outbound_frame_limit_settles_the_call_before_fifo_ownership() {
     ));
 }
 
+#[test]
+fn unstable_only_api_still_has_a_finite_wait_queue_estimate() {
+    let (call, request) = erased_request(
+        CallId::from_raw(1),
+        ApiVersionsRequest::default(),
+        Duration::from_secs(1),
+    );
+
+    assert_ne!(request.retained_bytes(), usize::MAX);
+    drop(call);
+}
+
 fn registry() -> ResponseRegistry {
     ResponseRegistry::new(nonzero(2), DecodeLimits::default())
 }

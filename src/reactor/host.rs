@@ -5,6 +5,8 @@ mod commands;
 mod debug;
 mod metadata;
 mod resolution;
+mod resolution_error;
+mod routing;
 mod state;
 
 use std::{sync::Arc, time::Duration};
@@ -24,7 +26,7 @@ use super::{
     metadata::MetadataOwner,
 };
 
-use resolution::NameResolution;
+use resolution::{BrokerDnsOutcome, NameResolution};
 use state::{HostState, ShutdownWaiters};
 
 /// Result of one bounded reactor turn.
@@ -55,6 +57,7 @@ pub struct Reactor {
     poll_events: Vec<PollEvent>,
     brokers: BrokerSet,
     resolution: Option<NameResolution>,
+    broker_dns_outcomes: Vec<BrokerDnsOutcome>,
     metadata: Option<MetadataOwner>,
     call_ids: Arc<CallIds>,
     clock: ReactorClock,
@@ -73,11 +76,13 @@ impl Reactor {
         let (sender, commands) = mailbox(limits.mailbox_capacity(), wake.clone());
         let clock = ReactorClock::new();
         let now = clock.now().map_err(std::io::Error::other)?;
-        let mut brokers = BrokerSet::new(
-            BrokerLimits::default(),
-            limits.metadata().broker_directory(),
-        )
-        .map_err(std::io::Error::other)?;
+        let broker_template = match &target {
+            Some(DriverTarget::Bootstrap(config)) => Some(config.broker_template().clone()),
+            Some(DriverTarget::Direct(_)) | None => None,
+        };
+        let mut brokers =
+            BrokerSet::new(BrokerLimits::default(), limits.metadata(), broker_template)
+                .map_err(std::io::Error::other)?;
         let (resolution, metadata) = match target {
             Some(DriverTarget::Direct(config)) => {
                 brokers
@@ -99,6 +104,7 @@ impl Reactor {
             poller,
             brokers,
             resolution,
+            broker_dns_outcomes: Vec::with_capacity(limits.resolver().outcome_budget().get()),
             metadata,
             call_ids,
             clock,

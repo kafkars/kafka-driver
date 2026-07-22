@@ -9,6 +9,11 @@ pub(in crate::reactor) enum BrokerSetError {
     OwnerCapacityOverflow,
     DirectoryCapacity { observed: usize, limit: usize },
     NamespaceUnavailable,
+    ChildCapacityReached,
+    UnknownBrokerChild,
+    BrokerTemplateMissing,
+    ConnectionEpochExhausted,
+    UnexpectedResolutionEffect,
     SeedMissing,
     SeedAlreadyInstalled,
     Broker(BrokerError),
@@ -25,7 +30,22 @@ impl fmt::Display for BrokerSetError {
                 "broker directory has {observed} entries, set capacity is {limit}"
             ),
             Self::NamespaceUnavailable => {
-                formatter.write_str("seed broker namespace could not be represented")
+                formatter.write_str("broker namespace could not be represented")
+            }
+            Self::ChildCapacityReached => {
+                formatter.write_str("discovered broker child capacity reached")
+            }
+            Self::UnknownBrokerChild => {
+                formatter.write_str("resolver outcome named an unknown broker child")
+            }
+            Self::BrokerTemplateMissing => {
+                formatter.write_str("discovered broker connection policy is unavailable")
+            }
+            Self::ConnectionEpochExhausted => {
+                formatter.write_str("broker connection epoch space is exhausted")
+            }
+            Self::UnexpectedResolutionEffect => {
+                formatter.write_str("broker resolution emitted an invalid effect sequence")
             }
             Self::SeedAlreadyInstalled => {
                 formatter.write_str("broker set already owns a seed connection")
@@ -43,6 +63,11 @@ impl Error for BrokerSetError {
             Self::OwnerCapacityOverflow
             | Self::DirectoryCapacity { .. }
             | Self::NamespaceUnavailable
+            | Self::ChildCapacityReached
+            | Self::UnknownBrokerChild
+            | Self::BrokerTemplateMissing
+            | Self::ConnectionEpochExhausted
+            | Self::UnexpectedResolutionEffect
             | Self::SeedMissing
             | Self::SeedAlreadyInstalled => None,
         }

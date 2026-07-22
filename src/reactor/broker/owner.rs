@@ -78,6 +78,15 @@ impl SingleBroker {
         limits: BrokerLimits,
         namespace: ResourceNamespace,
     ) -> Self {
+        Self::new_configured_in_epoch(config, limits, namespace, ConnectionEpoch::from_raw(1))
+    }
+
+    pub(in crate::reactor) fn new_configured_in_epoch(
+        config: BrokerConfig,
+        limits: BrokerLimits,
+        namespace: ResourceNamespace,
+        epoch: ConnectionEpoch,
+    ) -> Self {
         let (address, security, sasl) = config.into_parts();
         let resources = TransportResources::in_namespace(
             limits.resource_capacity(),
@@ -86,14 +95,14 @@ impl SingleBroker {
             namespace,
         );
         let connection = Self::connection_machine(
-            ConnectionEpoch::from_raw(1),
+            epoch,
             limits.connection(),
             sasl.as_ref(),
             limits.authentication(),
         );
         Self {
             address,
-            broker: BrokerMachine::new(ConnectionEpoch::from_raw(1), limits.backoff()),
+            broker: BrokerMachine::new(epoch, limits.backoff()),
             connection,
             connection_limits: limits.connection(),
             authentication_limits: limits.authentication(),

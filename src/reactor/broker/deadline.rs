@@ -31,6 +31,13 @@ impl DeadlineProgress {
     pub(in crate::reactor) const fn more_due(self) -> bool {
         self.more_due
     }
+
+    pub(in crate::reactor) const fn merge(self, other: Self) -> Self {
+        Self {
+            fired: self.fired.saturating_add(other.fired),
+            more_due: self.more_due || other.more_due,
+        }
+    }
 }
 
 impl SingleBroker {

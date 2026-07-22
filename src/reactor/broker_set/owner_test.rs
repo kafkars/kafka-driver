@@ -1,23 +1,20 @@
 //! Scenarios for seed-slot reservation and bounded broker namespace capacity.
 
-use std::{num::NonZeroU16, num::NonZeroUsize};
+use std::{num::NonZeroU16, num::NonZeroUsize, time::Duration};
 
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
     HostName, MetadataGeneration,
 };
 
-use crate::reactor::broker::BrokerLimits;
+use crate::{MetadataLimits, reactor::broker::BrokerLimits};
 
 use super::{BrokerSet, BrokerSetError};
 
 #[test]
 fn discovered_broker_capacity_reserves_one_additional_seed_slot() {
-    let set = BrokerSet::new(
-        BrokerLimits::default(),
-        BrokerDirectoryLimits::new(nonzero(7)),
-    )
-    .unwrap_or_else(|error| panic!("representable broker set: {error}"));
+    let set = BrokerSet::new(BrokerLimits::default(), metadata_limits(7), None)
+        .unwrap_or_else(|error| panic!("representable broker set: {error}"));
 
     assert_eq!(set.owner_capacity(), nonzero(8));
     assert!(!set.has_seed());
@@ -27,7 +24,11 @@ fn discovered_broker_capacity_reserves_one_additional_seed_slot() {
 fn maximum_directory_capacity_fails_before_token_namespace_wraparound() {
     let result = BrokerSet::new(
         BrokerLimits::default(),
-        BrokerDirectoryLimits::new(NonZeroUsize::MAX),
+        MetadataLimits::new(
+            BrokerDirectoryLimits::new(NonZeroUsize::MAX),
+            Duration::from_secs(1),
+        ),
+        None,
     );
 
     assert!(matches!(result, Err(BrokerSetError::OwnerCapacityOverflow)));
@@ -35,11 +36,8 @@ fn maximum_directory_capacity_fails_before_token_namespace_wraparound() {
 
 #[test]
 fn immutable_directory_generations_install_once_and_replace_atomically() {
-    let mut set = BrokerSet::new(
-        BrokerLimits::default(),
-        BrokerDirectoryLimits::new(nonzero(2)),
-    )
-    .unwrap_or_else(|error| panic!("representable broker set: {error}"));
+    let mut set = BrokerSet::new(BrokerLimits::default(), metadata_limits(2), None)
+        .unwrap_or_else(|error| panic!("representable broker set: {error}"));
     let first = directory(1, [entry(1, "one.test"), entry(2, "two.test")], 2);
     let second = directory(2, [entry(2, "two-new.test")], 1);
 
@@ -52,11 +50,8 @@ fn immutable_directory_generations_install_once_and_replace_atomically() {
 
 #[test]
 fn directory_larger_than_the_child_namespace_is_rejected_without_installation() {
-    let mut set = BrokerSet::new(
-        BrokerLimits::default(),
-        BrokerDirectoryLimits::new(nonzero(1)),
-    )
-    .unwrap_or_else(|error| panic!("representable broker set: {error}"));
+    let mut set = BrokerSet::new(BrokerLimits::default(), metadata_limits(1), None)
+        .unwrap_or_else(|error| panic!("representable broker set: {error}"));
     let oversized = directory(1, [entry(1, "one.test"), entry(2, "two.test")], 2);
 
     assert!(matches!(
@@ -100,4 +95,11 @@ const fn nonzero(value: usize) -> NonZeroUsize {
         panic!("test capacity must be nonzero");
     };
     value
+}
+
+fn metadata_limits(max_brokers: usize) -> MetadataLimits {
+    MetadataLimits::new(
+        BrokerDirectoryLimits::new(nonzero(max_brokers)),
+        Duration::from_secs(1),
+    )
 }

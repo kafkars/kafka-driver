@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt};
 
-use kafka_driver_core::{CallFailure, CallId, CorrelationId, Delivery};
+use kafka_driver_core::{CallFailure, CallId, CorrelationId, Delivery, DnsFailure};
 use kafka_wire_core::{ApiKey, ApiVersion, DecodeError, EncodeError};
 
 /// Why one generated request could not complete successfully.
@@ -33,6 +33,20 @@ pub enum RequestError {
     IdentityConflict,
     /// The relative timeout could not fit in the driver clock domain.
     DeadlineOverflow,
+    /// The semantic destination is unavailable in the current metadata generation.
+    RouteUnavailable,
+    /// The bounded waiting queue for one broker cannot retain this call.
+    RouteCapacityReached {
+        /// Maximum retained calls for one broker.
+        call_limit: usize,
+        /// Maximum retained request bytes for one broker.
+        byte_limit: usize,
+    },
+    /// Advertised broker name resolution failed without endpoint details.
+    NameResolutionFailed {
+        /// Sanitized resolver failure category.
+        failure: DnsFailure,
+    },
     /// Deterministic connection policy rejected or failed the call.
     Rejected {
         /// Connection-policy reason.
@@ -64,6 +78,17 @@ impl fmt::Display for RequestError {
             Self::DeadlineOverflow => {
                 formatter.write_str("request deadline exceeds the driver clock domain")
             }
+            Self::RouteUnavailable => formatter.write_str("semantic Kafka route is unavailable"),
+            Self::RouteCapacityReached {
+                call_limit,
+                byte_limit,
+            } => write!(
+                formatter,
+                "broker route wait capacity reached ({call_limit} calls, {byte_limit} bytes)"
+            ),
+            Self::NameResolutionFailed { failure } => {
+                write!(formatter, "broker name resolution failed: {failure:?}")
+            }
             Self::Rejected { failure, delivery } => {
                 write!(
                     formatter,
@@ -87,6 +112,9 @@ impl Error for RequestError {
             | Self::ResponseCapacityReached { .. }
             | Self::IdentityConflict
             | Self::DeadlineOverflow
+            | Self::RouteUnavailable
+            | Self::RouteCapacityReached { .. }
+            | Self::NameResolutionFailed { .. }
             | Self::Rejected { .. }
             | Self::ConnectionClosed(_) => None,
         }

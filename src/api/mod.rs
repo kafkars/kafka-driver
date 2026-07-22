@@ -5,6 +5,7 @@ mod call;
 mod driver;
 mod identity;
 mod protocol;
+mod route;
 mod traffic;
 
 pub use crate::completion::{CancellationRequest, CompletionError};
@@ -14,6 +15,7 @@ pub use call::Call;
 pub use driver::{Driver, DriverBuilder, SubmitError};
 pub use kafka_driver_core::Delivery;
 pub use protocol::RequestResponsePair;
+pub use route::Route;
 pub use traffic::TrafficClass;
 
 pub(crate) use identity::CallIds;

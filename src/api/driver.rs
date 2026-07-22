@@ -12,7 +12,7 @@ use crate::{
     request::erased_request,
 };
 
-use super::{Call, DriverBuildError, RequestError, identity::CallIds};
+use super::{Call, DriverBuildError, RequestError, Route, identity::CallIds};
 
 /// Cloneable command-admission handle for one driver reactor.
 #[derive(Clone, Debug)]
@@ -46,12 +46,26 @@ impl Driver {
         R: RequestResponsePair + Send + 'static,
         R::Response: Send + 'static,
     {
+        self.request(Route::AnyBroker, request, timeout)
+    }
+
+    /// Submits one generated request through a semantic cluster route.
+    pub fn request<R>(
+        &self,
+        route: Route,
+        request: R,
+        timeout: Duration,
+    ) -> Result<Call<Result<R::Response, RequestError>>, SubmitError>
+    where
+        R: RequestResponsePair + Send + 'static,
+        R::Response: Send + 'static,
+    {
         let Some(call_id) = self.call_ids.allocate() else {
             return Err(SubmitError::IdentityExhausted);
         };
         let (call, request) = erased_request(call_id, request, timeout);
         self.commands
-            .try_send(Command::Submit { request })
+            .try_send(Command::Submit { route, request })
             .map_err(SubmitError::from)?;
         Ok(call)
     }

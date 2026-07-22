@@ -1,23 +1,24 @@
 //! Shard-owned DNS identity, worker, bootstrap routing, and broker installation.
 
-use kafka_driver_core::DnsOutcome;
+use kafka_driver_core::{BrokerId, DnsOutcome, DnsRequest, EffectId};
 
 use crate::{
     ResolverLimits,
     config::{BootstrapConfig, BrokerConfig},
     reactor::{
         ReactorError, WakeHandle,
-        bootstrap::{BootstrapAction, BootstrapOwner, BootstrapOwnerError},
-        resolver::{Resolver, ResolverEffectIds},
+        bootstrap::{BootstrapAction, BootstrapOwner},
+        resolver::{ResolutionOwner, Resolver, ResolverEffectIds, ResolverOwnership},
     },
 };
 
-use super::Reactor;
+use super::{Reactor, resolution_error::NameResolutionError};
 
 pub(super) struct NameResolution {
     resolver: Resolver,
     bootstrap: BootstrapOwner,
     effect_ids: ResolverEffectIds,
+    ownership: ResolverOwnership,
     outcomes: Vec<DnsOutcome>,
 }
 
@@ -32,37 +33,90 @@ impl NameResolution {
         let effect_id = effect_ids.reserve().ok_or_else(identity_exhausted)?;
         let (bootstrap, request) =
             BootstrapOwner::start(config, effect_id).map_err(std::io::Error::other)?;
-        resolver.submit(request).map_err(std::io::Error::other)?;
-        Ok(Self {
+        let ownership = ResolverOwnership::new(limits.pending_capacity());
+        let mut resolution = Self {
             resolver,
             bootstrap,
             effect_ids,
+            ownership,
             outcomes: Vec::with_capacity(limits.outcome_budget().get()),
-        })
+        };
+        resolution
+            .submit_owned(ResolutionOwner::Bootstrap, request)
+            .map_err(std::io::Error::other)?;
+        Ok(resolution)
     }
 
-    fn drive(&mut self) -> Result<ResolutionProgress, BootstrapOwnerError> {
+    pub(super) fn reserve_effect(&mut self) -> Result<EffectId, NameResolutionError> {
+        self.effect_ids
+            .reserve()
+            .ok_or(NameResolutionError::IdentityExhausted)
+    }
+
+    pub(super) fn submit_broker(
+        &mut self,
+        broker_id: BrokerId,
+        request: DnsRequest,
+    ) -> Result<(), NameResolutionError> {
+        self.submit_owned(ResolutionOwner::Broker(broker_id), request)
+    }
+
+    fn drive(
+        &mut self,
+        broker_outcomes: &mut Vec<BrokerDnsOutcome>,
+    ) -> Result<ResolutionProgress, NameResolutionError> {
         self.outcomes.clear();
         let drained = self.resolver.drain_into(&mut self.outcomes);
         let mut broker = None;
-        for outcome in self.outcomes.drain(..) {
-            let Some(retry_effect_id) = self.effect_ids.reserve() else {
-                return Err(BootstrapOwnerError::IdentityExhausted);
+        let mut outcomes = std::mem::take(&mut self.outcomes);
+        for outcome in outcomes.drain(..) {
+            let Some(owner) = self.ownership.remove(outcome.effect_id()) else {
+                continue;
             };
-            match self.bootstrap.complete(outcome, retry_effect_id)? {
-                BootstrapAction::Resolve(request) => self.resolver.submit(request)?,
-                BootstrapAction::Install(config) if broker.is_none() => broker = Some(config),
-                BootstrapAction::Install(_) => {
-                    return Err(BootstrapOwnerError::UnexpectedEffect);
+            match owner {
+                ResolutionOwner::Broker(broker_id) => {
+                    broker_outcomes.push(BrokerDnsOutcome { broker_id, outcome });
                 }
-                BootstrapAction::Exhausted => {}
+                ResolutionOwner::Bootstrap => {
+                    let retry_effect_id = self.reserve_effect()?;
+                    match self.bootstrap.complete(outcome, retry_effect_id)? {
+                        BootstrapAction::Resolve(request) => {
+                            self.submit_owned(ResolutionOwner::Bootstrap, request)?;
+                        }
+                        BootstrapAction::Install(config) if broker.is_none() => {
+                            broker = Some(config);
+                        }
+                        BootstrapAction::Install(_) => {
+                            return Err(
+                                crate::reactor::bootstrap::BootstrapOwnerError::UnexpectedEffect
+                                    .into(),
+                            );
+                        }
+                        BootstrapAction::Exhausted => {}
+                    }
+                }
             }
         }
+        self.outcomes = outcomes;
         Ok(ResolutionProgress {
             outcomes: drained.outcomes(),
             more_work: drained.more_work(),
             broker,
         })
+    }
+
+    fn submit_owned(
+        &mut self,
+        owner: ResolutionOwner,
+        request: DnsRequest,
+    ) -> Result<(), NameResolutionError> {
+        let effect_id = request.effect_id();
+        self.ownership.register(effect_id, owner)?;
+        if let Err(source) = self.resolver.submit(request) {
+            self.ownership.remove(effect_id);
+            return Err(source.into());
+        }
+        Ok(())
     }
 }
 
@@ -71,8 +125,9 @@ impl Reactor {
         let Some(resolution) = &mut self.resolution else {
             return Ok(ResolutionTurn::idle());
         };
+        self.broker_dns_outcomes.clear();
         let progress = resolution
-            .drive()
+            .drive(&mut self.broker_dns_outcomes)
             .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
         let turn = ResolutionTurn {
             made_progress: progress.made_progress(),
@@ -80,6 +135,12 @@ impl Reactor {
         };
         if let Some(config) = progress.broker {
             self.install_broker(config)?;
+        }
+        let now = self.clock.now().map_err(ReactorError::clock)?;
+        for completed in self.broker_dns_outcomes.drain(..) {
+            self.brokers
+                .complete_resolution(completed.broker_id, completed.outcome, &self.poller, now)
+                .map_err(ReactorError::broker_set)?;
         }
         Ok(turn)
     }
@@ -95,6 +156,11 @@ impl Reactor {
             .install_seed(config, &self.poller, now)
             .map_err(ReactorError::broker_set)
     }
+}
+
+pub(super) struct BrokerDnsOutcome {
+    broker_id: BrokerId,
+    outcome: DnsOutcome,
 }
 
 struct ResolutionProgress {
@@ -132,5 +198,5 @@ impl ResolutionTurn {
 }
 
 fn identity_exhausted() -> std::io::Error {
-    std::io::Error::other(BootstrapOwnerError::IdentityExhausted)
+    std::io::Error::other(NameResolutionError::IdentityExhausted)
 }

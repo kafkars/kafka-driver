@@ -1,12 +1,20 @@
 //! Shard-local ownership of the seed and bounded broker-child namespace.
 
+mod child;
+mod child_io;
 mod error;
 mod io;
 mod owner;
+mod routing;
 mod seed;
+mod waiting;
 
 #[cfg(test)]
 mod owner_test;
+#[cfg(test)]
+mod routing_test;
+#[cfg(test)]
+mod waiting_test;
 
 pub(in crate::reactor) use error::BrokerSetError;
 pub(in crate::reactor) use owner::BrokerSet;
