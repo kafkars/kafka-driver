@@ -12,6 +12,8 @@ mod simulation;
 #[cfg(test)]
 mod clock_test;
 #[cfg(test)]
+mod connection_scenario_test;
+#[cfg(test)]
 mod schedule_test;
 #[cfg(test)]
 mod simulation_test;

@@ -22,6 +22,8 @@ mod correlation_test;
 #[cfg(test)]
 mod deadline_test;
 #[cfg(test)]
+mod invariant_test;
+#[cfg(test)]
 mod lifecycle_test;
 #[cfg(test)]
 mod response_test;
