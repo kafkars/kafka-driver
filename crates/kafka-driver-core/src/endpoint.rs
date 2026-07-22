@@ -76,25 +76,80 @@ pub enum IpAddress {
 /// One logical address returned by a resolver.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ResolvedAddress {
-    ip: IpAddress,
-    port: NonZeroU16,
+    socket: ResolvedSocketAddress,
 }
 
 impl ResolvedAddress {
-    /// Creates a resolved endpoint from its logical address and port.
+    /// Creates a resolved endpoint with no IPv6 flow or interface scope.
     pub const fn new(ip: IpAddress, port: NonZeroU16) -> Self {
-        Self { ip, port }
+        let socket = match ip {
+            IpAddress::V4(octets) => ResolvedSocketAddress::V4 { octets, port },
+            IpAddress::V6(octets) => ResolvedSocketAddress::V6 {
+                octets,
+                port,
+                flow_info: 0,
+                scope_id: 0,
+            },
+        };
+        Self { socket }
+    }
+
+    /// Creates an IPv6 endpoint retaining resolver-supplied flow and interface scope.
+    pub const fn ipv6(octets: [u8; 16], port: NonZeroU16, flow_info: u32, scope_id: u32) -> Self {
+        Self {
+            socket: ResolvedSocketAddress::V6 {
+                octets,
+                port,
+                flow_info,
+                scope_id,
+            },
+        }
     }
 
     /// Returns the logical IP address.
     pub const fn ip(self) -> IpAddress {
-        self.ip
+        match self.socket {
+            ResolvedSocketAddress::V4 { octets, .. } => IpAddress::V4(octets),
+            ResolvedSocketAddress::V6 { octets, .. } => IpAddress::V6(octets),
+        }
     }
 
     /// Returns the resolved broker port.
     pub const fn port(self) -> NonZeroU16 {
-        self.port
+        match self.socket {
+            ResolvedSocketAddress::V4 { port, .. } | ResolvedSocketAddress::V6 { port, .. } => port,
+        }
     }
+
+    /// Returns IPv6 flow information, or zero for IPv4.
+    pub const fn flow_info(self) -> u32 {
+        match self.socket {
+            ResolvedSocketAddress::V4 { .. } => 0,
+            ResolvedSocketAddress::V6 { flow_info, .. } => flow_info,
+        }
+    }
+
+    /// Returns the IPv6 interface scope, or zero for IPv4.
+    pub const fn scope_id(self) -> u32 {
+        match self.socket {
+            ResolvedSocketAddress::V4 { .. } => 0,
+            ResolvedSocketAddress::V6 { scope_id, .. } => scope_id,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum ResolvedSocketAddress {
+    V4 {
+        octets: [u8; 4],
+        port: NonZeroU16,
+    },
+    V6 {
+        octets: [u8; 16],
+        port: NonZeroU16,
+        flow_info: u32,
+        scope_id: u32,
+    },
 }
 
 /// Why a broker resolver host was rejected before external work.

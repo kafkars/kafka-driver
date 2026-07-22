@@ -56,6 +56,17 @@ fn configured_and_resolved_endpoints_retain_explicit_ports() {
     assert_eq!(address.port(), port());
 }
 
+#[test]
+fn resolved_ipv6_retains_flow_and_interface_scope_for_connection() {
+    let octets = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+    let address = ResolvedAddress::ipv6(octets, port(), 7, 11);
+
+    assert_eq!(address.ip(), IpAddress::V6(octets));
+    assert_eq!(address.port(), port());
+    assert_eq!(address.flow_info(), 7);
+    assert_eq!(address.scope_id(), 11);
+}
+
 const fn port() -> NonZeroU16 {
     let Some(port) = NonZeroU16::new(9092) else {
         panic!("test port must be nonzero");
