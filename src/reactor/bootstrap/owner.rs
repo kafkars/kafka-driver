@@ -10,7 +10,13 @@ use kafka_driver_core::{
 use crate::config::{BootstrapConfig, BrokerConfig, BrokerTemplate};
 
 use super::BootstrapOwnerError;
-use crate::reactor::resolver::Resolver;
+
+/// One external action returned to the shard-owned resolver interpreter.
+pub(in crate::reactor) enum BootstrapAction {
+    Resolve(kafka_driver_core::DnsRequest),
+    Install(BrokerConfig),
+    Exhausted,
+}
 
 /// Reactor-side owner joining pure bootstrap policy to the blocking DNS worker.
 #[derive(Debug)]
@@ -23,8 +29,7 @@ impl BootstrapOwner {
     pub(in crate::reactor) fn start(
         config: BootstrapConfig,
         effect_id: EffectId,
-        resolver: &Resolver,
-    ) -> Result<Self, BootstrapOwnerError> {
+    ) -> Result<(Self, kafka_driver_core::DnsRequest), BootstrapOwnerError> {
         let (endpoints, broker) = config.into_parts();
         let mut owner = Self {
             machine: BootstrapMachine::new(endpoints),
@@ -34,41 +39,38 @@ impl BootstrapOwner {
             epoch: ConnectionEpoch::from_raw(1),
             effect_id,
         });
-        if owner.interpret(transition.effects(), resolver)?.is_some() {
+        let BootstrapAction::Resolve(request) = owner.interpret(transition.effects())? else {
             return Err(BootstrapOwnerError::UnexpectedEffect);
-        }
-        Ok(owner)
+        };
+        Ok((owner, request))
     }
 
     pub(in crate::reactor) fn complete(
         &mut self,
         outcome: DnsOutcome,
         retry_effect_id: EffectId,
-        resolver: &Resolver,
-    ) -> Result<Option<BrokerConfig>, BootstrapOwnerError> {
+    ) -> Result<BootstrapAction, BootstrapOwnerError> {
         let transition = self.machine.apply(BootstrapInput::ResolutionCompleted {
             outcome,
             retry_effect_id,
         });
-        self.interpret(transition.effects(), resolver)
+        self.interpret(transition.effects())
     }
 
     fn interpret(
         &self,
         effects: &[BootstrapEffect],
-        resolver: &Resolver,
-    ) -> Result<Option<BrokerConfig>, BootstrapOwnerError> {
+    ) -> Result<BootstrapAction, BootstrapOwnerError> {
         match effects {
-            [] | [BootstrapEffect::Exhausted { .. }] => Ok(None),
-            [BootstrapEffect::Resolve { request }] => {
-                resolver.submit(request.clone())?;
-                Ok(None)
-            }
+            [BootstrapEffect::Exhausted { .. }] => Ok(BootstrapAction::Exhausted),
+            [BootstrapEffect::Resolve { request }] => Ok(BootstrapAction::Resolve(request.clone())),
             [BootstrapEffect::Resolved { addresses, .. }] => {
                 let Some(address) = addresses.iter().next().copied() else {
                     return Err(BootstrapOwnerError::UnexpectedEffect);
                 };
-                Ok(Some(self.broker.clone().at(socket_address(address))))
+                Ok(BootstrapAction::Install(
+                    self.broker.clone().at(socket_address(address)),
+                ))
             }
             _ => Err(BootstrapOwnerError::UnexpectedEffect),
         }

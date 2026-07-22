@@ -1,26 +1,24 @@
-//! Focused real-worker bootstrap scenario through numeric endpoint selection.
+//! Focused effect-boundary scenario for initial numeric endpoint resolution.
 
 use std::num::NonZeroU16;
 
 use kafka_driver_core::{BootstrapLimits, BootstrapSet, BrokerEndpoint, EffectId, HostName};
 
-use crate::{ResolverLimits, config::BootstrapConfig, reactor::Poller};
+use crate::config::BootstrapConfig;
 
 use super::BootstrapOwner;
-use crate::reactor::{WakeHandle, resolver::Resolver};
 
 #[test]
-fn numeric_bootstrap_starts_external_resolution_without_opening_on_the_owner_thread() {
-    let poller = Poller::new(std::num::NonZeroUsize::MIN)
-        .unwrap_or_else(|error| panic!("create test poller: {error}"));
-    let wake = WakeHandle::new(poller.wake_handle());
-    let resolver = Resolver::spawn(ResolverLimits::default(), wake)
-        .unwrap_or_else(|error| panic!("spawn DNS worker: {error}"));
+fn numeric_bootstrap_returns_external_resolution_without_owning_the_worker() {
     let config = BootstrapConfig::plaintext(bootstrap_set());
 
-    let owner = BootstrapOwner::start(config, EffectId::from_raw(1), &resolver);
+    let started = BootstrapOwner::start(config, EffectId::from_raw(1));
 
-    assert!(owner.is_ok());
+    let Ok((_, request)) = started else {
+        panic!("bootstrap must start");
+    };
+    assert_eq!(request.effect_id(), EffectId::from_raw(1));
+    assert_eq!(request.endpoint().host().as_str(), "127.0.0.1");
 }
 
 fn bootstrap_set() -> BootstrapSet {

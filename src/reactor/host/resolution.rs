@@ -7,7 +7,7 @@ use crate::{
     config::{BootstrapConfig, BrokerConfig},
     reactor::{
         ReactorError, WakeHandle,
-        bootstrap::{BootstrapOwner, BootstrapOwnerError},
+        bootstrap::{BootstrapAction, BootstrapOwner, BootstrapOwnerError},
         resolver::{Resolver, ResolverEffectIds},
     },
 };
@@ -30,8 +30,9 @@ impl NameResolution {
         let resolver = Resolver::spawn(limits, wake)?;
         let mut effect_ids = ResolverEffectIds::new();
         let effect_id = effect_ids.reserve().ok_or_else(identity_exhausted)?;
-        let bootstrap =
-            BootstrapOwner::start(config, effect_id, &resolver).map_err(std::io::Error::other)?;
+        let (bootstrap, request) =
+            BootstrapOwner::start(config, effect_id).map_err(std::io::Error::other)?;
+        resolver.submit(request).map_err(std::io::Error::other)?;
         Ok(Self {
             resolver,
             bootstrap,
@@ -48,13 +49,14 @@ impl NameResolution {
             let Some(retry_effect_id) = self.effect_ids.reserve() else {
                 return Err(BootstrapOwnerError::IdentityExhausted);
             };
-            let resolved = self
-                .bootstrap
-                .complete(outcome, retry_effect_id, &self.resolver)?;
-            if broker.is_some() && resolved.is_some() {
-                return Err(BootstrapOwnerError::UnexpectedEffect);
+            match self.bootstrap.complete(outcome, retry_effect_id)? {
+                BootstrapAction::Resolve(request) => self.resolver.submit(request)?,
+                BootstrapAction::Install(config) if broker.is_none() => broker = Some(config),
+                BootstrapAction::Install(_) => {
+                    return Err(BootstrapOwnerError::UnexpectedEffect);
+                }
+                BootstrapAction::Exhausted => {}
             }
-            broker = broker.or(resolved);
         }
         Ok(ResolutionProgress {
             outcomes: drained.outcomes(),
