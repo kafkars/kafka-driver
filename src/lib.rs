@@ -19,6 +19,9 @@ pub use api::{
 #[cfg(feature = "tls-rustls")]
 pub use config::TlsClientConfig;
 pub use config::{DriverLimits, ResolverLimits, SaslConfig, SaslConfigError};
-pub use kafka_driver_core::{CallId, Moment};
+pub use kafka_driver_core::{
+    BootstrapError, BootstrapLimits, BootstrapSet, BrokerEndpoint, CallId, HostName, HostNameError,
+    Moment,
+};
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use reactor::{Reactor, ReactorError, TurnOutcome, WakeHandle};

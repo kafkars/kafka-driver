@@ -1,14 +1,17 @@
 //! Embedded reactor host for bounded administrative command progress.
 
 mod commands;
+mod debug;
+mod resolution;
 mod state;
 
 use std::time::Duration;
 
-use crate::config::{BrokerConfig, DriverLimits};
+use crate::config::{DriverLimits, DriverTarget};
 
 use super::{
     Command, MailboxSender, PollEvent, Poller, ReactorError, WakeHandle,
+    bootstrap::BootstrapResolution,
     broker::{BrokerLimits, DeadlineProgress, SingleBroker},
     clock::ReactorClock,
     mailbox,
@@ -44,6 +47,7 @@ pub struct Reactor {
     poller: Poller,
     poll_events: Vec<PollEvent>,
     broker: Option<SingleBroker>,
+    bootstrap: Option<BootstrapResolution>,
     clock: ReactorClock,
     state: HostState,
     shutdown_waiters: ShutdownWaiters,
@@ -52,15 +56,27 @@ pub struct Reactor {
 impl Reactor {
     pub(crate) fn new(
         limits: DriverLimits,
-        broker_config: Option<BrokerConfig>,
+        target: Option<DriverTarget>,
     ) -> std::io::Result<(MailboxSender<Command>, Self)> {
         let poller = Poller::new(limits.poll_event_budget())?;
         let wake = WakeHandle::new(poller.wake_handle());
-        let (sender, commands) = mailbox(limits.mailbox_capacity(), wake);
+        let (sender, commands) = mailbox(limits.mailbox_capacity(), wake.clone());
         let clock = ReactorClock::new();
         let now = clock.now().map_err(std::io::Error::other)?;
-        let mut broker = broker_config
-            .map(|config| SingleBroker::new_configured(config, BrokerLimits::default()));
+        let (mut broker, bootstrap) = match target {
+            Some(DriverTarget::Direct(config)) => (
+                Some(SingleBroker::new_configured(
+                    config,
+                    BrokerLimits::default(),
+                )),
+                None,
+            ),
+            Some(DriverTarget::Bootstrap(config)) => (
+                None,
+                Some(BootstrapResolution::start(config, limits.resolver(), wake)?),
+            ),
+            None => (None, None),
+        };
         if let Some(broker) = &mut broker {
             broker.start(&poller, now).map_err(std::io::Error::other)?;
         }
@@ -71,6 +87,7 @@ impl Reactor {
             limits,
             poller,
             broker,
+            bootstrap,
             clock,
             state: HostState::Running,
             shutdown_waiters: ShutdownWaiters::new(limits.mailbox_capacity()),
@@ -96,6 +113,9 @@ impl Reactor {
         let deadlines = self.fire_due_deadlines()?;
         let mut progress = deadlines.made_progress();
         let mut more_due = deadlines.more_due();
+        let bootstrap = self.continue_bootstrap()?;
+        let mut more_bootstrap = bootstrap.more_work();
+        progress |= bootstrap.made_progress();
         progress |= processed != 0;
         progress |= self.continue_broker_io()?;
 
@@ -115,6 +135,9 @@ impl Reactor {
             let deadlines = self.fire_due_deadlines()?;
             progress |= processed != 0 || deadlines.made_progress();
             more_due |= deadlines.more_due();
+            let bootstrap = self.continue_bootstrap()?;
+            progress |= bootstrap.made_progress();
+            more_bootstrap |= bootstrap.more_work();
             progress |= self.observe_poll_events()?;
         }
         if let Some(outcome) = self.finish_shutdown_if_terminal(processed) {
@@ -125,6 +148,7 @@ impl Reactor {
                 commands: processed,
                 more_work: status == DrainStatus::MorePending
                     || more_due
+                    || more_bootstrap
                     || self.broker_has_local_io(),
             });
         }
@@ -192,6 +216,7 @@ impl Reactor {
             return None;
         }
         self.state = HostState::Shutdown;
+        self.bootstrap = None;
         drop(self.commands.close());
         self.shutdown_waiters.complete_all();
         Some(TurnOutcome::Shutdown { commands })
@@ -199,20 +224,5 @@ impl Reactor {
 
     fn broker_has_local_io(&self) -> bool {
         self.broker.as_ref().is_some_and(SingleBroker::has_local_io)
-    }
-}
-
-impl std::fmt::Debug for Reactor {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("Reactor")
-            .field("limits", &self.limits)
-            .field(
-                "broker",
-                &self.broker.as_ref().map(SingleBroker::broker_state),
-            )
-            .field("connection", &self.broker.as_ref().map(SingleBroker::state))
-            .field("state", &self.state)
-            .finish_non_exhaustive()
     }
 }

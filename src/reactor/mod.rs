@@ -1,5 +1,6 @@
 //! Single-owner host, bounded command mailbox, and cross-thread wake contract.
 
+mod bootstrap;
 mod broker;
 mod clock;
 mod command;
@@ -8,6 +9,7 @@ mod host;
 mod mailbox;
 mod plaintext;
 mod poller;
+mod resolver;
 mod resource;
 mod tcp;
 mod timer;

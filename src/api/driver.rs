@@ -2,11 +2,12 @@
 
 use std::{fmt, io, net::SocketAddr, sync::Arc, time::Duration};
 
+use kafka_driver_core::BootstrapSet;
 use kafka_wire::RequestResponsePair;
 
 use crate::{
     completion::completion_pair,
-    config::{BrokerConfig, DriverLimits},
+    config::{BootstrapConfig, BrokerConfig, DriverLimits, DriverTarget},
     reactor::{Command, MailboxSender, Reactor, TrySendError},
     request::erased_request,
 };
@@ -60,7 +61,7 @@ impl Driver {
 #[derive(Clone, Debug, Default)]
 pub struct DriverBuilder {
     limits: DriverLimits,
-    broker: Option<BrokerConfig>,
+    target: Option<DriverTarget>,
     sasl: Option<crate::SaslConfig>,
 }
 
@@ -75,7 +76,16 @@ impl DriverBuilder {
     /// Configures the single plaintext broker endpoint owned by this reactor.
     #[must_use]
     pub fn broker(mut self, address: SocketAddr) -> Self {
-        self.broker = Some(BrokerConfig::plaintext(address));
+        self.target = Some(DriverTarget::Direct(BrokerConfig::plaintext(address)));
+        self
+    }
+
+    /// Configures bounded plaintext bootstrap membership for cluster discovery.
+    #[must_use]
+    pub fn bootstrap(mut self, endpoints: BootstrapSet) -> Self {
+        self.target = Some(DriverTarget::Bootstrap(BootstrapConfig::plaintext(
+            endpoints,
+        )));
         self
     }
 
@@ -83,7 +93,7 @@ impl DriverBuilder {
     #[cfg(feature = "tls-rustls")]
     #[must_use]
     pub fn rustls_broker(mut self, address: SocketAddr, tls: crate::TlsClientConfig) -> Self {
-        self.broker = Some(BrokerConfig::rustls(address, tls));
+        self.target = Some(DriverTarget::Direct(BrokerConfig::rustls(address, tls)));
         self
     }
 
@@ -96,9 +106,9 @@ impl DriverBuilder {
 
     /// Builds a driver handle and an embedded, caller-driven reactor.
     pub fn build_reactor(self) -> Result<(Driver, Reactor), DriverBuildError> {
-        let broker = self.broker.map(|broker| broker.with_sasl(self.sasl));
+        let target = self.target.map(|target| target.with_sasl(self.sasl));
         let (commands, reactor) =
-            Reactor::new(self.limits, broker).map_err(DriverBuildError::new)?;
+            Reactor::new(self.limits, target).map_err(DriverBuildError::new)?;
         Ok((
             Driver {
                 commands,

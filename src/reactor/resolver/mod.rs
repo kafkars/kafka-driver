@@ -1,0 +1,13 @@
+//! Bounded blocking DNS worker isolated from the owning I/O shard.
+
+mod error;
+mod handle;
+mod worker;
+
+#[cfg(test)]
+mod queue_test;
+#[cfg(test)]
+mod worker_test;
+
+pub(in crate::reactor) use error::ResolverSubmitError;
+pub(in crate::reactor) use handle::Resolver;
