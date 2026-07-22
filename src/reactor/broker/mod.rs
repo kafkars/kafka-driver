@@ -15,3 +15,5 @@ mod limits_test;
 
 pub(in crate::reactor) use error::BrokerError;
 pub(in crate::reactor) use identity::BrokerIds;
+pub(in crate::reactor) use limits::BrokerLimits;
+pub(in crate::reactor) use owner::SingleBroker;

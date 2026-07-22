@@ -1,6 +1,6 @@
 //! Public construction, admission, and shutdown handle for one driver reactor.
 
-use std::{fmt, io, sync::Arc, time::Duration};
+use std::{fmt, io, net::SocketAddr, sync::Arc, time::Duration};
 
 use kafka_wire::RequestResponsePair;
 use kafka_wire_core::ApiVersion;
@@ -62,6 +62,7 @@ impl Driver {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriverBuilder {
     limits: DriverLimits,
+    broker: Option<SocketAddr>,
 }
 
 impl DriverBuilder {
@@ -72,9 +73,17 @@ impl DriverBuilder {
         self
     }
 
+    /// Configures the single plaintext broker endpoint owned by this M4 reactor.
+    #[must_use]
+    pub const fn broker(mut self, address: SocketAddr) -> Self {
+        self.broker = Some(address);
+        self
+    }
+
     /// Builds a driver handle and an embedded, caller-driven reactor.
     pub fn build_reactor(self) -> Result<(Driver, Reactor), DriverBuildError> {
-        let (commands, reactor) = Reactor::new(self.limits).map_err(DriverBuildError::new)?;
+        let (commands, reactor) =
+            Reactor::new(self.limits, self.broker).map_err(DriverBuildError::new)?;
         Ok((
             Driver {
                 commands,

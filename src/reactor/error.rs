@@ -2,22 +2,44 @@
 
 use std::{fmt, io};
 
+use super::broker::BrokerError;
+
 /// Why one reactor turn could not observe external readiness.
 #[derive(Debug)]
 pub struct ReactorError {
     source: io::Error,
+    operation: ReactorOperation,
 }
 
 impl ReactorError {
     pub(super) const fn poll(source: io::Error) -> Self {
-        Self { source }
+        Self {
+            source,
+            operation: ReactorOperation::Poll,
+        }
+    }
+
+    pub(super) fn broker(source: BrokerError) -> Self {
+        Self {
+            source: io::Error::other(source),
+            operation: ReactorOperation::Broker,
+        }
     }
 }
 
 impl fmt::Display for ReactorError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("the driver I/O selector failed")
+        match self.operation {
+            ReactorOperation::Poll => formatter.write_str("the driver I/O selector failed"),
+            ReactorOperation::Broker => formatter.write_str("the broker reactor failed"),
+        }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ReactorOperation {
+    Poll,
+    Broker,
 }
 
 impl std::error::Error for ReactorError {
