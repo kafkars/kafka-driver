@@ -8,7 +8,7 @@ mod state;
 #[cfg(test)]
 mod completion_test;
 
-pub use outcome::{CancellationRequest, CompletionError};
+pub use outcome::CompletionError;
 pub(crate) use receiver::CompletionReceiver;
 pub(crate) use sender::CompletionSender;
 pub(crate) use state::completion_pair;

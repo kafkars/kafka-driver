@@ -20,14 +20,6 @@ impl<T> CompletionSender<T> {
         self.settled = true;
         outcome
     }
-
-    #[allow(
-        dead_code,
-        reason = "semantic owners may observe cancellation; generic RPC cannot revoke possibly sent work"
-    )]
-    pub(crate) fn is_cancellation_requested(&self) -> bool {
-        self.shared.is_cancellation_requested()
-    }
 }
 
 impl<T> Drop for CompletionSender<T> {

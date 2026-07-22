@@ -1,17 +1,6 @@
-//! Public outcomes of waiting for or cancelling a completion.
+//! Public failure from waiting for one completion value.
 
 use std::{error::Error, fmt};
-
-/// Result of requesting cancellation for a call.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CancellationRequest {
-    /// This request changed a pending call to cancellation-requested.
-    Requested,
-    /// Cancellation had already been requested for the pending call.
-    AlreadyRequested,
-    /// The call had already reached a terminal completion state.
-    Completed,
-}
 
 /// Why a completion cell could not return its value.
 #[non_exhaustive]

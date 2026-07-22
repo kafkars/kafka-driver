@@ -7,10 +7,10 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::completion::{CancellationRequest, CompletionError, CompletionReceiver};
+use crate::completion::{CompletionError, CompletionReceiver};
 
 /// A single-consumer handle for one eventual driver result.
-#[must_use = "dropping a call requests cancellation"]
+#[must_use = "dropping a call abandons result observation; driver work may continue"]
 pub struct Call<T> {
     completion: CompletionReceiver<T>,
 }
@@ -25,9 +25,13 @@ impl<T> Call<T> {
         self.completion.wait()
     }
 
-    /// Requests cancellation without claiming the broker did not receive work.
-    pub fn request_cancellation(&self) -> CancellationRequest {
-        self.completion.request_cancellation()
+    /// Abandons observation of this call's terminal result.
+    ///
+    /// This does not cancel driver or broker work and does not change delivery
+    /// certainty. The driver continues normal bounded processing and discards
+    /// the result when it reaches this closed receiver.
+    pub fn abandon(self) {
+        drop(self);
     }
 
     pub(crate) fn try_result(&self) -> Option<Result<T, CompletionError>> {

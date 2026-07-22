@@ -1,4 +1,4 @@
-//! Scenarios for blocking, task-waker, cancellation, and abandonment semantics.
+//! Scenarios for blocking, task-waker, and receiver-abandonment semantics.
 
 use std::{
     future::Future,
@@ -13,7 +13,7 @@ use std::{
 
 use crate::Call;
 
-use super::{CancellationRequest, CompletionError, CompletionSender, completion_pair};
+use super::{CompletionError, CompletionSender, completion_pair};
 
 #[test]
 fn blocking_wait_receives_the_producer_value() {
@@ -37,17 +37,13 @@ fn dropping_the_producer_releases_a_blocking_waiter() {
 }
 
 #[test]
-fn cancellation_is_monotonic_but_does_not_discard_a_late_success() {
+fn explicit_abandonment_discards_observation_but_not_producer_work() {
     let (call, sender) = call_pair::<&str>();
 
-    let first = call.request_cancellation();
-    let second = call.request_cancellation();
+    call.abandon();
+    let result = sender.complete("completed anyway");
 
-    assert_eq!(first, CancellationRequest::Requested);
-    assert_eq!(second, CancellationRequest::AlreadyRequested);
-    assert!(sender.is_cancellation_requested());
-    assert_eq!(sender.complete("completed anyway"), Ok(()));
-    assert_eq!(call.wait(), Ok("completed anyway"));
+    assert_eq!(result, Err("completed anyway"));
 }
 
 #[test]

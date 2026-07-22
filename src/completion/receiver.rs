@@ -2,7 +2,7 @@
 
 use std::task::{Context, Poll};
 
-use super::{CancellationRequest, CompletionError, state::Shared};
+use super::{CompletionError, state::Shared};
 
 pub(crate) struct CompletionReceiver<T> {
     shared: Shared<T>,
@@ -23,10 +23,6 @@ impl<T> CompletionReceiver<T> {
 
     pub(crate) fn try_result(&self) -> Option<Result<T, CompletionError>> {
         self.shared.try_result()
-    }
-
-    pub(crate) fn request_cancellation(&self) -> CancellationRequest {
-        self.shared.request_cancellation()
     }
 }
 

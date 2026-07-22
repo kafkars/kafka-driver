@@ -16,8 +16,8 @@ mod request;
 mod response;
 
 pub use api::{
-    Call, CancellationRequest, CompletionError, Delivery, Driver, DriverBuildError, DriverBuilder,
-    RequestError, RequestResponsePair, ResponseCloseReason, Route, SubmitError, TrafficClass,
+    Call, CompletionError, Delivery, Driver, DriverBuildError, DriverBuilder, RequestError,
+    RequestResponsePair, ResponseCloseReason, Route, SubmitError, TrafficClass,
 };
 #[cfg(feature = "tls-rustls")]
 pub use config::TlsClientConfig;

@@ -6,9 +6,7 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use super::{
-    CancellationRequest, CompletionError, receiver::CompletionReceiver, sender::CompletionSender,
-};
+use super::{CompletionError, receiver::CompletionReceiver, sender::CompletionSender};
 
 pub(crate) fn completion_pair<T>() -> (CompletionReceiver<T>, CompletionSender<T>) {
     let shared = Shared::new();
@@ -32,7 +30,6 @@ impl<T> Shared<T> {
         Self {
             inner: Arc::new(Inner {
                 state: Mutex::new(State::Pending {
-                    cancellation_requested: false,
                     receiver_alive: true,
                     waker: None,
                 }),
@@ -96,12 +93,10 @@ impl<T> Shared<T> {
             match mem::replace(&mut *state, State::Consumed) {
                 State::Ready(result) => return result,
                 State::Pending {
-                    cancellation_requested,
                     receiver_alive,
                     waker,
                 } => {
                     *state = State::Pending {
-                        cancellation_requested,
                         receiver_alive,
                         waker,
                     };
@@ -148,41 +143,12 @@ impl<T> Shared<T> {
         }
     }
 
-    pub(super) fn request_cancellation(&self) -> CancellationRequest {
-        let mut state = self.lock();
-        match &mut *state {
-            State::Pending {
-                cancellation_requested,
-                ..
-            } if *cancellation_requested => CancellationRequest::AlreadyRequested,
-            State::Pending {
-                cancellation_requested,
-                ..
-            } => {
-                *cancellation_requested = true;
-                CancellationRequest::Requested
-            }
-            State::Ready(_) | State::Consumed => CancellationRequest::Completed,
-        }
-    }
-
-    pub(super) fn is_cancellation_requested(&self) -> bool {
-        matches!(
-            &*self.lock(),
-            State::Pending {
-                cancellation_requested: true,
-                ..
-            }
-        )
-    }
-
     pub(super) fn abandon_receiver(&self) {
         let mut state = self.lock();
         let previous = mem::replace(&mut *state, State::Consumed);
         let discarded = match previous {
             State::Pending { .. } => {
                 *state = State::Pending {
-                    cancellation_requested: true,
                     receiver_alive: false,
                     waker: None,
                 };
@@ -220,7 +186,6 @@ impl<T> Clone for Shared<T> {
 
 enum State<T> {
     Pending {
-        cancellation_requested: bool,
         receiver_alive: bool,
         waker: Option<Waker>,
     },
