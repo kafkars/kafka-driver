@@ -20,6 +20,7 @@ license = "Apache-2.0"
 repository = "https://github.com/zsumz/kafka-driver"
 
 [workspace.dependencies]
+base64 = "0.22.1"
 bytes = "1.10"
 kafka-driver = { path = "." }
 kafka-driver-core = { path = "crates/kafka-driver-core" }
@@ -27,6 +28,7 @@ kafka-driver-sim = { path = "crates/kafka-driver-sim" }
 kafka-driver-transport = { path = "crates/kafka-driver-transport" }
 kafka-wire-core = { path = "../kafka-protocol/crates/kafka-wire-core" }
 mio = { version = "1.2", default-features = false, features = ["net", "os-poll"] }
+ring = "0.17.14"
 serde = { version = "1.0", features = ["derive"] }
 stringprep = "0.1.5"
 syn = { version = "2.0", features = ["full"] }
@@ -48,12 +50,14 @@ default = ["tls-rustls"]
 tls-rustls = ["dep:rustls"]
 
 [dependencies]
+base64.workspace = true
 bytes.workspace = true
 kafka-driver-core.workspace = true
 kafka-driver-transport.workspace = true
 kafka-wire = { path = "../kafka-protocol/crates/kafka-wire" }
 kafka-wire-core.workspace = true
 mio.workspace = true
+ring.workspace = true
 rustls = { version = "0.23.42", default-features = false, features = ["ring", "std"], optional = true }
 stringprep.workspace = true
 zeroize.workspace = true

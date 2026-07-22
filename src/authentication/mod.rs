@@ -5,6 +5,7 @@ mod exchange;
 mod handshake;
 mod pending;
 mod plain;
+mod scram;
 mod session;
 
 #[cfg(test)]
@@ -17,3 +18,4 @@ pub(crate) use pending::AuthenticationExchange;
 pub(crate) use session::AuthenticationSession;
 
 use plain::PlainSession;
+use scram::ScramSession;

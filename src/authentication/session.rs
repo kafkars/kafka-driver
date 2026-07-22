@@ -5,12 +5,13 @@ use zeroize::Zeroizing;
 
 use crate::SaslConfig;
 
-use super::PlainSession;
+use super::{PlainSession, ScramSession};
 
 /// Secret-owning mechanism session selected by public SASL configuration.
 #[derive(Debug)]
 pub(crate) enum AuthenticationSession {
     Plain(PlainSession),
+    Scram(ScramSession),
 }
 
 impl AuthenticationSession {
@@ -18,7 +19,7 @@ impl AuthenticationSession {
         match config.mechanism() {
             SaslMechanism::Plain => PlainSession::new(config).map(Self::Plain),
             SaslMechanism::ScramSha256 | SaslMechanism::ScramSha512 => {
-                Err(AuthenticationFailure::Protocol)
+                ScramSession::new(config).map(Self::Scram)
             }
         }
     }
@@ -29,12 +30,14 @@ impl AuthenticationSession {
     ) -> Result<Zeroizing<Vec<u8>>, AuthenticationFailure> {
         match self {
             Self::Plain(session) => session.next_message(max_bytes),
+            Self::Scram(session) => session.next_message(max_bytes),
         }
     }
 
     pub(crate) fn receive(&mut self, response: &[u8]) -> ExchangeOutcome {
         match self {
             Self::Plain(session) => session.receive(response),
+            Self::Scram(session) => session.receive(response),
         }
     }
 }
