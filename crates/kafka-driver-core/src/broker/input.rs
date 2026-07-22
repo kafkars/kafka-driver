@@ -1,6 +1,6 @@
 //! Data-only commands and connection outcomes accepted by broker policy.
 
-use crate::{ConnectionEpoch, Moment, TimerId};
+use crate::{AuthenticationFailure, ConnectionEpoch, Moment, TimerId};
 
 use super::JitterSample;
 
@@ -39,6 +39,13 @@ pub enum BrokerInput {
         epoch: ConnectionEpoch,
         /// External identities, time, and entropy for retry.
         reconnect: ReconnectSchedule,
+    },
+    /// Reports a permanent authentication rejection for the named generation.
+    ConnectionRejected {
+        /// Terminal connection generation.
+        epoch: ConnectionEpoch,
+        /// Sanitized authentication failure retained as terminal policy.
+        failure: AuthenticationFailure,
     },
     /// Reports that the connection closed under requested drain.
     ConnectionDrained {

@@ -1,6 +1,6 @@
 //! Valid long-lived broker states across replaceable connection generations.
 
-use crate::{ConnectionEpoch, Moment, TimerId};
+use crate::{AuthenticationFailure, ConnectionEpoch, Moment, TimerId};
 
 use super::RetryOrdinal;
 
@@ -32,6 +32,8 @@ pub enum BrokerCloseReason {
     RetryExhausted,
     /// The reconnect deadline exceeded driver-relative time.
     ClockOverflow,
+    /// Broker authentication failed permanently for this configuration.
+    AuthenticationFailed(AuthenticationFailure),
 }
 
 /// Immutable broker lifecycle snapshot containing only state-valid data.

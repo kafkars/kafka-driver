@@ -33,6 +33,9 @@ impl BrokerMachine {
             BrokerInput::ConnectionFailed { epoch, reconnect } => {
                 self.connection_failed(epoch, reconnect)
             }
+            BrokerInput::ConnectionRejected { epoch, failure } => {
+                self.connection_rejected(epoch, failure)
+            }
             BrokerInput::ConnectionDrained { epoch } => self.connection_drained(epoch),
             BrokerInput::ReconnectElapsed {
                 failed_epoch,
@@ -115,6 +118,23 @@ impl BrokerMachine {
             timer_id: reconnect.timer_id,
             at: deadline,
         }])
+    }
+
+    fn connection_rejected(
+        &mut self,
+        epoch: ConnectionEpoch,
+        failure: crate::AuthenticationFailure,
+    ) -> BrokerTransition {
+        let BrokerState::Connecting {
+            epoch: expected, ..
+        } = self.state
+        else {
+            return BrokerTransition::stale();
+        };
+        if epoch != expected {
+            return BrokerTransition::stale();
+        }
+        self.close(BrokerCloseReason::AuthenticationFailed(failure))
     }
 
     fn reconnect_elapsed(

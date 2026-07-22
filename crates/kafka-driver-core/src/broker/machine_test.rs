@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use crate::{ConnectionEpoch, Moment, TimerId};
+use crate::{AuthenticationFailure, ConnectionEpoch, Moment, TimerId};
 
 use super::{
     BackoffPolicy, BrokerCloseReason, BrokerDisposition, BrokerEffect, BrokerInput, BrokerMachine,
@@ -38,6 +38,27 @@ fn failed_initial_connection_schedules_a_bounded_fresh_epoch() {
             ..
         }
     ));
+}
+
+#[test]
+fn authentication_rejection_closes_without_authorizing_reconnect() {
+    // Given
+    let mut machine = connecting_machine();
+
+    // When
+    let transition = machine.apply(BrokerInput::ConnectionRejected {
+        epoch: EPOCH_1,
+        failure: AuthenticationFailure::Rejected,
+    });
+
+    // Then
+    assert!(transition.effects().is_empty());
+    assert_eq!(
+        machine.state(),
+        BrokerState::Closed {
+            reason: BrokerCloseReason::AuthenticationFailed(AuthenticationFailure::Rejected),
+        }
+    );
 }
 
 #[test]
