@@ -8,6 +8,7 @@ use kafka_wire::RequestResponsePair;
 use crate::{
     completion::completion_pair,
     config::{BootstrapConfig, BrokerConfig, DriverLimits, DriverTarget},
+    host::DriverHost,
     reactor::{Command, MailboxSender, Reactor, TrySendError},
     request::{erased_request, erased_request_in},
 };
@@ -96,7 +97,7 @@ impl Driver {
     }
 }
 
-/// Builder for one command handle and embedded reactor pair.
+/// Builder for one driver using either embedded or dedicated hosting.
 #[derive(Clone, Debug, Default)]
 pub struct DriverBuilder {
     limits: DriverLimits,
@@ -150,6 +151,13 @@ impl DriverBuilder {
         let (commands, reactor) = Reactor::new(self.limits, target, Arc::clone(&call_ids))
             .map_err(DriverBuildError::new)?;
         Ok((Driver { commands, call_ids }, reactor))
+    }
+
+    /// Builds a driver and starts its reactor on one dedicated thread.
+    pub fn spawn(self) -> Result<(Driver, DriverHost), DriverBuildError> {
+        let (driver, reactor) = self.build_reactor()?;
+        let host = DriverHost::spawn(reactor).map_err(DriverBuildError::new)?;
+        Ok((driver, host))
     }
 }
 

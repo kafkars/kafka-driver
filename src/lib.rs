@@ -8,6 +8,7 @@ mod authentication;
 mod completion;
 mod config;
 mod coordinator;
+mod host;
 mod metadata;
 mod negotiation;
 mod reactor;
@@ -24,6 +25,7 @@ pub use config::{
     CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits, SaslConfig, SaslConfigError,
     ScramProofLimits,
 };
+pub use host::{DriverHost, DriverHostError};
 pub use kafka_driver_core::{
     BootstrapError, BootstrapLimits, BootstrapSet, BrokerDirectoryLimits, BrokerEndpoint, CallId,
     CoordinatorKey, CoordinatorKeyError, CoordinatorKind, HostName, HostNameError, Moment,
