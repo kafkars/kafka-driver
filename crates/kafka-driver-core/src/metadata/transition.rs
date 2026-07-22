@@ -9,6 +9,10 @@ pub enum MetadataDisposition {
     Applied,
     /// Existing in-flight work now represents this additional demand.
     Coalesced,
+    /// A distinct query was admitted behind the in-flight refresh.
+    Queued,
+    /// The bounded distinct-query queue could not admit more work.
+    QueryCapacityReached,
     /// Returned work or invalidation belonged to an older identity or generation.
     IgnoredStale,
 }

@@ -3,7 +3,7 @@
 use std::num::NonZeroUsize;
 
 use kafka_driver_core::{
-    BrokerDirectoryLimits, BrokerId, LeaderEpoch, MetadataGeneration, PartitionId,
+    BrokerDirectoryLimits, BrokerId, LeaderEpoch, MetadataGeneration, MetadataQuery, PartitionId,
     PartitionLeaderLimits, PartitionLeaderSetError, TopicName,
 };
 use kafka_wire::{
@@ -134,6 +134,62 @@ fn rejected_topic_text_is_not_retained_by_diagnostics() {
     assert!(!format!("{error:?}").contains(&rejected));
 }
 
+#[test]
+fn topic_refresh_replaces_only_its_topic_and_cluster_refresh_clears_routes() {
+    let orders_response = response(
+        [broker(7), broker(9)],
+        [topic("orders", [partition(0, 7, 1)])],
+    );
+    let orders =
+        build(&orders_response, 2, 2, 2).unwrap_or_else(|error| panic!("orders metadata: {error}"));
+    let payments_response = response(
+        [broker(7), broker(9)],
+        [topic("payments", [partition(0, 9, 2)])],
+    );
+
+    let merged = snapshot_from_response(
+        &payments_response,
+        generation(4),
+        &MetadataQuery::Topic(topic_name("payments")),
+        Some(&orders),
+        BrokerDirectoryLimits::new(nonzero(2)),
+        PartitionLeaderLimits::new(nonzero(2), nonzero(2)),
+    )
+    .unwrap_or_else(|error| panic!("merged topic metadata: {error}"));
+    let cluster_response = response::<2, 0>([broker(7), broker(9)], []);
+    let cluster = snapshot_from_response(
+        &cluster_response,
+        generation(5),
+        &MetadataQuery::Cluster,
+        Some(&merged),
+        BrokerDirectoryLimits::new(nonzero(2)),
+        PartitionLeaderLimits::new(nonzero(2), nonzero(2)),
+    )
+    .unwrap_or_else(|error| panic!("cluster metadata: {error}"));
+
+    assert!(
+        merged
+            .partition_route(&topic_name("orders"), partition_id(0))
+            .is_some()
+    );
+    assert!(
+        merged
+            .partition_route(&topic_name("payments"), partition_id(0))
+            .is_some()
+    );
+    assert!(cluster.partition_leaders().is_empty());
+}
+
+#[test]
+fn single_topic_response_must_match_the_requested_topic() {
+    let response = response([broker(7)], [topic("payments", [partition(0, 7, 1)])]);
+
+    assert_eq!(
+        build(&response, 1, 1, 1),
+        Err(MetadataBuildError::RequestedTopicMismatch)
+    );
+}
+
 fn response<const B: usize, const T: usize>(
     brokers: [MetadataResponseBroker; B],
     topics: [MetadataResponseTopic; T],
@@ -181,6 +237,8 @@ fn build(
     snapshot_from_response(
         response,
         generation(3),
+        &MetadataQuery::Topic(topic_name("orders")),
+        None,
         BrokerDirectoryLimits::new(nonzero(max_brokers)),
         PartitionLeaderLimits::new(nonzero(max_topics), nonzero(max_partitions)),
     )

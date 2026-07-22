@@ -1,0 +1,101 @@
+//! Bounded query admission, duplicate coalescing, and route invalidation.
+
+use std::collections::VecDeque;
+
+use crate::{BrokerRoute, MetadataGeneration, MetadataQuery, MetadataSnapshot, OperationId};
+
+use super::{
+    MetadataMachine, MetadataState, MetadataTransition,
+    decision::{capacity_reached, coalesced, exhausted, fetch, query_queued, stale},
+};
+
+impl MetadataMachine {
+    pub(super) fn resolve(
+        &mut self,
+        query: MetadataQuery,
+        operation_id: OperationId,
+    ) -> MetadataTransition {
+        self.admit(query, operation_id, QueryRecency::CurrentMaySatisfy)
+    }
+
+    pub(super) fn refresh(
+        &mut self,
+        query: MetadataQuery,
+        operation_id: OperationId,
+    ) -> MetadataTransition {
+        self.admit(query, operation_id, QueryRecency::MustFollowCurrent)
+    }
+
+    fn admit(
+        &mut self,
+        query: MetadataQuery,
+        operation_id: OperationId,
+        recency: QueryRecency,
+    ) -> MetadataTransition {
+        if let MetadataState::Refreshing {
+            query: active,
+            queued,
+            ..
+        } = &mut self.state
+        {
+            let active_may_satisfy = active == &query && recency == QueryRecency::CurrentMaySatisfy;
+            if active_may_satisfy || queued.contains(&query) {
+                return coalesced();
+            }
+            if queued.len() >= self.query_limits.pending_queries().get() {
+                return capacity_reached();
+            }
+            queued.push_back(query);
+            return query_queued();
+        }
+        let (current, target_generation) = match &self.state {
+            MetadataState::Empty { next_generation } => (None, *next_generation),
+            MetadataState::Ready { snapshot } => {
+                let current = snapshot.clone();
+                let Some(next) = current.generation().next() else {
+                    return exhausted();
+                };
+                (Some(current), next)
+            }
+            MetadataState::Refreshing { .. } => unreachable!("refreshing state returned above"),
+        };
+        self.start(current, operation_id, target_generation, query)
+    }
+
+    pub(super) fn invalidate(
+        &mut self,
+        route: BrokerRoute,
+        operation_id: OperationId,
+    ) -> MetadataTransition {
+        let Some(current) = self.current() else {
+            return stale();
+        };
+        if route.generation() != current.generation() {
+            return stale();
+        }
+        self.refresh(MetadataQuery::Cluster, operation_id)
+    }
+
+    pub(super) fn start(
+        &mut self,
+        current: Option<MetadataSnapshot>,
+        operation_id: OperationId,
+        target_generation: MetadataGeneration,
+        query: MetadataQuery,
+    ) -> MetadataTransition {
+        self.state = MetadataState::Refreshing {
+            current,
+            operation_id,
+            query: query.clone(),
+            target_generation,
+            queued: VecDeque::with_capacity(self.query_limits.pending_queries().get().min(16)),
+        };
+        fetch(operation_id, target_generation, query)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum QueryRecency {
+    CurrentMaySatisfy,
+    MustFollowCurrent,
+}

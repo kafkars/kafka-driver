@@ -11,19 +11,30 @@ use kafka_wire::{
 
 use super::MetadataBuildError;
 
-pub(super) fn partition_leaders_from_response(
+pub(super) fn partition_leaders_for_topic(
     response: &MetadataResponse,
+    expected: &TopicName,
     limits: PartitionLeaderLimits,
 ) -> Result<PartitionLeaderSet, MetadataBuildError> {
     enforce_input_bounds(response, limits)?;
-    let leaders = response
-        .topics
-        .iter()
-        .filter(|topic| topic.error_code == 0)
-        .map(topic_leaders)
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten();
+    let [topic] = response.topics.as_slice() else {
+        return Err(MetadataBuildError::TopicResponseCount {
+            observed: response.topics.len(),
+        });
+    };
+    let name = topic
+        .name
+        .as_ref()
+        .ok_or(MetadataBuildError::TopicNameMissing)?;
+    let name = TopicName::new(name.as_str()).map_err(MetadataBuildError::TopicName)?;
+    if &name != expected {
+        return Err(MetadataBuildError::RequestedTopicMismatch);
+    }
+    let leaders = if topic.error_code == 0 {
+        topic_leaders(topic, &name)?
+    } else {
+        Vec::new()
+    };
     PartitionLeaderSet::try_from_iter(leaders, limits).map_err(MetadataBuildError::PartitionLeaders)
 }
 
@@ -57,12 +68,8 @@ fn enforce_input_bounds(
 
 fn topic_leaders(
     topic: &MetadataResponseTopic,
+    name: &TopicName,
 ) -> Result<Vec<PartitionLeader>, MetadataBuildError> {
-    let name = topic
-        .name
-        .as_ref()
-        .ok_or(MetadataBuildError::TopicNameMissing)?;
-    let name = TopicName::new(name.as_str()).map_err(MetadataBuildError::TopicName)?;
     let mut leaders = Vec::with_capacity(topic.partitions.len().min(16));
     for partition in topic
         .partitions

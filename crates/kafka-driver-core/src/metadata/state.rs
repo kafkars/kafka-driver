@@ -1,6 +1,8 @@
 //! States containing only cluster facts and refresh ownership valid together.
 
-use crate::{MetadataGeneration, MetadataSnapshot, OperationId};
+use std::collections::VecDeque;
+
+use crate::{MetadataGeneration, MetadataQuery, MetadataSnapshot, OperationId};
 
 /// Current immutable metadata and at most one in-flight refresh.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -16,10 +18,12 @@ pub enum MetadataState {
         current: Option<MetadataSnapshot>,
         /// Logical operation that owns the external fetch.
         operation_id: OperationId,
+        /// Exact facts owned by the in-flight fetch.
+        query: MetadataQuery,
         /// Generation reserved for a successful response.
         target_generation: MetadataGeneration,
-        /// Whether additional refresh demand arrived while this fetch was pending.
-        refresh_again: bool,
+        /// Distinct follow-up queries in first-demand order.
+        queued: VecDeque<MetadataQuery>,
     },
     /// One coherent immutable generation is authoritative.
     Ready {

@@ -3,7 +3,7 @@
 use std::num::NonZeroUsize;
 
 use kafka_driver_core::{
-    BrokerDirectoryError, BrokerDirectoryLimits, BrokerId, MetadataGeneration,
+    BrokerDirectoryError, BrokerDirectoryLimits, BrokerId, MetadataGeneration, MetadataQuery,
     MetadataSnapshotError,
 };
 use kafka_wire::{MetadataResponse, metadata_response::MetadataResponseBroker};
@@ -177,6 +177,8 @@ fn build(
     snapshot_from_response(
         response,
         generation(raw_generation),
+        &MetadataQuery::Cluster,
+        None,
         BrokerDirectoryLimits::new(limit),
         kafka_driver_core::PartitionLeaderLimits::default(),
     )

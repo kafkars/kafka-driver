@@ -2,7 +2,7 @@
 
 use std::{num::NonZeroUsize, time::Duration};
 
-use kafka_driver_core::{BrokerDirectoryLimits, PartitionLeaderLimits};
+use kafka_driver_core::{BrokerDirectoryLimits, MetadataQueryLimits, PartitionLeaderLimits};
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_WAITING_CALLS: NonZeroUsize = nonzero(256);
@@ -15,6 +15,7 @@ const DEFAULT_ADMISSION_BUDGET: NonZeroUsize = nonzero(64);
 pub struct MetadataLimits {
     broker_directory: BrokerDirectoryLimits,
     partition_leaders: PartitionLeaderLimits,
+    queries: MetadataQueryLimits,
     request_timeout: Duration,
     waiting_calls: NonZeroUsize,
     waiting_bytes: NonZeroUsize,
@@ -27,6 +28,7 @@ impl MetadataLimits {
         Self {
             broker_directory,
             partition_leaders: PartitionLeaderLimits::defaults(),
+            queries: MetadataQueryLimits::defaults(),
             request_timeout,
             waiting_calls: DEFAULT_WAITING_CALLS,
             waiting_bytes: DEFAULT_WAITING_BYTES,
@@ -40,6 +42,12 @@ impl MetadataLimits {
         partition_leaders: PartitionLeaderLimits,
     ) -> Self {
         self.partition_leaders = partition_leaders;
+        self
+    }
+
+    /// Replaces the bound on distinct Metadata queries waiting behind one RPC.
+    pub const fn with_query_limits(mut self, queries: MetadataQueryLimits) -> Self {
+        self.queries = queries;
         self
     }
 
@@ -64,6 +72,11 @@ impl MetadataLimits {
     /// Returns maximum topic and known partition-leader retention per generation.
     pub const fn partition_leaders(self) -> PartitionLeaderLimits {
         self.partition_leaders
+    }
+
+    /// Returns the distinct Metadata follow-up query bound.
+    pub const fn queries(self) -> MetadataQueryLimits {
+        self.queries
     }
 
     /// Returns the maximum wait assigned to one generated Metadata RPC.

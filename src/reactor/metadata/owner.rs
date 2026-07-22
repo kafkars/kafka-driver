@@ -2,9 +2,10 @@
 
 use kafka_driver_core::{
     ConnectionPhase, MetadataEffect, MetadataGeneration, MetadataInput, MetadataMachine,
-    MetadataTransition, Moment, OperationId,
+    MetadataQuery, MetadataTransition, Moment, OperationId,
 };
-use kafka_wire::{MetadataRequest, MetadataResponse};
+use kafka_wire::{MetadataRequest, MetadataResponse, metadata_request::MetadataRequestTopic};
+use kafka_wire_core::StrBytes;
 
 use crate::{
     Call, MetadataLimits, RequestError,
@@ -29,7 +30,10 @@ pub(in crate::reactor) struct MetadataOwner {
 impl MetadataOwner {
     pub(in crate::reactor) const fn new(limits: MetadataLimits) -> Self {
         Self {
-            machine: MetadataMachine::new(MetadataGeneration::from_raw(1)),
+            machine: MetadataMachine::with_query_limits(
+                MetadataGeneration::from_raw(1),
+                limits.queries(),
+            ),
             limits,
             operation_ids: MetadataOperationIds::new(),
             pending: None,
@@ -52,7 +56,10 @@ impl MetadataOwner {
         if self.initial_refresh && broker.state().phase() == ConnectionPhase::Ready {
             self.initial_refresh = false;
             let operation_id = self.reserve_operation()?;
-            let transition = self.machine.apply(MetadataInput::Refresh { operation_id });
+            let transition = self.machine.apply(MetadataInput::Refresh {
+                query: MetadataQuery::Cluster,
+                operation_id,
+            });
             progress |= self.interpret(transition, broker, poller, now, call_ids)?;
         }
         Ok(progress)
@@ -77,9 +84,7 @@ impl MetadataOwner {
         };
         let input = match result {
             Ok(Ok(response)) => self.success_input(&pending, &response)?,
-            Ok(Err(_)) | Err(_) => MetadataInput::RefreshFailed {
-                operation_id: pending.operation_id,
-            },
+            Ok(Err(_)) | Err(_) => self.failure_input(pending.operation_id)?,
         };
         let transition = self.machine.apply(input);
         self.interpret(transition, broker, poller, now, call_ids)?;
@@ -94,16 +99,29 @@ impl MetadataOwner {
         let Ok(snapshot) = snapshot_from_response(
             response,
             pending.generation,
+            &pending.query,
+            self.machine.current(),
             self.limits.broker_directory(),
             self.limits.partition_leaders(),
         ) else {
             return Ok(MetadataInput::RefreshFailed {
                 operation_id: pending.operation_id,
+                followup_operation_id: self.reserve_operation()?,
             });
         };
         Ok(MetadataInput::RefreshSucceeded {
             operation_id: pending.operation_id,
             snapshot,
+            followup_operation_id: self.reserve_operation()?,
+        })
+    }
+
+    fn failure_input(
+        &mut self,
+        operation_id: OperationId,
+    ) -> Result<MetadataInput, MetadataOwnerError> {
+        Ok(MetadataInput::RefreshFailed {
+            operation_id,
             followup_operation_id: self.reserve_operation()?,
         })
     }
@@ -122,8 +140,19 @@ impl MetadataOwner {
                 MetadataEffect::Fetch {
                     operation_id,
                     generation,
+                    query,
                 } => {
-                    self.submit(operation_id, generation, broker, poller, now, call_ids)?;
+                    self.submit(
+                        MetadataFetch {
+                            operation_id,
+                            generation,
+                            query,
+                        },
+                        broker,
+                        poller,
+                        now,
+                        call_ids,
+                    )?;
                     progress = true;
                 }
                 MetadataEffect::GenerationExhausted => {
@@ -136,8 +165,7 @@ impl MetadataOwner {
 
     fn submit(
         &mut self,
-        operation_id: OperationId,
-        generation: MetadataGeneration,
+        fetch: MetadataFetch,
         broker: &mut SingleBroker,
         poller: &Poller,
         now: Moment,
@@ -151,15 +179,16 @@ impl MetadataOwner {
             .ok_or(MetadataOwnerError::CallIdentityExhausted)?;
         let (call, request) = erased_request(
             call_id,
-            broker_metadata_request(),
+            metadata_request(&fetch.query),
             self.limits.request_timeout(),
         );
         broker
             .submit(poller, request, now)
             .map_err(MetadataOwnerError::Broker)?;
         self.pending = Some(PendingMetadata {
-            operation_id,
-            generation,
+            operation_id: fetch.operation_id,
+            generation: fetch.generation,
+            query: fetch.query,
             call,
         });
         Ok(())
@@ -172,13 +201,30 @@ impl MetadataOwner {
     }
 }
 
+struct MetadataFetch {
+    operation_id: OperationId,
+    generation: MetadataGeneration,
+    query: MetadataQuery,
+}
+
 #[derive(Debug)]
 struct PendingMetadata {
     operation_id: OperationId,
     generation: MetadataGeneration,
+    query: MetadataQuery,
     call: Call<Result<MetadataResponse, RequestError>>,
 }
 
-pub(super) fn broker_metadata_request() -> MetadataRequest {
-    MetadataRequest::default()
+pub(super) fn metadata_request(query: &MetadataQuery) -> MetadataRequest {
+    let mut request = MetadataRequest::default();
+    request.topics = match query {
+        MetadataQuery::Cluster => Some(Vec::new()),
+        MetadataQuery::Topic(topic) => {
+            request.allow_auto_topic_creation = false;
+            let mut requested = MetadataRequestTopic::default();
+            requested.name = Some(StrBytes::from(topic.as_str()));
+            Some(vec![requested])
+        }
+    };
+    request
 }

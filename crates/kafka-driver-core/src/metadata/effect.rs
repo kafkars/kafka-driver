@@ -1,9 +1,9 @@
 //! External refresh work and terminal generation exhaustion from metadata policy.
 
-use crate::{MetadataGeneration, OperationId};
+use crate::{MetadataGeneration, MetadataQuery, OperationId};
 
 /// One ordered action emitted by a metadata transition.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MetadataEffect {
     /// Requests one generated Metadata RPC for a reserved generation.
     Fetch {
@@ -11,6 +11,8 @@ pub enum MetadataEffect {
         operation_id: OperationId,
         /// Generation assigned only if this fetch succeeds coherently.
         generation: MetadataGeneration,
+        /// Exact cluster or topic facts requested by this fetch.
+        query: MetadataQuery,
     },
     /// Reports that no later immutable generation can be represented.
     GenerationExhausted,

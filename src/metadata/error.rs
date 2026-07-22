@@ -25,6 +25,9 @@ pub(crate) enum MetadataBuildError {
         observed: usize,
         limit: usize,
     },
+    TopicResponseCount {
+        observed: usize,
+    },
     BrokerId(BrokerIdError),
     BrokerHost {
         broker_id: BrokerId,
@@ -37,6 +40,7 @@ pub(crate) enum MetadataBuildError {
     Directory(BrokerDirectoryError),
     ControllerId(BrokerIdError),
     TopicNameMissing,
+    RequestedTopicMismatch,
     TopicName(TopicNameError),
     PartitionId(PartitionIdError),
     LeaderId {
@@ -72,6 +76,10 @@ impl fmt::Display for MetadataBuildError {
                 formatter,
                 "Metadata response advertises {observed} partitions, limit is {limit}"
             ),
+            Self::TopicResponseCount { observed } => write!(
+                formatter,
+                "single-topic Metadata response contains {observed} topics"
+            ),
             Self::BrokerId(source) => write!(formatter, "invalid metadata broker: {source}"),
             Self::BrokerHost { broker_id, source } => write!(
                 formatter,
@@ -88,6 +96,9 @@ impl fmt::Display for MetadataBuildError {
                 write!(formatter, "invalid metadata controller: {source}")
             }
             Self::TopicNameMissing => formatter.write_str("successful metadata topic has no name"),
+            Self::RequestedTopicMismatch => {
+                formatter.write_str("Metadata response does not match the requested topic")
+            }
             Self::TopicName(source) => write!(formatter, "invalid metadata topic name: {source}"),
             Self::PartitionId(source) => {
                 write!(formatter, "invalid metadata partition: {source}")
@@ -127,8 +138,10 @@ impl Error for MetadataBuildError {
             | Self::BrokerCapacity { .. }
             | Self::TopicCapacity { .. }
             | Self::PartitionCapacity { .. }
+            | Self::TopicResponseCount { .. }
             | Self::BrokerPort { .. }
-            | Self::TopicNameMissing => None,
+            | Self::TopicNameMissing
+            | Self::RequestedTopicMismatch => None,
         }
     }
 }

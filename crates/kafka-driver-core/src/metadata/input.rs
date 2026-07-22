@@ -1,12 +1,21 @@
 //! Refresh demand, route invalidation, and identity-fenced Metadata RPC outcomes.
 
-use crate::{BrokerRoute, MetadataSnapshot, OperationId};
+use crate::{BrokerRoute, MetadataQuery, MetadataSnapshot, OperationId};
 
 /// One owner command or generated Metadata RPC result applied to metadata policy.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MetadataInput {
-    /// Requests fresh cluster facts, coalescing with any current refresh.
+    /// Requests facts that an identical in-flight or queued query may satisfy.
+    Resolve {
+        /// Exact cluster or topic facts required by the caller.
+        query: MetadataQuery,
+        /// Reserved logical operation identity used only if a fetch starts.
+        operation_id: OperationId,
+    },
+    /// Requires a query newer than an identical fetch already in flight.
     Refresh {
+        /// Exact cluster or topic facts that must be refreshed.
+        query: MetadataQuery,
         /// Reserved logical operation identity used only if a fetch starts.
         operation_id: OperationId,
     },
@@ -30,5 +39,7 @@ pub enum MetadataInput {
     RefreshFailed {
         /// Failed refresh operation identity.
         operation_id: OperationId,
+        /// Identity reserved if another queued query can start immediately.
+        followup_operation_id: OperationId,
     },
 }
