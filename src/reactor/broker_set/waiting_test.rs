@@ -47,17 +47,20 @@ fn exact_byte_capacity_is_admitted_and_one_more_byte_is_rejected() {
 }
 
 #[test]
-fn time_spent_waiting_is_removed_from_the_connection_timeout() {
+fn absolute_deadline_survives_time_spent_in_the_wait_queue() {
     let (call, request) = request(1, Duration::from_nanos(10));
     let bytes = request.retained_bytes();
     let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes), nonzero(1));
     assert!(waiting.admit(request, Moment::from_nanos(100)));
 
-    let WaitingCallOutcome::Ready(request) = waiting.pop(Moment::from_nanos(104)) else {
+    let WaitingCallOutcome::Ready(mut request) = waiting.pop(Moment::from_nanos(104)) else {
         panic!("unexpired call must leave the queue");
     };
 
-    assert_eq!(request.timeout(), Duration::from_nanos(6));
+    assert_eq!(
+        request.establish_deadline(Moment::from_nanos(999)),
+        Ok(Moment::from_nanos(110))
+    );
     drop(call);
 }
 

@@ -10,6 +10,10 @@ mod resolution_error;
 mod routing;
 mod scram_proof;
 mod state;
+mod submission;
+
+#[cfg(test)]
+mod submission_test;
 
 use std::{sync::Arc, time::Duration};
 

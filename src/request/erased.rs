@@ -1,8 +1,6 @@
 //! Object-safe request preparation consumed only by the reactor owner.
 
-use std::time::Duration;
-
-use kafka_driver_core::{CallId, CorrelationId};
+use kafka_driver_core::{CallId, CorrelationId, Moment};
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::{ApiKey, ApiVersion, Bytes};
 
@@ -19,11 +17,8 @@ pub(crate) trait ErasedRequest: Send {
     /// Returns the semantic connection lane that must own this call.
     fn traffic_class(&self) -> TrafficClass;
 
-    /// Returns the relative timeout to map onto the reactor clock at admission.
-    fn timeout(&self) -> Duration;
-
-    /// Replaces the remaining timeout after time spent in a route wait queue.
-    fn set_timeout(&mut self, timeout: Duration);
+    /// Establishes the absolute deadline once, or returns the existing deadline.
+    fn establish_deadline(&mut self, start: Moment) -> Result<Moment, RequestError>;
 
     /// Returns an encoded-work estimate used by bounded waiting queues.
     fn retained_bytes(&self) -> usize;

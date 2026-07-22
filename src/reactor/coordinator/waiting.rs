@@ -45,11 +45,18 @@ impl CoordinatorWaiters {
     }
 
     pub(super) fn admit(&mut self, waiting: CoordinatorWait, now: Moment) -> bool {
-        let CoordinatorWait { key, request } = waiting;
-        let Some(deadline) = now.checked_add(request.timeout()) else {
-            request.fail(RequestError::DeadlineOverflow);
-            return false;
+        let CoordinatorWait { key, mut request } = waiting;
+        let deadline = match request.establish_deadline(now) {
+            Ok(deadline) => deadline,
+            Err(failure) => {
+                request.fail(failure);
+                return false;
+            }
         };
+        if deadline <= now {
+            request.fail(deadline_exceeded());
+            return false;
+        }
         let bytes = request.retained_bytes();
         let Some(total) = self.retained_bytes.checked_add(bytes) else {
             self.reject_capacity(request);
@@ -100,7 +107,7 @@ impl CoordinatorWaiters {
             waiting.request.fail(deadline_exceeded());
             return WaitingCoordinatorOutcome::Settled;
         }
-        WaitingCoordinatorOutcome::Ready { waiting, remaining }
+        WaitingCoordinatorOutcome::Ready(waiting)
     }
 
     pub(super) fn retain(&mut self, waiting: WaitingCoordinatorCall) {
@@ -141,10 +148,7 @@ impl CoordinatorWaiters {
 pub(super) enum WaitingCoordinatorOutcome {
     Empty,
     Settled,
-    Ready {
-        waiting: WaitingCoordinatorCall,
-        remaining: std::time::Duration,
-    },
+    Ready(WaitingCoordinatorCall),
 }
 
 pub(super) struct WaitingCoordinatorCall {

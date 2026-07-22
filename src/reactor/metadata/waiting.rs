@@ -32,13 +32,20 @@ impl PartitionWaiters {
         &mut self,
         topic: TopicName,
         partition: PartitionId,
-        request: Box<dyn ErasedRequest>,
+        mut request: Box<dyn ErasedRequest>,
         now: Moment,
     ) -> bool {
-        let Some(deadline) = now.checked_add(request.timeout()) else {
-            request.fail(RequestError::DeadlineOverflow);
-            return false;
+        let deadline = match request.establish_deadline(now) {
+            Ok(deadline) => deadline,
+            Err(failure) => {
+                request.fail(failure);
+                return false;
+            }
         };
+        if deadline <= now {
+            request.fail(deadline_exceeded());
+            return false;
+        }
         let bytes = request.retained_bytes();
         let Some(retained_bytes) = self.retained_bytes.checked_add(bytes) else {
             self.reject_capacity(request);
@@ -82,7 +89,7 @@ impl PartitionWaiters {
         let examined = self.scan_remaining.min(budget.get());
         progress.examined = examined;
         for _ in 0..examined {
-            let Some(mut waiting) = self.calls.pop_front() else {
+            let Some(waiting) = self.calls.pop_front() else {
                 self.scan_remaining = 0;
                 break;
             };
@@ -103,7 +110,6 @@ impl PartitionWaiters {
                 .current()
                 .and_then(|snapshot| snapshot.partition_route(topic, waiting.partition))
             {
-                waiting.request.set_timeout(remaining);
                 progress.routed.push(RoutedPartitionCall {
                     route,
                     request: waiting.request,

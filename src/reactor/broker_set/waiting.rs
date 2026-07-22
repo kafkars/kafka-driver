@@ -29,11 +29,18 @@ impl WaitingCalls {
         }
     }
 
-    pub(super) fn admit(&mut self, request: Box<dyn ErasedRequest>, now: Moment) -> bool {
-        let Some(deadline) = now.checked_add(request.timeout()) else {
-            request.fail(RequestError::DeadlineOverflow);
-            return false;
+    pub(super) fn admit(&mut self, mut request: Box<dyn ErasedRequest>, now: Moment) -> bool {
+        let deadline = match request.establish_deadline(now) {
+            Ok(deadline) => deadline,
+            Err(failure) => {
+                request.fail(failure);
+                return false;
+            }
         };
+        if deadline <= now {
+            request.fail(deadline_exceeded());
+            return false;
+        }
         let bytes = request.retained_bytes();
         let Some(retained_bytes) = self.retained_bytes.checked_add(bytes) else {
             self.reject_capacity(request);
@@ -53,7 +60,7 @@ impl WaitingCalls {
     }
 
     pub(super) fn pop(&mut self, now: Moment) -> WaitingCallOutcome {
-        let Some(mut waiting) = self.calls.pop_front() else {
+        let Some(waiting) = self.calls.pop_front() else {
             return WaitingCallOutcome::Empty;
         };
         self.retained_bytes -= waiting.bytes;
@@ -65,7 +72,6 @@ impl WaitingCalls {
             waiting.request.fail(deadline_exceeded());
             return WaitingCallOutcome::Settled;
         }
-        waiting.request.set_timeout(remaining);
         WaitingCallOutcome::Ready(waiting.request)
     }
 

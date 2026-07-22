@@ -16,9 +16,12 @@ impl Reactor {
             for command in commands.drain(..) {
                 processed += 1;
                 match command {
-                    Command::Submit { route, request } if self.state == HostState::Running => {
-                        let now = self.clock.now().map_err(ReactorError::clock)?;
-                        self.submit_request(route, request, now)?;
+                    Command::Submit {
+                        route,
+                        request,
+                        submitted_at,
+                    } if self.state == HostState::Running => {
+                        self.process_submission(route, request, submitted_at)?;
                     }
                     Command::Submit { request, .. } => request.fail(draining()),
                     Command::Shutdown { completion } => {

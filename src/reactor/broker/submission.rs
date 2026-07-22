@@ -17,7 +17,7 @@ impl SingleBroker {
     pub(in crate::reactor) fn submit(
         &mut self,
         poller: &Poller,
-        request: Box<dyn ErasedRequest>,
+        mut request: Box<dyn ErasedRequest>,
         now: Moment,
     ) -> Result<(), BrokerError> {
         let call_id = request.call_id();
@@ -27,9 +27,12 @@ impl SingleBroker {
             request.fail(RequestError::ApiUnavailable { api_key });
             return Ok(());
         }
-        let Some(deadline) = now.checked_add(request.timeout()) else {
-            request.fail(RequestError::DeadlineOverflow);
-            return Ok(());
+        let deadline = match request.establish_deadline(now) {
+            Ok(deadline) => deadline,
+            Err(failure) => {
+                request.fail(failure);
+                return Ok(());
+            }
         };
         let Some(ids) = self.ids.reserve_submission() else {
             request.fail(RequestError::IdentityConflict);

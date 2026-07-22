@@ -20,13 +20,9 @@ impl CoordinatorOwner {
                     progress.examined += 1;
                     progress.settled += 1;
                 }
-                WaitingCoordinatorOutcome::Ready {
-                    mut waiting,
-                    remaining,
-                } => {
+                WaitingCoordinatorOutcome::Ready(waiting) => {
                     progress.examined += 1;
                     if let Some(route) = self.current(&waiting.key).cloned() {
-                        waiting.request.set_timeout(remaining);
                         progress.routed.push(RoutedCoordinatorCall {
                             route,
                             request: waiting.request,

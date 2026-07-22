@@ -1,6 +1,11 @@
 //! Public construction, admission, and shutdown handle for one driver reactor.
 
-use std::{fmt, io, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    fmt, io,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use kafka_driver_core::BootstrapSet;
 use kafka_wire::RequestResponsePair;
@@ -38,6 +43,9 @@ impl Driver {
     }
 
     /// Submits one generated request using that connection's negotiated version.
+    ///
+    /// For an accepted command, `timeout` starts immediately before bounded
+    /// mailbox admission and includes every later routing and connection wait.
     pub fn call<R>(
         &self,
         request: R,
@@ -51,6 +59,9 @@ impl Driver {
     }
 
     /// Submits one generated request through a semantic cluster route.
+    ///
+    /// For an accepted command, `timeout` includes mailbox residence, route
+    /// discovery, DNS, reconnect backoff, write progress, and response wait.
     pub fn request<R>(
         &self,
         route: Route,
@@ -65,8 +76,13 @@ impl Driver {
             return Err(SubmitError::IdentityExhausted);
         };
         let (call, request) = erased_request(call_id, request, timeout);
+        let submitted_at = Instant::now();
         self.commands
-            .try_send(Command::Submit { route, request })
+            .try_send(Command::Submit {
+                route,
+                request,
+                submitted_at,
+            })
             .map_err(SubmitError::from)?;
         Ok(call)
     }
@@ -75,6 +91,7 @@ impl Driver {
     ///
     /// Discovered-broker routes lazily own a physical connection per class. The
     /// bootstrap-oriented [`Route::AnyBroker`] path continues to use its seed.
+    /// The timeout uses the same end-to-end admission semantics as [`Self::request`].
     pub fn request_in<R>(
         &self,
         traffic_class: TrafficClass,
@@ -90,8 +107,13 @@ impl Driver {
             return Err(SubmitError::IdentityExhausted);
         };
         let (call, request) = erased_request_in(call_id, traffic_class, request, timeout);
+        let submitted_at = Instant::now();
         self.commands
-            .try_send(Command::Submit { route, request })
+            .try_send(Command::Submit {
+                route,
+                request,
+                submitted_at,
+            })
             .map_err(SubmitError::from)?;
         Ok(call)
     }

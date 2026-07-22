@@ -10,6 +10,7 @@ use kafka_wire_core::{ApiVersion, Bytes};
 use crate::{
     Call, RequestError, TrafficClass,
     completion::{CompletionSender, completion_pair},
+    request::RequestDeadline,
     response::{ResponseAdmissionError, ResponseRegistry},
 };
 
@@ -45,7 +46,7 @@ where
         call_id,
         traffic_class,
         request,
-        timeout,
+        deadline: RequestDeadline::new(timeout),
         retained_bytes,
         completion,
     };
@@ -59,7 +60,7 @@ where
     call_id: CallId,
     traffic_class: TrafficClass,
     request: R,
-    timeout: Duration,
+    deadline: RequestDeadline,
     retained_bytes: usize,
     completion: CompletionSender<Result<R::Response, RequestError>>,
 }
@@ -81,12 +82,11 @@ where
         self.traffic_class
     }
 
-    fn timeout(&self) -> Duration {
-        self.timeout
-    }
-
-    fn set_timeout(&mut self, timeout: Duration) {
-        self.timeout = timeout;
+    fn establish_deadline(
+        &mut self,
+        start: kafka_driver_core::Moment,
+    ) -> Result<kafka_driver_core::Moment, RequestError> {
+        self.deadline.establish(start)
     }
 
     fn retained_bytes(&self) -> usize {

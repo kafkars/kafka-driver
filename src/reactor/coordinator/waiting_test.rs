@@ -33,7 +33,7 @@ fn exact_wait_capacity_is_admitted_and_one_more_call_is_rejected() {
 }
 
 #[test]
-fn ready_waiter_reports_only_its_remaining_time() {
+fn ready_waiter_preserves_its_original_absolute_deadline() {
     let (call, request) = request(1, Duration::from_nanos(10));
     let bytes = request.retained_bytes();
     let mut waiters = CoordinatorWaiters::new(nonzero(1), nonzero(bytes));
@@ -43,14 +43,15 @@ fn ready_waiter_reports_only_its_remaining_time() {
     ));
 
     waiters.begin_scan();
-    let WaitingCoordinatorOutcome::Ready { waiting, remaining } =
-        waiters.pop(Moment::from_nanos(104))
-    else {
+    let WaitingCoordinatorOutcome::Ready(mut waiting) = waiters.pop(Moment::from_nanos(104)) else {
         panic!("admitted waiter was not ready for route inspection");
     };
 
     assert_eq!(waiting.key, key("orders"));
-    assert_eq!(remaining, Duration::from_nanos(6));
+    assert_eq!(
+        waiting.request.establish_deadline(Moment::from_nanos(999)),
+        Ok(Moment::from_nanos(110))
+    );
     drop(waiting);
     drop(call);
 }

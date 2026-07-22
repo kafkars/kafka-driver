@@ -35,7 +35,7 @@ fn exact_wait_capacity_is_admitted_and_one_more_call_is_rejected() {
 }
 
 #[test]
-fn completed_topic_query_routes_the_waiter_and_removes_elapsed_time() {
+fn completed_topic_query_routes_the_waiter_without_restarting_its_deadline() {
     let requested_topic = topic("orders");
     let requested_partition = partition(3);
     let query = MetadataQuery::Topic(requested_topic.clone());
@@ -64,7 +64,11 @@ fn completed_topic_query_routes_the_waiter_and_removes_elapsed_time() {
         .unwrap_or_else(|| panic!("leader route missing"));
 
     assert_eq!(routed.route().broker_route().broker_id(), broker(1));
-    assert_eq!(routed.into_request().timeout(), Duration::from_nanos(6));
+    let mut request = routed.into_request();
+    assert_eq!(
+        request.establish_deadline(Moment::from_nanos(999)),
+        Ok(Moment::from_nanos(110))
+    );
     drop(call);
 }
 
