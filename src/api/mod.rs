@@ -3,6 +3,7 @@
 mod build;
 mod call;
 mod driver;
+mod identity;
 mod protocol;
 mod traffic;
 

@@ -1,14 +1,9 @@
 //! Administrative commands admitted through the bounded driver mailbox.
 
 use crate::completion::CompletionSender;
+use crate::request::ErasedRequest;
 
 pub(crate) enum Command {
+    Submit { request: Box<dyn ErasedRequest> },
     Shutdown { completion: CompletionSender<()> },
-}
-
-impl Command {
-    pub(crate) fn complete_shutdown(self) {
-        let Self::Shutdown { completion } = self;
-        let _ = completion.complete(());
-    }
 }

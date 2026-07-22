@@ -2,7 +2,9 @@
 
 use std::time::Duration;
 
-use crate::config::DriverLimits;
+use kafka_driver_core::{CallFailure, Delivery};
+
+use crate::{RequestError, config::DriverLimits};
 
 use super::{
     Command, MailboxSender, PollEvent, Poller, ReactorError, WakeHandle, mailbox,
@@ -81,9 +83,17 @@ impl Reactor {
 
         let mut processed = 0;
         for command in self.command_batch.drain(..) {
-            command.complete_shutdown();
             processed += 1;
-            self.shutdown = true;
+            match command {
+                Command::Submit { request } => request.fail(RequestError::Rejected {
+                    failure: CallFailure::NotReady,
+                    delivery: Delivery::NotSent,
+                }),
+                Command::Shutdown { completion } => {
+                    let _ = completion.complete(());
+                    self.shutdown = true;
+                }
+            }
         }
         if self.shutdown {
             drop(self.commands.close());

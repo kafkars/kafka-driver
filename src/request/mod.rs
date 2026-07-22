@@ -7,3 +7,4 @@ mod typed;
 mod typed_test;
 
 pub(crate) use erased::ErasedRequest;
+pub(crate) use typed::erased_request;

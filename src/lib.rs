@@ -24,4 +24,5 @@ pub use api::{
 };
 pub use config::DriverLimits;
 pub use kafka_driver_core::{CallId, Moment};
+pub use kafka_wire_core::ApiVersion;
 pub use reactor::{Reactor, ReactorError, TurnOutcome, WakeHandle};

@@ -2,7 +2,11 @@
 
 use std::{num::NonZeroUsize, thread, time::Duration};
 
-use kafka_driver::{Driver, DriverLimits, Reactor, SubmitError, TurnOutcome};
+use kafka_driver::{
+    ApiVersion, Delivery, Driver, DriverLimits, Reactor, RequestError, SubmitError, TurnOutcome,
+};
+use kafka_driver_core::CallFailure;
+use kafka_wire::ApiVersionsRequest;
 
 #[test]
 fn embedded_shutdown_completes_once_and_closes_admission() {
@@ -80,6 +84,38 @@ fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
         owner.join(),
         Ok(Ok(TurnOutcome::Shutdown { commands: 0 }))
     ));
+}
+
+#[test]
+fn generated_call_before_broker_configuration_is_not_sent_or_left_pending() {
+    let (driver, mut reactor) = build_reactor(DriverLimits::default());
+    let call = driver.call(
+        ApiVersionsRequest::default(),
+        ApiVersion::new(0),
+        Duration::from_secs(1),
+    );
+    let Ok(call) = call else {
+        panic!("request command must enter the mailbox");
+    };
+
+    let Ok(outcome) = reactor.turn(Duration::ZERO) else {
+        panic!("reactor turn must succeed");
+    };
+
+    assert_eq!(
+        outcome,
+        TurnOutcome::Progress {
+            commands: 1,
+            more_work: false,
+        }
+    );
+    assert_eq!(
+        call.wait(),
+        Ok(Err(RequestError::Rejected {
+            failure: CallFailure::NotReady,
+            delivery: Delivery::NotSent,
+        }))
+    );
 }
 
 fn build_reactor(limits: DriverLimits) -> (Driver, Reactor) {

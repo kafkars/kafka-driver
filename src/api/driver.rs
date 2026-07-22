@@ -1,19 +1,24 @@
 //! Public construction, admission, and shutdown handle for one driver reactor.
 
-use std::{fmt, io};
+use std::{fmt, io, sync::Arc, time::Duration};
+
+use kafka_wire::RequestResponsePair;
+use kafka_wire_core::ApiVersion;
 
 use crate::{
     completion::completion_pair,
     config::DriverLimits,
     reactor::{Command, MailboxSender, Reactor, TrySendError},
+    request::erased_request,
 };
 
-use super::{Call, DriverBuildError};
+use super::{Call, DriverBuildError, RequestError, identity::CallIds};
 
 /// Cloneable command-admission handle for one driver reactor.
 #[derive(Clone, Debug)]
 pub struct Driver {
     commands: MailboxSender<Command>,
+    call_ids: Arc<CallIds>,
 }
 
 impl Driver {
@@ -28,6 +33,27 @@ impl Driver {
         let call = Call::new(completion);
         let command = Command::Shutdown { completion: sender };
         self.commands.try_send(command).map_err(SubmitError::from)?;
+        Ok(call)
+    }
+
+    /// Submits one generated request to the configured broker connection.
+    pub fn call<R>(
+        &self,
+        request: R,
+        version: ApiVersion,
+        timeout: Duration,
+    ) -> Result<Call<Result<R::Response, RequestError>>, SubmitError>
+    where
+        R: RequestResponsePair + Send + 'static,
+        R::Response: Send + 'static,
+    {
+        let Some(call_id) = self.call_ids.allocate() else {
+            return Err(SubmitError::IdentityExhausted);
+        };
+        let (call, request) = erased_request(call_id, request, version, timeout);
+        self.commands
+            .try_send(Command::Submit { request })
+            .map_err(SubmitError::from)?;
         Ok(call)
     }
 }
@@ -49,7 +75,13 @@ impl DriverBuilder {
     /// Builds a driver handle and an embedded, caller-driven reactor.
     pub fn build_reactor(self) -> Result<(Driver, Reactor), DriverBuildError> {
         let (commands, reactor) = Reactor::new(self.limits).map_err(DriverBuildError::new)?;
-        Ok((Driver { commands }, reactor))
+        Ok((
+            Driver {
+                commands,
+                call_ids: Arc::new(CallIds::new()),
+            },
+            reactor,
+        ))
     }
 }
 
@@ -62,6 +94,8 @@ pub enum SubmitError {
     Closed,
     /// The command remained unadmitted because the OS poller could not be woken.
     Wake(io::Error),
+    /// Every public call identity has been allocated for this driver instance.
+    IdentityExhausted,
 }
 
 impl fmt::Display for SubmitError {
@@ -70,6 +104,9 @@ impl fmt::Display for SubmitError {
             Self::Full => formatter.write_str("the driver command mailbox is full"),
             Self::Closed => formatter.write_str("the driver command mailbox is closed"),
             Self::Wake(_) => formatter.write_str("the driver I/O shard could not be woken"),
+            Self::IdentityExhausted => {
+                formatter.write_str("the driver call identity space is exhausted")
+            }
         }
     }
 }
@@ -78,7 +115,7 @@ impl std::error::Error for SubmitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Wake(source) => Some(source),
-            Self::Full | Self::Closed => None,
+            Self::Full | Self::Closed | Self::IdentityExhausted => None,
         }
     }
 }
