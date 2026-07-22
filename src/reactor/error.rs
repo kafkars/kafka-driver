@@ -32,6 +32,13 @@ impl ReactorError {
             operation: ReactorOperation::Clock,
         }
     }
+
+    pub(super) const fn host(source: io::Error) -> Self {
+        Self {
+            source,
+            operation: ReactorOperation::Host,
+        }
+    }
 }
 
 impl fmt::Display for ReactorError {
@@ -40,6 +47,7 @@ impl fmt::Display for ReactorError {
             ReactorOperation::Poll => formatter.write_str("the driver I/O selector failed"),
             ReactorOperation::Broker => formatter.write_str("the broker reactor failed"),
             ReactorOperation::Clock => formatter.write_str("the driver clock failed"),
+            ReactorOperation::Host => formatter.write_str("the reactor host invariant failed"),
         }
     }
 }
@@ -49,6 +57,7 @@ enum ReactorOperation {
     Poll,
     Broker,
     Clock,
+    Host,
 }
 
 impl std::error::Error for ReactorError {
