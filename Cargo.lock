@@ -57,6 +57,7 @@ name = "kafka-driver-transport"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "kafka-driver-core",
  "kafka-wire-core",
 ]
 

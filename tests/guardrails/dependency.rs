@@ -86,7 +86,7 @@ fn deterministic_core_depends_only_on_protocol_authority() {
 }
 
 #[test]
-fn transport_primitives_depend_only_on_wire_primitives() {
+fn transport_depends_only_on_deterministic_driver_and_wire_primitives() {
     let root = workspace_root();
     let guardrails = load_guardrails(&root);
     let dependencies =

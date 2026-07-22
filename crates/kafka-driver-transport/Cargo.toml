@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 bytes.workspace = true
+kafka-driver-core.workspace = true
 kafka-wire-core.workspace = true
 
 [lints]

@@ -32,7 +32,7 @@ kafka_wire_repository = "kafkars/kafka-wire"
 kafka_wire_revision = "857d58a84094e79ae15dfffc2e4773313bcd4c31"
 driver_allowed = ["kafka-driver-core", "kafka-wire"]
 core_allowed = ["kafka-wire"]
-transport_allowed = ["bytes", "kafka-wire-core"]
+transport_allowed = ["bytes", "kafka-driver-core", "kafka-wire-core"]
 
 [[capabilities]]
 root = "crates/kafka-driver-core/src"

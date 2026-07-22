@@ -4,5 +4,10 @@
 //! sockets, pollers, threads, real clocks, or connection policy.
 
 mod frame;
+mod write;
 
 pub use frame::{FrameBody, FrameDecodeError, FrameDecoder, FrameLimits, FrameLimitsError};
+pub use write::{
+    DiscardedWrites, WriteAccepted, WriteAdmissionError, WriteAdmissionFailure, WriteIdentityKind,
+    WriteProgress, WriteProgressError, WriteQueue, WriteQueueLimits, WriteSlice,
+};
