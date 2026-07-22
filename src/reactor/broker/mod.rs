@@ -1,5 +1,6 @@
 //! Single-broker ownership above deterministic policy and below the host.
 
+mod address_refresh;
 mod address_rotation;
 mod authentication;
 mod construction;
@@ -46,7 +47,7 @@ mod replacement_test;
 #[cfg(test)]
 mod round_trip_test;
 #[cfg(test)]
-mod scenario_support_test;
+pub(super) mod scenario_support_test;
 #[cfg(test)]
 mod scram_authentication_test;
 #[cfg(test)]

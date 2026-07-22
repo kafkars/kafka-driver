@@ -34,6 +34,7 @@ use super::{
 pub(in crate::reactor) struct SingleBroker {
     pub(super) limits: BrokerLimits,
     pub(super) addresses: AddressRotation,
+    pub(super) address_refresh: Option<kafka_driver_core::BrokerEndpoint>,
     pub(super) broker: BrokerMachine,
     pub(super) connection: ConnectionMachine,
     pub(super) connection_limits: kafka_driver_core::ConnectionLimits,

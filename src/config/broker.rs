@@ -2,7 +2,7 @@
 
 use std::net::SocketAddr;
 
-use kafka_driver_core::ResolvedAddressSet;
+use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
 
 #[cfg(feature = "tls-rustls")]
 use super::TlsClientConfig;
@@ -42,6 +42,10 @@ impl BrokerConfig {
         (self.addresses, security, sasl)
     }
 
+    pub(crate) fn into_addresses(self) -> BrokerAddresses {
+        self.addresses
+    }
+
     pub(crate) fn requires_proof_worker(&self) -> bool {
         self.template.requires_proof_worker()
     }
@@ -75,9 +79,16 @@ impl BrokerTemplate {
         self
     }
 
-    pub(crate) fn at_resolved(self, addresses: ResolvedAddressSet) -> BrokerConfig {
+    pub(crate) fn at_resolved(
+        self,
+        endpoint: BrokerEndpoint,
+        addresses: ResolvedAddressSet,
+    ) -> BrokerConfig {
         BrokerConfig {
-            addresses: BrokerAddresses::Resolved(addresses),
+            addresses: BrokerAddresses::Resolved {
+                endpoint,
+                addresses,
+            },
             template: self,
         }
     }
@@ -99,7 +110,12 @@ pub(crate) enum BrokerAddresses {
     /// One directly configured numeric socket address.
     Direct(SocketAddr),
     /// One bounded resolver result in resolver preference order.
-    Resolved(ResolvedAddressSet),
+    Resolved {
+        /// Logical name and port whose addresses may be refreshed.
+        endpoint: BrokerEndpoint,
+        /// Current candidates in resolver preference order.
+        addresses: ResolvedAddressSet,
+    },
 }
 
 /// Selected byte-stream protection beneath Kafka framing.

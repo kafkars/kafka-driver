@@ -19,6 +19,7 @@ pub(super) struct PendingBroker {
 impl BrokerChild {
     pub(super) fn retain_route(&mut self, route: BrokerRoute, endpoint: &BrokerEndpoint) {
         self.retired = false;
+        self.route = Some(route);
         let pending_is_stale = self
             .pending_install
             .as_ref()
@@ -35,6 +36,7 @@ impl BrokerChild {
             self.pending_install = None;
         }
         if pending_is_stale || resolution_is_stale || active_endpoint_changed {
+            self.refresh_in_flight = false;
             self.waiting.fail_all(&RequestError::RouteUnavailable);
         }
     }
@@ -46,6 +48,7 @@ impl BrokerChild {
         self.retired = true;
         self.retirement_started = false;
         self.pending_install = None;
+        self.refresh_in_flight = false;
         self.waiting.fail_all(&RequestError::RouteUnavailable);
     }
 
@@ -62,9 +65,11 @@ impl BrokerChild {
     pub(super) fn reassign(&mut self, lane: BrokerLane) {
         self.lane = lane;
         self.resolution = BrokerResolutionMachine::new(lane.broker_id());
+        self.route = None;
         self.endpoint = None;
         self.retired = false;
         self.retirement_started = false;
+        self.refresh_in_flight = false;
     }
 
     pub(super) fn stage(&mut self, pending: PendingBroker) {

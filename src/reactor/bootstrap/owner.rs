@@ -20,6 +20,7 @@ pub(in crate::reactor) enum BootstrapAction {
 pub(in crate::reactor) struct BootstrapOwner {
     machine: BootstrapMachine,
     broker: BrokerTemplate,
+    next_epoch: Option<u64>,
 }
 
 impl BootstrapOwner {
@@ -31,6 +32,7 @@ impl BootstrapOwner {
         let mut owner = Self {
             machine: BootstrapMachine::new(endpoints),
             broker,
+            next_epoch: Some(2),
         };
         let transition = owner.machine.apply(BootstrapInput::Start {
             epoch: ConnectionEpoch::from_raw(1),
@@ -54,6 +56,22 @@ impl BootstrapOwner {
         self.interpret(transition.effects())
     }
 
+    pub(in crate::reactor) fn restart(
+        &mut self,
+        effect_id: EffectId,
+    ) -> Result<kafka_driver_core::DnsRequest, BootstrapOwnerError> {
+        let raw = self.next_epoch.ok_or(BootstrapOwnerError::EpochExhausted)?;
+        self.next_epoch = raw.checked_add(1);
+        let transition = self.machine.apply(BootstrapInput::Start {
+            epoch: ConnectionEpoch::from_raw(raw),
+            effect_id,
+        });
+        let BootstrapAction::Resolve(request) = self.interpret(transition.effects())? else {
+            return Err(BootstrapOwnerError::UnexpectedEffect);
+        };
+        Ok(request)
+    }
+
     fn interpret(
         &self,
         effects: &[BootstrapEffect],
@@ -61,8 +79,16 @@ impl BootstrapOwner {
         match effects {
             [BootstrapEffect::Exhausted { .. }] => Ok(BootstrapAction::Exhausted),
             [BootstrapEffect::Resolve { request }] => Ok(BootstrapAction::Resolve(request.clone())),
-            [BootstrapEffect::Resolved { addresses, .. }] => Ok(BootstrapAction::Install(
-                self.broker.clone().at_resolved(addresses.clone()),
+            [
+                BootstrapEffect::Resolved {
+                    endpoint,
+                    addresses,
+                    ..
+                },
+            ] => Ok(BootstrapAction::Install(
+                self.broker
+                    .clone()
+                    .at_resolved(endpoint.clone(), addresses.clone()),
             )),
             _ => Err(BootstrapOwnerError::UnexpectedEffect),
         }

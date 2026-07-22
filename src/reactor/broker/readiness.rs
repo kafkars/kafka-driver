@@ -73,7 +73,7 @@ impl SingleBroker {
     }
 
     pub(in crate::reactor) const fn has_local_io(&self) -> bool {
-        self.retry_read || self.retry_write
+        self.retry_read || self.retry_write || self.address_refresh_needed()
     }
 
     fn drive_read(

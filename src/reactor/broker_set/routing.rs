@@ -9,8 +9,7 @@ use crate::{
 };
 
 use super::{
-    BrokerLane, BrokerSet, BrokerSetError,
-    child::{BrokerChild, ChildResolution},
+    BrokerLane, BrokerSet, BrokerSetError, child::BrokerChild, child_resolution::ChildResolution,
 };
 
 impl BrokerSet {
@@ -83,6 +82,22 @@ impl BrokerSet {
             progress |= self.activate_child(index, poller, now)?;
         }
         Ok(progress)
+    }
+
+    pub(in crate::reactor) fn next_address_refresh(&self) -> Option<BrokerLane> {
+        self.children
+            .iter()
+            .filter_map(Option::as_ref)
+            .find(|child| child.needs_address_refresh())
+            .map(BrokerChild::lane)
+    }
+
+    pub(in crate::reactor) fn start_address_refresh(
+        &mut self,
+        lane: BrokerLane,
+        effect_id: EffectId,
+    ) -> Result<DnsRequest, BrokerSetError> {
+        self.child_mut(lane)?.start_address_refresh(effect_id)
     }
 
     fn child_mut(&mut self, lane: BrokerLane) -> Result<&mut BrokerChild, BrokerSetError> {
@@ -160,7 +175,7 @@ impl BrokerSet {
             .clone()
             .ok_or(BrokerSetError::BrokerTemplateMissing)?;
         child.install(
-            template.at_resolved(pending.addresses),
+            template.at_resolved(pending.endpoint.clone(), pending.addresses),
             pending.endpoint,
             pending.epoch,
             poller,

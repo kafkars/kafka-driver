@@ -18,6 +18,7 @@ use super::{Reactor, resolution_error::NameResolutionError};
 pub(super) struct NameResolution {
     resolver: Resolver,
     bootstrap: BootstrapOwner,
+    bootstrap_in_flight: bool,
     effect_ids: ResolverEffectIds,
     ownership: ResolverOwnership,
     outcomes: Vec<DnsOutcome>,
@@ -38,6 +39,7 @@ impl NameResolution {
         let mut resolution = Self {
             resolver,
             bootstrap,
+            bootstrap_in_flight: true,
             effect_ids,
             ownership,
             outcomes: Vec::with_capacity(limits.outcome_budget().get()),
@@ -62,6 +64,17 @@ impl NameResolution {
         self.submit_owned(ResolutionOwner::Broker(lane), request)
     }
 
+    pub(super) fn restart_bootstrap(&mut self) -> Result<bool, NameResolutionError> {
+        if self.bootstrap_in_flight {
+            return Ok(false);
+        }
+        let effect_id = self.reserve_effect()?;
+        let request = self.bootstrap.restart(effect_id)?;
+        self.submit_owned(ResolutionOwner::Bootstrap, request)?;
+        self.bootstrap_in_flight = true;
+        Ok(true)
+    }
+
     fn drive(
         &mut self,
         broker_outcomes: &mut Vec<BrokerDnsOutcome>,
@@ -79,10 +92,12 @@ impl NameResolution {
                     broker_outcomes.push(BrokerDnsOutcome { lane, outcome });
                 }
                 ResolutionOwner::Bootstrap => {
+                    self.bootstrap_in_flight = false;
                     let retry_effect_id = self.reserve_effect()?;
                     match self.bootstrap.complete(outcome, retry_effect_id)? {
                         BootstrapAction::Resolve(request) => {
                             self.submit_owned(ResolutionOwner::Bootstrap, request)?;
+                            self.bootstrap_in_flight = true;
                         }
                         BootstrapAction::Install(config) if broker.is_none() => {
                             broker = Some(config);
@@ -123,6 +138,7 @@ impl NameResolution {
 
 impl Reactor {
     pub(super) fn continue_resolution(&mut self) -> Result<ResolutionTurn, ReactorError> {
+        let scheduled = self.schedule_address_refreshes()?;
         let Some(resolution) = &mut self.resolution else {
             return Ok(ResolutionTurn::idle());
         };
@@ -131,7 +147,7 @@ impl Reactor {
             .drive(&mut self.broker_dns_outcomes)
             .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
         let turn = ResolutionTurn {
-            made_progress: progress.made_progress(),
+            made_progress: scheduled || progress.made_progress(),
             more_work: progress.more_work,
         };
         if let Some(config) = progress.broker {
@@ -148,9 +164,10 @@ impl Reactor {
 
     fn install_broker(&mut self, config: BrokerConfig) -> Result<(), ReactorError> {
         if self.brokers.has_seed() {
-            return Err(ReactorError::host(std::io::Error::other(
-                "bootstrap attempted to replace an owned broker",
-            )));
+            return self
+                .brokers
+                .refresh_seed_addresses(config)
+                .map_err(ReactorError::broker_set);
         }
         let now = self.clock.now().map_err(ReactorError::clock)?;
         self.brokers

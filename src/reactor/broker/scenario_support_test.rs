@@ -18,7 +18,7 @@ use crate::reactor::Poller;
 
 use super::owner::SingleBroker;
 
-pub(super) fn complete_negotiation(
+pub(in crate::reactor) fn complete_negotiation(
     poller: &mut Poller,
     broker: &mut SingleBroker,
     peer: &mut TcpStream,

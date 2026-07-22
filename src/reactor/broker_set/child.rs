@@ -1,20 +1,17 @@
-//! One broker traffic lane's DNS policy, wait queue, and lazy connection child.
+//! One broker traffic lane's wait queue and lazy connection child.
 
 use kafka_driver_core::{
-    BrokerEndpoint, BrokerId, BrokerPhase, BrokerResolutionEffect, BrokerResolutionInput,
-    BrokerResolutionMachine, BrokerResolutionState, BrokerRoute, ConnectionEpoch, ConnectionPhase,
-    DnsOutcome, DnsRequest, EffectId, Moment,
+    BrokerEndpoint, BrokerId, BrokerResolutionMachine, BrokerRoute, ConnectionEpoch,
+    ConnectionPhase, Moment,
 };
 
 use crate::{
-    RequestError,
     config::BrokerConfig,
     reactor::{
         Poller,
         broker::{BrokerLimits, SingleBroker},
         resource::ResourceNamespace,
     },
-    request::ErasedRequest,
 };
 
 use super::{
@@ -26,12 +23,14 @@ pub(super) struct BrokerChild {
     pub(super) lane: BrokerLane,
     pub(super) resolution: BrokerResolutionMachine,
     pub(super) connection: Option<SingleBroker>,
+    pub(super) route: Option<BrokerRoute>,
     pub(super) endpoint: Option<BrokerEndpoint>,
     pub(super) waiting: WaitingCalls,
     pub(super) namespace: ResourceNamespace,
     pub(super) limits: BrokerLimits,
     pub(super) next_epoch: Option<u64>,
     pub(super) pending_install: Option<PendingBroker>,
+    pub(super) refresh_in_flight: bool,
     pub(super) retired: bool,
     pub(super) retirement_started: bool,
 }
@@ -49,12 +48,14 @@ impl BrokerChild {
             lane,
             resolution: BrokerResolutionMachine::new(lane.broker_id()),
             connection: None,
+            route: None,
             endpoint: None,
             waiting: WaitingCalls::new(waiting_calls, waiting_bytes, waiting_budget),
             namespace,
             limits,
             next_epoch: Some(1),
             pending_install: None,
+            refresh_in_flight: false,
             retired: false,
             retirement_started: false,
         }
@@ -66,87 +67,6 @@ impl BrokerChild {
 
     pub(super) const fn lane(&self) -> BrokerLane {
         self.lane
-    }
-
-    pub(super) fn submit(
-        &mut self,
-        poller: &Poller,
-        route: BrokerRoute,
-        endpoint: &BrokerEndpoint,
-        effect_id: EffectId,
-        request: Box<dyn ErasedRequest>,
-        now: Moment,
-    ) -> Result<Option<DnsRequest>, BrokerSetError> {
-        if self.endpoint.as_ref() == Some(endpoint) {
-            let Some(connection) = &mut self.connection else {
-                return Err(BrokerSetError::UnexpectedResolutionEffect);
-            };
-            if connection.state().phase() == ConnectionPhase::Ready {
-                connection
-                    .submit(poller, request, now)
-                    .map_err(BrokerSetError::Broker)?;
-                return Ok(None);
-            }
-            if !connection.is_terminal()
-                && connection.broker_state().phase() != BrokerPhase::Draining
-            {
-                self.waiting.admit(request, now);
-                return Ok(None);
-            }
-        }
-        if !self.waiting.admit(request, now) || self.is_resolving(route, endpoint) {
-            return Ok(None);
-        }
-        if let Some(connection) = &mut self.connection
-            && !connection.is_terminal()
-            && connection.broker_state().phase() != BrokerPhase::Draining
-        {
-            connection
-                .begin_drain(poller, now)
-                .map_err(BrokerSetError::Broker)?;
-        }
-        let epoch = self.reserve_epoch()?;
-        let transition = self.resolution.apply(BrokerResolutionInput::Start {
-            route,
-            endpoint: endpoint.clone(),
-            epoch,
-            effect_id,
-        });
-        match transition.into_effects().as_slice() {
-            [BrokerResolutionEffect::Resolve { request }] => Ok(Some(request.clone())),
-            _ => Err(BrokerSetError::UnexpectedResolutionEffect),
-        }
-    }
-
-    pub(super) fn complete(
-        &mut self,
-        outcome: DnsOutcome,
-    ) -> Result<ChildResolution, BrokerSetError> {
-        let transition = self
-            .resolution
-            .apply(BrokerResolutionInput::ResolutionCompleted { outcome });
-        match transition.into_effects().as_slice() {
-            [] => Ok(ChildResolution::Ignored),
-            [
-                BrokerResolutionEffect::Resolved {
-                    route,
-                    epoch,
-                    endpoint,
-                    addresses,
-                },
-            ] => Ok(ChildResolution::Resolved(PendingBroker {
-                route: *route,
-                epoch: *epoch,
-                endpoint: endpoint.clone(),
-                addresses: addresses.clone(),
-            })),
-            [BrokerResolutionEffect::Failed { failure, .. }] => {
-                self.waiting
-                    .fail_all(&RequestError::NameResolutionFailed { failure: *failure });
-                Ok(ChildResolution::Failed)
-            }
-            _ => Err(BrokerSetError::UnexpectedResolutionEffect),
-        }
     }
 
     pub(super) fn install(
@@ -204,29 +124,4 @@ impl BrokerChild {
             }
         }
     }
-
-    fn is_resolving(&self, route: BrokerRoute, endpoint: &BrokerEndpoint) -> bool {
-        matches!(
-            self.resolution.state(),
-            BrokerResolutionState::Resolving {
-                route: current,
-                endpoint: current_endpoint,
-                ..
-            } if *current == route && current_endpoint == endpoint
-        )
-    }
-
-    fn reserve_epoch(&mut self) -> Result<ConnectionEpoch, BrokerSetError> {
-        let raw = self
-            .next_epoch
-            .ok_or(BrokerSetError::ConnectionEpochExhausted)?;
-        self.next_epoch = raw.checked_add(1);
-        Ok(ConnectionEpoch::from_raw(raw))
-    }
-}
-
-pub(super) enum ChildResolution {
-    Ignored,
-    Failed,
-    Resolved(PendingBroker),
 }

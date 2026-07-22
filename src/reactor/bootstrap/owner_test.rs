@@ -2,7 +2,10 @@
 
 use std::num::NonZeroU16;
 
-use kafka_driver_core::{BootstrapLimits, BootstrapSet, BrokerEndpoint, EffectId, HostName};
+use kafka_driver_core::{
+    BootstrapLimits, BootstrapSet, BrokerEndpoint, ConnectionEpoch, DnsOutcome, EffectId, HostName,
+    IpAddress, ResolutionLimits, ResolvedAddress, ResolvedAddressSet,
+};
 
 use crate::config::BootstrapConfig;
 
@@ -21,14 +24,49 @@ fn numeric_bootstrap_returns_external_resolution_without_owning_the_worker() {
     assert_eq!(request.endpoint().host().as_str(), "127.0.0.1");
 }
 
+#[test]
+fn a_new_dial_generation_rotates_to_the_next_configured_endpoint() {
+    let config = BootstrapConfig::plaintext(bootstrap_set());
+    let Ok((mut owner, first)) = BootstrapOwner::start(config, EffectId::from_raw(1)) else {
+        panic!("bootstrap must start");
+    };
+    let outcome = DnsOutcome::new(
+        ConnectionEpoch::from_raw(1),
+        first.effect_id(),
+        Ok(addresses()),
+    );
+    owner
+        .complete(outcome, EffectId::from_raw(2))
+        .unwrap_or_else(|error| panic!("complete first resolution: {error}"));
+
+    let next = owner
+        .restart(EffectId::from_raw(3))
+        .unwrap_or_else(|error| panic!("restart bootstrap dialing: {error}"));
+
+    assert_eq!(next.endpoint().host().as_str(), "127.0.0.2");
+}
+
 fn bootstrap_set() -> BootstrapSet {
-    let host = HostName::new("127.0.0.1")
+    let first = HostName::new("127.0.0.1")
+        .unwrap_or_else(|error| panic!("numeric host must be valid: {error}"));
+    let second = HostName::new("127.0.0.2")
         .unwrap_or_else(|error| panic!("numeric host must be valid: {error}"));
     BootstrapSet::try_from_iter(
-        [BrokerEndpoint::new(host, port())],
+        [
+            BrokerEndpoint::new(first, port()),
+            BrokerEndpoint::new(second, port()),
+        ],
         BootstrapLimits::default(),
     )
     .unwrap_or_else(|error| panic!("valid bootstrap set: {error}"))
+}
+
+fn addresses() -> ResolvedAddressSet {
+    ResolvedAddressSet::try_from_iter(
+        [ResolvedAddress::new(IpAddress::V4([127, 0, 0, 1]), port())],
+        ResolutionLimits::default(),
+    )
+    .unwrap_or_else(|error| panic!("valid addresses: {error}"))
 }
 
 const fn port() -> NonZeroU16 {

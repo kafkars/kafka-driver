@@ -27,7 +27,9 @@ impl SingleBroker {
     ) -> Result<(), BrokerError> {
         let transition = self.broker.apply(BrokerInput::ConnectionReady { epoch });
         require_applied(transition.disposition())?;
-        expect_no_broker_effects(&transition.into_effects())
+        expect_no_broker_effects(&transition.into_effects())?;
+        self.addresses.ready();
+        Ok(())
     }
 
     pub(super) fn deliver_reconnect(
@@ -52,7 +54,15 @@ impl SingleBroker {
     ) -> Result<(), BrokerError> {
         while self.connection.state().phase() == ConnectionPhase::Closed {
             let epoch = self.connection.epoch();
-            let input = match (self.broker.state().phase(), self.connection.state()) {
+            let broker_phase = self.broker.state().phase();
+            if matches!(
+                broker_phase,
+                BrokerPhase::Connecting | BrokerPhase::Available
+            ) && let Some(endpoint) = self.addresses.failed()
+            {
+                self.address_refresh = Some(endpoint);
+            }
+            let input = match (broker_phase, self.connection.state()) {
                 (
                     BrokerPhase::Connecting,
                     ConnectionState::Closed {
@@ -192,7 +202,9 @@ impl SingleBroker {
             return Ok(());
         }
         let identity = ResourceIdentity::new(*transport_id, epoch);
-        let address = self.addresses.next();
+        let Some(address) = self.addresses.next() else {
+            return Err(BrokerError::MissingEffect);
+        };
         match self.resources.open(poller, identity, address) {
             Ok(token) => self.resource_token = Some(token),
             Err(error) => {

@@ -3,7 +3,7 @@
 use kafka_driver_core::{BrokerState, ConnectionState, Moment};
 
 use crate::{
-    config::BrokerConfig,
+    config::{BrokerAddresses, BrokerConfig},
     reactor::{Poller, broker::SingleBroker, resource::ResourceNamespace},
     request::ErasedRequest,
 };
@@ -39,6 +39,41 @@ impl BrokerSet {
 
     pub(in crate::reactor) fn seed_mut(&mut self) -> Option<&mut SingleBroker> {
         self.seed.as_mut()
+    }
+
+    pub(in crate::reactor) fn take_seed_address_refresh(
+        &mut self,
+    ) -> Option<kafka_driver_core::BrokerEndpoint> {
+        self.seed
+            .as_mut()
+            .and_then(SingleBroker::take_address_refresh)
+    }
+
+    pub(in crate::reactor) fn restore_seed_address_refresh(
+        &mut self,
+        endpoint: kafka_driver_core::BrokerEndpoint,
+    ) {
+        if let Some(seed) = &mut self.seed {
+            seed.request_address_refresh(endpoint);
+        }
+    }
+
+    pub(in crate::reactor) fn refresh_seed_addresses(
+        &mut self,
+        config: BrokerConfig,
+    ) -> Result<(), BrokerSetError> {
+        let Some(seed) = &mut self.seed else {
+            return Err(BrokerSetError::SeedMissing);
+        };
+        let BrokerAddresses::Resolved {
+            endpoint,
+            addresses,
+        } = config.into_addresses()
+        else {
+            return Err(BrokerSetError::UnexpectedResolutionEffect);
+        };
+        seed.replace_resolved_addresses(endpoint, addresses);
+        Ok(())
     }
 
     pub(in crate::reactor) fn submit_seed(

@@ -1,35 +1,75 @@
-//! Bounded ordered address selection across fresh connection epochs.
+//! Interpretation of direct addresses and deterministic resolved-endpoint policy.
 
 use std::net::SocketAddr;
 
+use kafka_driver_core::{
+    BrokerEndpoint, EndpointDialer, EndpointDialerEffect, EndpointDialerInput, ResolvedAddressSet,
+};
+
 use crate::{config::BrokerAddresses, reactor::resolver::socket_address};
 
-/// Reactor-local cursor over one nonempty configured or resolved address set.
+/// Reactor-local adapter over one direct address or deterministic DNS policy.
 #[derive(Debug)]
-pub(super) struct AddressRotation {
-    addresses: Vec<SocketAddr>,
-    next: usize,
+pub(super) enum AddressRotation {
+    Direct(SocketAddr),
+    Resolved(EndpointDialer),
 }
 
 impl AddressRotation {
     pub(super) fn new(addresses: BrokerAddresses) -> Self {
-        let addresses = match addresses {
-            BrokerAddresses::Direct(address) => vec![address],
-            BrokerAddresses::Resolved(addresses) => {
-                addresses.iter().copied().map(socket_address).collect()
-            }
+        match addresses {
+            BrokerAddresses::Direct(address) => Self::Direct(address),
+            BrokerAddresses::Resolved {
+                endpoint,
+                addresses,
+            } => Self::Resolved(EndpointDialer::new(endpoint, addresses)),
+        }
+    }
+
+    pub(super) fn primary(&self) -> Option<SocketAddr> {
+        match self {
+            Self::Direct(address) => Some(*address),
+            Self::Resolved(dialer) => dialer.primary().map(socket_address),
+        }
+    }
+
+    pub(super) fn next(&mut self) -> Option<SocketAddr> {
+        match self {
+            Self::Direct(address) => Some(*address),
+            Self::Resolved(dialer) => match dialer
+                .apply(EndpointDialerInput::OpenCandidate)
+                .into_effects()
+                .as_slice()
+            {
+                [EndpointDialerEffect::OpenCandidate { address, .. }] => {
+                    Some(socket_address(*address))
+                }
+                _ => None,
+            },
+        }
+    }
+
+    pub(super) fn ready(&mut self) {
+        if let Self::Resolved(dialer) = self {
+            let _ = dialer.apply(EndpointDialerInput::ConnectionReady);
+        }
+    }
+
+    pub(super) fn failed(&mut self) -> Option<BrokerEndpoint> {
+        let Self::Resolved(dialer) = self else {
+            return None;
         };
-        debug_assert!(!addresses.is_empty());
-        Self { addresses, next: 0 }
+        match dialer
+            .apply(EndpointDialerInput::ConnectionFailed)
+            .into_effects()
+            .as_slice()
+        {
+            [EndpointDialerEffect::Resolve { endpoint }] => Some(endpoint.clone()),
+            _ => None,
+        }
     }
 
-    pub(super) fn primary(&self) -> SocketAddr {
-        self.addresses[0]
-    }
-
-    pub(super) fn next(&mut self) -> SocketAddr {
-        let address = self.addresses[self.next];
-        self.next = (self.next + 1) % self.addresses.len();
-        address
+    pub(super) fn replace(&mut self, endpoint: BrokerEndpoint, addresses: ResolvedAddressSet) {
+        *self = Self::Resolved(EndpointDialer::new(endpoint, addresses));
     }
 }

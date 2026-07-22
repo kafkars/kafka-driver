@@ -36,7 +36,10 @@ fn given_multiple_resolved_addresses_when_the_first_refuses_then_reconnect_uses_
         .unwrap_or_else(|error| panic!("read loopback broker address: {error}"))
         .port();
     drop(refused);
-    let config = BrokerTemplate::plaintext().at_resolved(resolved_addresses(refused_port, port));
+    let config = BrokerTemplate::plaintext().at_resolved(
+        resolved_endpoint(port),
+        resolved_addresses(refused_port, port),
+    );
     let mut poller = Poller::new(NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));
     let mut broker = SingleBroker::new_configured(config, BrokerLimits::default());
@@ -124,4 +127,11 @@ fn resolved_addresses(refused_port: u16, listening_port: u16) -> ResolvedAddress
         ResolutionLimits::new(NonZeroUsize::new(2).unwrap_or(NonZeroUsize::MIN)),
     )
     .unwrap_or_else(|error| panic!("valid resolved addresses: {error}"))
+}
+
+fn resolved_endpoint(port: u16) -> kafka_driver_core::BrokerEndpoint {
+    let host = kafka_driver_core::HostName::new("broker.test")
+        .unwrap_or_else(|error| panic!("valid test host: {error}"));
+    let port = NonZeroU16::new(port).unwrap_or_else(|| panic!("listener port is nonzero"));
+    kafka_driver_core::BrokerEndpoint::new(host, port)
 }

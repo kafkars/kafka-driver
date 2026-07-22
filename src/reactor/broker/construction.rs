@@ -51,6 +51,9 @@ impl SingleBroker {
     ) -> Self {
         let (addresses, security, sasl) = config.into_parts();
         let addresses = AddressRotation::new(addresses);
+        let primary = addresses
+            .primary()
+            .unwrap_or_else(|| panic!("broker address ownership must be nonempty"));
         let resources = TransportResources::in_namespace(
             limits.resource_capacity(),
             limits.transport(),
@@ -65,8 +68,9 @@ impl SingleBroker {
         );
         Self {
             limits,
-            entropy: BackoffEntropy::for_broker(addresses.primary()),
+            entropy: BackoffEntropy::for_broker(primary),
             addresses,
+            address_refresh: None,
             broker: BrokerMachine::new(epoch, limits.backoff()),
             connection,
             connection_limits: limits.connection(),

@@ -2,6 +2,7 @@
 
 mod child;
 mod child_io;
+mod child_resolution;
 mod error;
 mod io;
 mod lane;
@@ -12,6 +13,8 @@ mod routing;
 mod seed;
 mod waiting;
 
+#[cfg(test)]
+mod address_refresh_test;
 #[cfg(test)]
 mod deadline_test;
 #[cfg(test)]
