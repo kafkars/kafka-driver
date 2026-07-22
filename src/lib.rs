@@ -7,6 +7,11 @@ mod api;
 mod completion;
 mod config;
 mod reactor;
+#[allow(
+    dead_code,
+    reason = "M3 locks typed response dispatch before the M4 reactor adapter consumes it"
+)]
+mod response;
 
 pub use api::{
     Call, CancellationRequest, CompletionError, Delivery, Driver, DriverBuilder,

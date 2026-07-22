@@ -34,8 +34,11 @@ dependencies = [
 name = "kafka-driver"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "kafka-driver-core",
+ "kafka-driver-transport",
  "kafka-wire",
+ "kafka-wire-core",
  "serde",
  "syn 2.0.119",
  "toml",

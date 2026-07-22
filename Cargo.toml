@@ -41,9 +41,12 @@ publish = false
 
 [dependencies]
 kafka-driver-core.workspace = true
+kafka-driver-transport.workspace = true
 kafka-wire = { path = "../kafka-protocol/crates/kafka-wire" }
+kafka-wire-core.workspace = true
 
 [dev-dependencies]
+bytes.workspace = true
 serde.workspace = true
 syn.workspace = true
 toml.workspace = true
