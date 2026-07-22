@@ -2,6 +2,7 @@
 
 mod bootstrap;
 mod broker;
+mod coordinator;
 mod limits;
 mod metadata;
 mod resolver;
@@ -11,12 +12,15 @@ mod target;
 mod tls;
 
 #[cfg(test)]
+mod coordinator_test;
+#[cfg(test)]
 mod metadata_test;
 #[cfg(test)]
 mod resolver_test;
 #[cfg(test)]
 mod sasl_test;
 
+pub use coordinator::CoordinatorLimits;
 pub use limits::DriverLimits;
 pub use metadata::MetadataLimits;
 pub use resolver::ResolverLimits;

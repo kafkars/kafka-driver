@@ -1,6 +1,6 @@
 //! Semantic cluster destinations independent of sockets and connection lanes.
 
-use kafka_driver_core::{PartitionId, TopicName};
+use kafka_driver_core::{CoordinatorKey, PartitionId, TopicName};
 
 /// Kafka ownership fact required before a generated request can be submitted.
 #[non_exhaustive]
@@ -11,6 +11,12 @@ pub enum Route {
 
     /// Uses the controller broker from the current immutable metadata generation.
     Controller,
+
+    /// Uses the broker currently coordinating one group, transaction, or share key.
+    Coordinator {
+        /// Validated key and coordinator namespace.
+        key: CoordinatorKey,
+    },
 
     /// Uses the current leader for one exact topic partition.
     PartitionLeader {

@@ -2,7 +2,7 @@
 
 use std::num::NonZeroUsize;
 
-use super::{MetadataLimits, ResolverLimits};
+use super::{CoordinatorLimits, MetadataLimits, ResolverLimits};
 
 const DEFAULT_MAILBOX_CAPACITY: NonZeroUsize = nonzero(1_024);
 const DEFAULT_COMMAND_BUDGET: NonZeroUsize = nonzero(256);
@@ -17,6 +17,7 @@ pub struct DriverLimits {
     poll_event_budget: NonZeroUsize,
     resolver: ResolverLimits,
     metadata: MetadataLimits,
+    coordinator: CoordinatorLimits,
 }
 
 impl DriverLimits {
@@ -28,6 +29,7 @@ impl DriverLimits {
             poll_event_budget: DEFAULT_POLL_EVENT_BUDGET,
             resolver: ResolverLimits::defaults(),
             metadata: MetadataLimits::default_limits(),
+            coordinator: CoordinatorLimits::defaults(),
         }
     }
 
@@ -46,6 +48,12 @@ impl DriverLimits {
     /// Replaces broker membership and Metadata RPC bounds.
     pub const fn with_metadata_limits(mut self, metadata: MetadataLimits) -> Self {
         self.metadata = metadata;
+        self
+    }
+
+    /// Replaces coordinator discovery, retention, and fairness policy.
+    pub const fn with_coordinator_limits(mut self, coordinator: CoordinatorLimits) -> Self {
+        self.coordinator = coordinator;
         self
     }
 
@@ -72,6 +80,11 @@ impl DriverLimits {
     /// Returns bounded cluster metadata retention and request policy.
     pub const fn metadata(self) -> MetadataLimits {
         self.metadata
+    }
+
+    /// Returns bounded coordinator discovery, retention, and fairness policy.
+    pub const fn coordinator(self) -> CoordinatorLimits {
+        self.coordinator
     }
 }
 

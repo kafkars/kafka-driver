@@ -18,6 +18,10 @@ impl Reactor {
         match route {
             Route::AnyBroker => self.submit_any_broker(request, now),
             Route::Controller => self.submit_controller(request, now),
+            Route::Coordinator { .. } => {
+                request.fail(RequestError::RouteUnavailable);
+                Ok(())
+            }
             Route::PartitionLeader { topic, partition } => {
                 self.submit_partition_leader(topic, partition, request, now)
             }
