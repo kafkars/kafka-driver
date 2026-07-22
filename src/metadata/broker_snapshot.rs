@@ -4,22 +4,17 @@ use std::num::NonZeroU16;
 
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
-    HostName, MetadataGeneration, MetadataSnapshot,
+    HostName, MetadataGeneration,
 };
 use kafka_wire::{MetadataResponse, metadata_response::MetadataResponseBroker};
 
 use super::MetadataBuildError;
 
-pub(crate) fn broker_snapshot_from_response(
+pub(super) fn broker_directory_from_response(
     response: &MetadataResponse,
     generation: MetadataGeneration,
     limits: BrokerDirectoryLimits,
-) -> Result<MetadataSnapshot, MetadataBuildError> {
-    if response.error_code != 0 {
-        return Err(MetadataBuildError::Response {
-            error_code: response.error_code,
-        });
-    }
+) -> Result<BrokerDirectory, MetadataBuildError> {
     let broker_limit = limits.max_brokers().get();
     if response.brokers.len() > broker_limit {
         return Err(MetadataBuildError::BrokerCapacity {
@@ -32,10 +27,8 @@ pub(crate) fn broker_snapshot_from_response(
         .iter()
         .map(broker_entry)
         .collect::<Result<Vec<_>, _>>()?;
-    let brokers = BrokerDirectory::try_from_iter(generation, entries, limits)
-        .map_err(MetadataBuildError::Directory)?;
-    let controller = controller_id(response.controller_id)?;
-    MetadataSnapshot::try_new(brokers, controller).map_err(MetadataBuildError::Snapshot)
+    BrokerDirectory::try_from_iter(generation, entries, limits)
+        .map_err(MetadataBuildError::Directory)
 }
 
 fn broker_entry(
@@ -57,7 +50,7 @@ fn broker_entry(
     ))
 }
 
-fn controller_id(raw: i32) -> Result<Option<BrokerId>, MetadataBuildError> {
+pub(super) fn controller_id(raw: i32) -> Result<Option<BrokerId>, MetadataBuildError> {
     if raw == -1 {
         return Ok(None);
     }

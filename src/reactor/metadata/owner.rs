@@ -9,7 +9,7 @@ use kafka_wire::{MetadataRequest, MetadataResponse};
 use crate::{
     Call, MetadataLimits, RequestError,
     api::CallIds,
-    metadata::broker_snapshot_from_response,
+    metadata::snapshot_from_response,
     reactor::{Poller, broker::SingleBroker},
     request::erased_request,
 };
@@ -91,10 +91,11 @@ impl MetadataOwner {
         pending: &PendingMetadata,
         response: &MetadataResponse,
     ) -> Result<MetadataInput, MetadataOwnerError> {
-        let Ok(snapshot) = broker_snapshot_from_response(
+        let Ok(snapshot) = snapshot_from_response(
             response,
             pending.generation,
             self.limits.broker_directory(),
+            self.limits.partition_leaders(),
         ) else {
             return Ok(MetadataInput::RefreshFailed {
                 operation_id: pending.operation_id,

@@ -9,7 +9,7 @@ use kafka_driver_core::{
 use kafka_wire::{MetadataResponse, metadata_response::MetadataResponseBroker};
 use kafka_wire_core::StrBytes;
 
-use super::{MetadataBuildError, broker_snapshot_from_response};
+use super::{MetadataBuildError, snapshot_from_response};
 
 #[test]
 fn valid_membership_is_canonical_and_issues_a_controller_route() {
@@ -174,10 +174,11 @@ fn build(
     let Some(limit) = NonZeroUsize::new(max_brokers) else {
         panic!("test broker limit must be nonzero");
     };
-    broker_snapshot_from_response(
+    snapshot_from_response(
         response,
         generation(raw_generation),
         BrokerDirectoryLimits::new(limit),
+        kafka_driver_core::PartitionLeaderLimits::default(),
     )
 }
 

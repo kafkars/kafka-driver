@@ -3,7 +3,8 @@
 use std::{error::Error, fmt};
 
 use kafka_driver_core::{
-    BrokerDirectoryError, BrokerId, BrokerIdError, HostNameError, MetadataSnapshotError,
+    BrokerDirectoryError, BrokerId, BrokerIdError, HostNameError, LeaderEpochError,
+    MetadataSnapshotError, PartitionId, PartitionIdError, PartitionLeaderSetError, TopicNameError,
 };
 
 /// Why a generated Metadata response could not become immutable driver facts.
@@ -13,6 +14,14 @@ pub(crate) enum MetadataBuildError {
         error_code: i16,
     },
     BrokerCapacity {
+        observed: usize,
+        limit: usize,
+    },
+    TopicCapacity {
+        observed: usize,
+        limit: usize,
+    },
+    PartitionCapacity {
         observed: usize,
         limit: usize,
     },
@@ -27,6 +36,18 @@ pub(crate) enum MetadataBuildError {
     },
     Directory(BrokerDirectoryError),
     ControllerId(BrokerIdError),
+    TopicNameMissing,
+    TopicName(TopicNameError),
+    PartitionId(PartitionIdError),
+    LeaderId {
+        partition: PartitionId,
+        source: BrokerIdError,
+    },
+    LeaderEpoch {
+        partition: PartitionId,
+        source: LeaderEpochError,
+    },
+    PartitionLeaders(PartitionLeaderSetError),
     Snapshot(MetadataSnapshotError),
 }
 
@@ -43,6 +64,14 @@ impl fmt::Display for MetadataBuildError {
                 formatter,
                 "Metadata response advertises {observed} brokers, limit is {limit}"
             ),
+            Self::TopicCapacity { observed, limit } => write!(
+                formatter,
+                "Metadata response advertises {observed} topics, limit is {limit}"
+            ),
+            Self::PartitionCapacity { observed, limit } => write!(
+                formatter,
+                "Metadata response advertises {observed} partitions, limit is {limit}"
+            ),
             Self::BrokerId(source) => write!(formatter, "invalid metadata broker: {source}"),
             Self::BrokerHost { broker_id, source } => write!(
                 formatter,
@@ -58,6 +87,24 @@ impl fmt::Display for MetadataBuildError {
             Self::ControllerId(source) => {
                 write!(formatter, "invalid metadata controller: {source}")
             }
+            Self::TopicNameMissing => formatter.write_str("successful metadata topic has no name"),
+            Self::TopicName(source) => write!(formatter, "invalid metadata topic name: {source}"),
+            Self::PartitionId(source) => {
+                write!(formatter, "invalid metadata partition: {source}")
+            }
+            Self::LeaderId { partition, source } => write!(
+                formatter,
+                "invalid leader for partition {}: {source}",
+                partition.get()
+            ),
+            Self::LeaderEpoch { partition, source } => write!(
+                formatter,
+                "invalid leader epoch for partition {}: {source}",
+                partition.get()
+            ),
+            Self::PartitionLeaders(source) => {
+                write!(formatter, "invalid partition leader index: {source}")
+            }
             Self::Snapshot(source) => write!(formatter, "incoherent cluster metadata: {source}"),
         }
     }
@@ -66,11 +113,22 @@ impl fmt::Display for MetadataBuildError {
 impl Error for MetadataBuildError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::BrokerId(source) | Self::ControllerId(source) => Some(source),
+            Self::BrokerId(source) | Self::ControllerId(source) | Self::LeaderId { source, .. } => {
+                Some(source)
+            }
             Self::BrokerHost { source, .. } => Some(source),
             Self::Directory(source) => Some(source),
+            Self::TopicName(source) => Some(source),
+            Self::PartitionId(source) => Some(source),
+            Self::LeaderEpoch { source, .. } => Some(source),
+            Self::PartitionLeaders(source) => Some(source),
             Self::Snapshot(source) => Some(source),
-            Self::Response { .. } | Self::BrokerCapacity { .. } | Self::BrokerPort { .. } => None,
+            Self::Response { .. }
+            | Self::BrokerCapacity { .. }
+            | Self::TopicCapacity { .. }
+            | Self::PartitionCapacity { .. }
+            | Self::BrokerPort { .. }
+            | Self::TopicNameMissing => None,
         }
     }
 }
