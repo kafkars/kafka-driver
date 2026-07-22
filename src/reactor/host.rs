@@ -1,20 +1,26 @@
 //! Embedded reactor host for bounded administrative command progress.
 
+mod broker;
 mod commands;
 mod debug;
+mod metadata;
 mod resolution;
 mod state;
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use crate::config::{DriverLimits, DriverTarget};
+use crate::{
+    api::CallIds,
+    config::{DriverLimits, DriverTarget},
+};
 
 use super::{
     Command, MailboxSender, PollEvent, Poller, ReactorError, WakeHandle,
-    broker::{BrokerLimits, DeadlineProgress, SingleBroker},
+    broker::{BrokerLimits, SingleBroker},
     clock::ReactorClock,
     mailbox,
     mailbox::{DrainStatus, MailboxReceiver},
+    metadata::MetadataOwner,
 };
 
 use resolution::NameResolution;
@@ -48,6 +54,8 @@ pub struct Reactor {
     poll_events: Vec<PollEvent>,
     broker: Option<SingleBroker>,
     resolution: Option<NameResolution>,
+    metadata: Option<MetadataOwner>,
+    call_ids: Arc<CallIds>,
     clock: ReactorClock,
     state: HostState,
     shutdown_waiters: ShutdownWaiters,
@@ -57,25 +65,28 @@ impl Reactor {
     pub(crate) fn new(
         limits: DriverLimits,
         target: Option<DriverTarget>,
+        call_ids: Arc<CallIds>,
     ) -> std::io::Result<(MailboxSender<Command>, Self)> {
         let poller = Poller::new(limits.poll_event_budget())?;
         let wake = WakeHandle::new(poller.wake_handle());
         let (sender, commands) = mailbox(limits.mailbox_capacity(), wake.clone());
         let clock = ReactorClock::new();
         let now = clock.now().map_err(std::io::Error::other)?;
-        let (mut broker, resolution) = match target {
+        let (mut broker, resolution, metadata) = match target {
             Some(DriverTarget::Direct(config)) => (
                 Some(SingleBroker::new_configured(
                     config,
                     BrokerLimits::default(),
                 )),
                 None,
+                None,
             ),
             Some(DriverTarget::Bootstrap(config)) => (
                 None,
                 Some(NameResolution::start(config, limits.resolver(), wake)?),
+                Some(MetadataOwner::new(limits.metadata())),
             ),
-            None => (None, None),
+            None => (None, None, None),
         };
         if let Some(broker) = &mut broker {
             broker.start(&poller, now).map_err(std::io::Error::other)?;
@@ -88,6 +99,8 @@ impl Reactor {
             poller,
             broker,
             resolution,
+            metadata,
+            call_ids,
             clock,
             state: HostState::Running,
             shutdown_waiters: ShutdownWaiters::new(limits.mailbox_capacity()),
@@ -118,6 +131,7 @@ impl Reactor {
         progress |= resolution.made_progress();
         progress |= processed != 0;
         progress |= self.continue_broker_io()?;
+        progress |= self.continue_metadata()?;
 
         if !progress && status == DrainStatus::Idle {
             self.poll_events.clear();
@@ -139,6 +153,7 @@ impl Reactor {
             progress |= resolution.made_progress();
             more_resolution |= resolution.more_work();
             progress |= self.observe_poll_events()?;
+            progress |= self.continue_metadata()?;
         }
         if let Some(outcome) = self.finish_shutdown_if_terminal(processed) {
             return Ok(outcome);
@@ -165,47 +180,6 @@ impl Reactor {
         matches!(self.state, HostState::Shutdown)
     }
 
-    fn observe_poll_events(&mut self) -> Result<bool, ReactorError> {
-        let now = self.clock.now().map_err(ReactorError::clock)?;
-        let Some(broker) = &mut self.broker else {
-            self.poll_events.clear();
-            return Ok(false);
-        };
-        let mut progress = false;
-        for event in self.poll_events.drain(..) {
-            progress |= broker
-                .observe(&self.poller, event, now)
-                .map_err(ReactorError::broker)?;
-        }
-        Ok(progress)
-    }
-
-    fn continue_broker_io(&mut self) -> Result<bool, ReactorError> {
-        let now = self.clock.now().map_err(ReactorError::clock)?;
-        self.broker.as_mut().map_or(Ok(false), |broker| {
-            broker
-                .continue_io(&self.poller, now)
-                .map_err(ReactorError::broker)
-        })
-    }
-
-    fn fire_due_deadlines(&mut self) -> Result<DeadlineProgress, ReactorError> {
-        let now = self.clock.now().map_err(ReactorError::clock)?;
-        self.broker
-            .as_mut()
-            .map_or(Ok(DeadlineProgress::idle()), |broker| {
-                broker
-                    .fire_due(&self.poller, now)
-                    .map_err(ReactorError::broker)
-            })
-    }
-
-    fn poll_wait(&self, host_limit: Duration) -> Result<Duration, ReactorError> {
-        let now = self.clock.now().map_err(ReactorError::clock)?;
-        let deadline = self.broker.as_ref().and_then(SingleBroker::next_deadline);
-        Ok(ReactorClock::bounded_wait(now, deadline, host_limit))
-    }
-
     fn finish_shutdown_if_terminal(&mut self, commands: usize) -> Option<TurnOutcome> {
         if self.state != HostState::Draining
             || self
@@ -217,12 +191,9 @@ impl Reactor {
         }
         self.state = HostState::Shutdown;
         self.resolution = None;
+        self.metadata = None;
         drop(self.commands.close());
         self.shutdown_waiters.complete_all();
         Some(TurnOutcome::Shutdown { commands })
-    }
-
-    fn broker_has_local_io(&self) -> bool {
-        self.broker.as_ref().is_some_and(SingleBroker::has_local_io)
     }
 }

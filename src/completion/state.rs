@@ -134,6 +134,20 @@ impl<T> Shared<T> {
         }
     }
 
+    pub(super) fn try_result(&self) -> Option<Result<T, CompletionError>> {
+        let mut state = self.lock();
+        match &*state {
+            State::Pending { .. } => None,
+            State::Ready(_) => {
+                let State::Ready(result) = mem::replace(&mut *state, State::Consumed) else {
+                    return Some(Err(CompletionError::Consumed));
+                };
+                Some(result)
+            }
+            State::Consumed => Some(Err(CompletionError::Consumed)),
+        }
+    }
+
     pub(super) fn request_cancellation(&self) -> CancellationRequest {
         let mut state = self.lock();
         match &mut *state {

@@ -7,6 +7,7 @@ mod command;
 mod error;
 mod host;
 mod mailbox;
+mod metadata;
 mod plaintext;
 mod poller;
 mod resolver;

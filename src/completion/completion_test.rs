@@ -79,6 +79,19 @@ fn task_waker_is_notified_once_when_the_value_arrives() {
 }
 
 #[test]
+fn internal_nonblocking_observation_preserves_pending_then_consumes_ready_once() {
+    let (receiver, sender) = completion_pair();
+
+    assert_eq!(receiver.try_result(), None);
+    assert_eq!(sender.complete(7), Ok(()));
+    assert_eq!(receiver.try_result(), Some(Ok(7)));
+    assert_eq!(
+        receiver.try_result(),
+        Some(Err(super::CompletionError::Consumed))
+    );
+}
+
+#[test]
 fn polling_after_consumption_reports_the_terminal_misuse() {
     let (mut call, sender) = call_pair::<u8>();
     assert_eq!(sender.complete(7), Ok(()));

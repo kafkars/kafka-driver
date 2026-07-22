@@ -7,6 +7,7 @@ mod api;
 mod authentication;
 mod completion;
 mod config;
+mod metadata;
 mod negotiation;
 mod reactor;
 mod request;

@@ -29,6 +29,10 @@ impl<T> Call<T> {
     pub fn request_cancellation(&self) -> CancellationRequest {
         self.completion.request_cancellation()
     }
+
+    pub(crate) fn try_result(&self) -> Option<Result<T, CompletionError>> {
+        self.completion.try_result()
+    }
 }
 
 impl<T> Future for Call<T> {

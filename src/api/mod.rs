@@ -15,3 +15,5 @@ pub use driver::{Driver, DriverBuilder, SubmitError};
 pub use kafka_driver_core::Delivery;
 pub use protocol::RequestResponsePair;
 pub use traffic::TrafficClass;
+
+pub(crate) use identity::CallIds;

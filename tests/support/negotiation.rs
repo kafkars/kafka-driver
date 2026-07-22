@@ -9,7 +9,7 @@ use std::{
 use bytes::BytesMut;
 use kafka_driver::{Reactor, TurnOutcome};
 use kafka_wire::{
-    API_VERSIONS_API_DESCRIPTOR, ApiVersionsResponse, ResponseHeader,
+    API_VERSIONS_API_DESCRIPTOR, ApiVersionsResponse, METADATA_API_DESCRIPTOR, ResponseHeader,
     api_versions_response::ApiVersion as AdvertisedApi,
 };
 use kafka_wire_core::{ApiVersion, KafkaEncode};
@@ -34,11 +34,12 @@ fn drive_progress(reactor: &mut Reactor) {
 
 fn negotiation_response() -> Vec<u8> {
     let mut response = ApiVersionsResponse::default();
-    let mut api = AdvertisedApi::default();
-    api.api_key = API_VERSIONS_API_DESCRIPTOR.api_key.value();
-    api.min_version = 0;
-    api.max_version = 0;
-    response.api_keys.push(api);
+    response
+        .api_keys
+        .push(advertisement(METADATA_API_DESCRIPTOR.api_key.value()));
+    response
+        .api_keys
+        .push(advertisement(API_VERSIONS_API_DESCRIPTOR.api_key.value()));
 
     let mut body = BytesMut::new();
     let mut header = ResponseHeader::default();
@@ -51,6 +52,14 @@ fn negotiation_response() -> Vec<u8> {
     let mut frame = length.to_be_bytes().to_vec();
     frame.extend_from_slice(&body);
     frame
+}
+
+fn advertisement(api_key: i16) -> AdvertisedApi {
+    let mut api = AdvertisedApi::default();
+    api.api_key = api_key;
+    api.min_version = 0;
+    api.max_version = 0;
+    api
 }
 
 fn read_frame(peer: &mut TcpStream) {

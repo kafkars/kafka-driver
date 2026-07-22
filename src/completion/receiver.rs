@@ -21,6 +21,10 @@ impl<T> CompletionReceiver<T> {
         self.shared.poll_result(context)
     }
 
+    pub(crate) fn try_result(&self) -> Option<Result<T, CompletionError>> {
+        self.shared.try_result()
+    }
+
     pub(crate) fn request_cancellation(&self) -> CancellationRequest {
         self.shared.request_cancellation()
     }
