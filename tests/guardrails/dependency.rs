@@ -68,6 +68,26 @@ fn driver_dependencies_are_explicitly_allowlisted() {
 }
 
 #[test]
+fn rustls_is_a_runtime_neutral_optional_transport_feature() {
+    let root = workspace_root();
+    let manifest = read(&root.join("Cargo.toml"));
+    let value = manifest
+        .parse::<toml::Value>()
+        .unwrap_or_else(|error| panic!("parse Cargo.toml: {error}"));
+    let rustls = &value["dependencies"]["rustls"];
+    let transport_feature = value["features"]["tls-rustls"]
+        .as_array()
+        .unwrap_or_else(|| panic!("tls-rustls must be an explicit feature"));
+
+    assert_eq!(rustls["optional"].as_bool(), Some(true));
+    assert_eq!(rustls["default-features"].as_bool(), Some(false));
+    assert_eq!(
+        transport_feature,
+        &[toml::Value::String("dep:rustls".to_owned())]
+    );
+}
+
+#[test]
 fn deterministic_core_depends_only_on_protocol_authority() {
     let root = workspace_root();
     let guardrails = load_guardrails(&root);
