@@ -2,7 +2,7 @@
 
 use crate::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerId, BrokerRoute, BrokerRouteError,
-    MetadataGeneration,
+    MetadataGeneration, PartitionId, PartitionLeaderSet, PartitionRoute, TopicName,
 };
 
 use super::MetadataSnapshotError;
@@ -12,6 +12,7 @@ use super::MetadataSnapshotError;
 pub struct MetadataSnapshot {
     brokers: BrokerDirectory,
     controller: Option<BrokerRoute>,
+    leaders: PartitionLeaderSet,
 }
 
 impl MetadataSnapshot {
@@ -20,6 +21,15 @@ impl MetadataSnapshot {
         brokers: BrokerDirectory,
         controller_id: Option<BrokerId>,
     ) -> Result<Self, MetadataSnapshotError> {
+        Self::try_with_leaders(brokers, controller_id, PartitionLeaderSet::empty())
+    }
+
+    /// Creates a coherent snapshot whose controller and leaders belong to broker membership.
+    pub fn try_with_leaders(
+        brokers: BrokerDirectory,
+        controller_id: Option<BrokerId>,
+        leaders: PartitionLeaderSet,
+    ) -> Result<Self, MetadataSnapshotError> {
         let controller = controller_id
             .map(|broker_id| {
                 brokers
@@ -27,9 +37,18 @@ impl MetadataSnapshot {
                     .ok_or(MetadataSnapshotError::UnknownController { broker_id })
             })
             .transpose()?;
+        for leader in leaders.iter() {
+            if brokers.route_to(leader.broker_id()).is_none() {
+                return Err(MetadataSnapshotError::UnknownPartitionLeader {
+                    broker_id: leader.broker_id(),
+                    partition: leader.partition(),
+                });
+            }
+        }
         Ok(Self {
             brokers,
             controller,
+            leaders,
         })
     }
 
@@ -46,6 +65,27 @@ impl MetadataSnapshot {
     /// Returns the controller route issued by this exact generation.
     pub const fn controller_route(&self) -> Option<BrokerRoute> {
         self.controller
+    }
+
+    /// Returns canonical known partition leaders for this generation.
+    pub const fn partition_leaders(&self) -> &PartitionLeaderSet {
+        &self.leaders
+    }
+
+    /// Issues a route only when this generation has a known leader for the partition.
+    pub fn partition_route(
+        &self,
+        topic: &TopicName,
+        partition: PartitionId,
+    ) -> Option<PartitionRoute> {
+        let leader = self.leaders.find(topic, partition)?;
+        let broker = self.brokers.route_to(leader.broker_id())?;
+        Some(PartitionRoute::new(
+            broker,
+            leader.topic().clone(),
+            leader.partition(),
+            leader.leader_epoch(),
+        ))
     }
 
     /// Resolves a broker route only when this snapshot issued its generation.

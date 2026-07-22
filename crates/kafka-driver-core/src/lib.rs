@@ -65,7 +65,8 @@ pub use identity::{
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use metadata::{
     MetadataDisposition, MetadataEffect, MetadataInput, MetadataMachine, MetadataSnapshot,
-    MetadataSnapshotError, MetadataState, MetadataTransition,
+    MetadataSnapshotError, MetadataState, MetadataTransition, PartitionLeader,
+    PartitionLeaderLimits, PartitionLeaderSet, PartitionLeaderSetError, PartitionRoute,
 };
 pub use resolution::{
     DnsFailure, DnsOutcome, DnsRequest, ResolutionLimits, ResolvedAddressSet,
