@@ -3,6 +3,7 @@
 //! This crate owns Kafka policy but has no operating-system, synchronization,
 //! reactor, or transport capabilities.
 
+mod authentication;
 mod broker;
 mod capability;
 mod connection;
@@ -15,6 +16,12 @@ mod delivery_test;
 #[cfg(test)]
 mod time_test;
 
+pub use authentication::{
+    AuthenticationAttempt, AuthenticationDisposition, AuthenticationEffect, AuthenticationFailure,
+    AuthenticationInput, AuthenticationLimits, AuthenticationMachine, AuthenticationPhase,
+    AuthenticationRound, AuthenticationState, AuthenticationTransition, ExchangeOutcome,
+    SaslMechanism, SaslProtocol,
+};
 pub use broker::{
     BackoffPolicy, BackoffPolicyError, BrokerCloseReason, BrokerDisposition, BrokerEffect,
     BrokerInput, BrokerMachine, BrokerPhase, BrokerState, BrokerTransition, JitterSample,
