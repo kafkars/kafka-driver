@@ -22,6 +22,7 @@ pub use api::{
 pub use config::TlsClientConfig;
 pub use config::{
     CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits, SaslConfig, SaslConfigError,
+    ScramProofLimits,
 };
 pub use kafka_driver_core::{
     BootstrapError, BootstrapLimits, BootstrapSet, BrokerDirectoryLimits, BrokerEndpoint, CallId,

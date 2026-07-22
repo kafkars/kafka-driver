@@ -7,6 +7,7 @@ mod limits;
 mod metadata;
 mod resolver;
 mod sasl;
+mod scram_proof;
 mod target;
 #[cfg(feature = "tls-rustls")]
 mod tls;
@@ -19,12 +20,15 @@ mod metadata_test;
 mod resolver_test;
 #[cfg(test)]
 mod sasl_test;
+#[cfg(test)]
+mod scram_proof_test;
 
 pub use coordinator::CoordinatorLimits;
 pub use limits::DriverLimits;
 pub use metadata::MetadataLimits;
 pub use resolver::ResolverLimits;
 pub use sasl::{SaslConfig, SaslConfigError};
+pub use scram_proof::ScramProofLimits;
 #[cfg(feature = "tls-rustls")]
 pub use tls::TlsClientConfig;
 

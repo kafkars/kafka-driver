@@ -2,7 +2,7 @@
 
 use std::num::NonZeroUsize;
 
-use super::{CoordinatorLimits, MetadataLimits, ResolverLimits};
+use super::{CoordinatorLimits, MetadataLimits, ResolverLimits, ScramProofLimits};
 
 const DEFAULT_MAILBOX_CAPACITY: NonZeroUsize = nonzero(1_024);
 const DEFAULT_COMMAND_BUDGET: NonZeroUsize = nonzero(256);
@@ -18,6 +18,7 @@ pub struct DriverLimits {
     resolver: ResolverLimits,
     metadata: MetadataLimits,
     coordinator: CoordinatorLimits,
+    scram_proof: ScramProofLimits,
 }
 
 impl DriverLimits {
@@ -30,6 +31,7 @@ impl DriverLimits {
             resolver: ResolverLimits::defaults(),
             metadata: MetadataLimits::default_limits(),
             coordinator: CoordinatorLimits::defaults(),
+            scram_proof: ScramProofLimits::defaults(),
         }
     }
 
@@ -54,6 +56,12 @@ impl DriverLimits {
     /// Replaces coordinator discovery, retention, and fairness policy.
     pub const fn with_coordinator_limits(mut self, coordinator: CoordinatorLimits) -> Self {
         self.coordinator = coordinator;
+        self
+    }
+
+    /// Replaces bounded SCRAM proof queue and outcome fairness policy.
+    pub const fn with_scram_proof_limits(mut self, scram_proof: ScramProofLimits) -> Self {
+        self.scram_proof = scram_proof;
         self
     }
 
@@ -85,6 +93,11 @@ impl DriverLimits {
     /// Returns bounded coordinator discovery, retention, and fairness policy.
     pub const fn coordinator(self) -> CoordinatorLimits {
         self.coordinator
+    }
+
+    /// Returns bounded SCRAM proof queue and outcome fairness policy.
+    pub const fn scram_proof(self) -> ScramProofLimits {
+        self.scram_proof
     }
 }
 
