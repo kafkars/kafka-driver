@@ -26,6 +26,13 @@ pub(crate) enum Arguments {
         coordination: String,
     },
 
+    /// Proves one advertised partition broker moves within the same driver.
+    Movement {
+        bootstrap: String,
+        topic: String,
+        coordination: String,
+    },
+
     /// Proves one exact SASL mechanism against an authenticated broker.
     Authenticate {
         mechanism: SaslSelection,
@@ -79,6 +86,13 @@ impl Arguments {
                 bootstrap: bootstrap.clone(),
                 coordination: coordination.clone(),
             }),
+            [command, bootstrap, topic, coordination] if command == "movement" => {
+                Ok(Self::Movement {
+                    bootstrap: bootstrap.clone(),
+                    topic: topic.clone(),
+                    coordination: coordination.clone(),
+                })
+            }
             [command, mechanism, bootstrap] if command == "authenticate" => {
                 Ok(Self::Authenticate {
                     mechanism: SaslSelection::parse(mechanism)?,
@@ -135,7 +149,7 @@ impl fmt::Display for ArgumentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Shape => formatter.write_str(
-                "usage: kafka-driver-probe readiness <bootstrap-set> | routes <bootstrap-set> <topic> <group> | reconnect <bootstrap-set> | rolling <bootstrap-set> <coordination-directory> | authenticate <mechanism> <bootstrap-set> | reject-authentication <mechanism> <bootstrap-set> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <bootstrap-set> <samples>",
+                "usage: kafka-driver-probe readiness <bootstrap-set> | routes <bootstrap-set> <topic> <group> | reconnect <bootstrap-set> | rolling <bootstrap-set> <coordination-directory> | movement <bootstrap-set> <topic> <coordination-directory> | authenticate <mechanism> <bootstrap-set> | reject-authentication <mechanism> <bootstrap-set> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <bootstrap-set> <samples>",
             ),
             Self::Samples => write!(
                 formatter,

@@ -6,6 +6,9 @@ mod authentication_rejection;
 mod authentication_rejection_test;
 mod encryption;
 mod measurement;
+mod movement;
+#[cfg(test)]
+mod movement_test;
 mod readiness;
 mod reconnect;
 #[cfg(test)]

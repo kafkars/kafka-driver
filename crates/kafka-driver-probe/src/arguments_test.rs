@@ -65,6 +65,25 @@ fn rolling_retains_one_bounded_bootstrap_set_argument() {
 }
 
 #[test]
+fn movement_retains_the_stable_seed_topic_and_coordination_boundary() {
+    let parsed = Arguments::parse(strings([
+        "movement",
+        "127.0.0.1:9094",
+        "moved-partition",
+        "/tmp/movement-gates",
+    ]));
+
+    assert_eq!(
+        parsed,
+        Ok(Arguments::Movement {
+            bootstrap: "127.0.0.1:9094".to_owned(),
+            topic: "moved-partition".to_owned(),
+            coordination: "/tmp/movement-gates".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn authentication_accepts_each_supported_sasl_mechanism() {
     for (name, mechanism) in [
         ("plain", SaslSelection::Plain),
@@ -174,6 +193,10 @@ fn partial_or_expanded_commands_are_rejected() {
     );
     assert_eq!(
         Arguments::parse(strings(["rolling", "one:1", "gates", "extra"])),
+        Err(ArgumentError::Shape)
+    );
+    assert_eq!(
+        Arguments::parse(strings(["movement", "one:1", "topic"])),
         Err(ArgumentError::Shape)
     );
     assert_eq!(

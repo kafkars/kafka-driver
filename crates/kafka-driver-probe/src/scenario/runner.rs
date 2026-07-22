@@ -9,8 +9,8 @@ use crate::{
 };
 
 use super::{
-    authentication, authentication_rejection, encryption, measurement, readiness, reconnect,
-    routes, secure_authentication,
+    authentication, authentication_rejection, encryption, measurement, movement, readiness,
+    reconnect, routes, secure_authentication,
 };
 
 pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
@@ -31,6 +31,17 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
         } => (
             spawn_plaintext(&bootstrap)?,
             Scenario::Rolling { coordination },
+        ),
+        Arguments::Movement {
+            bootstrap,
+            topic,
+            coordination,
+        } => (
+            spawn_plaintext(&bootstrap)?,
+            Scenario::Movement {
+                topic,
+                coordination,
+            },
         ),
         Arguments::Authenticate {
             mechanism,
@@ -81,6 +92,10 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
         Scenario::Routes { topic, group } => routes::run(&session, topic, group),
         Scenario::Reconnect => reconnect::run(&session),
         Scenario::Rolling { coordination } => reconnect::run_rolling(&session, &coordination),
+        Scenario::Movement {
+            topic,
+            coordination,
+        } => movement::run(&session, topic, &coordination),
         Scenario::Authentication { mechanism } => authentication::run(&session, mechanism),
         Scenario::AuthenticationRejection { mechanism } => {
             authentication_rejection::run(&session, mechanism)
@@ -112,6 +127,7 @@ enum Scenario {
     Routes { topic: String, group: String },
     Reconnect,
     Rolling { coordination: String },
+    Movement { topic: String, coordination: String },
     Authentication { mechanism: SaslSelection },
     AuthenticationRejection { mechanism: SaslSelection },
     Tls,

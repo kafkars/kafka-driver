@@ -20,6 +20,10 @@ pub(crate) enum ProbeError {
         route: &'static str,
         attempts: usize,
     },
+    Invalidation {
+        expected: kafka_driver::InvalidationDisposition,
+        observed: kafka_driver::InvalidationDisposition,
+    },
     Credential {
         name: &'static str,
     },
@@ -55,6 +59,12 @@ impl fmt::Display for ProbeError {
                     "{route} was not ready after {attempts} exact probes"
                 )
             }
+            Self::Invalidation { expected, observed } => {
+                write!(
+                    formatter,
+                    "route invalidation disposition {observed:?} did not match {expected:?}"
+                )
+            }
             Self::Credential { name } => {
                 write!(
                     formatter,
@@ -78,6 +88,7 @@ impl Error for ProbeError {
             Self::Kafka { .. }
             | Self::MissingApiVersions { .. }
             | Self::ReadinessAttempts { .. }
+            | Self::Invalidation { .. }
             | Self::Credential { .. }
             | Self::AuthenticationAccepted
             | Self::ReleaseRequired => None,

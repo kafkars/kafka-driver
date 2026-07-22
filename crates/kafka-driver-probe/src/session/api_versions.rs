@@ -117,7 +117,7 @@ impl ProbeSession {
     }
 }
 
-fn api_versions_request() -> ApiVersionsRequest {
+pub(super) fn api_versions_request() -> ApiVersionsRequest {
     let mut request = ApiVersionsRequest::default();
     request.client_software_name = "kafka-driver-probe".into();
     request.client_software_version = env!("CARGO_PKG_VERSION").into();
@@ -162,7 +162,10 @@ impl RequestAttempt {
     }
 }
 
-fn validate(response: &ApiVersionsResponse, route: &'static str) -> Result<(), ProbeError> {
+pub(super) fn validate(
+    response: &ApiVersionsResponse,
+    route: &'static str,
+) -> Result<(), ProbeError> {
     if response.error_code != 0 {
         return Err(ProbeError::Kafka {
             route,
