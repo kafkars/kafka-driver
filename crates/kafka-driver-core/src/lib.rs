@@ -58,7 +58,8 @@ pub use directory::{
 };
 pub use endpoint::{BrokerEndpoint, HostName, HostNameError, IpAddress, ResolvedAddress};
 pub use identity::{
-    BrokerId, BrokerIdError, CallId, ConnectionEpoch, EffectId, LeaderEpoch, LeaderEpochError,
+    BrokerId, BrokerIdError, CallId, ConnectionEpoch, CoordinatorEpoch, CoordinatorKey,
+    CoordinatorKeyError, CoordinatorKind, EffectId, LeaderEpoch, LeaderEpochError,
     MetadataGeneration, OperationId, PartitionId, PartitionIdError, TimerId, TopicName,
     TopicNameError, TransportId,
 };
