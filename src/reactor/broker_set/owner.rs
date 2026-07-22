@@ -2,7 +2,10 @@
 
 use std::num::NonZeroUsize;
 
-use kafka_driver_core::{BrokerDirectoryLimits, BrokerState, ConnectionState, Moment};
+use kafka_driver_core::{
+    BrokerDirectory, BrokerDirectoryLimits, BrokerState, ConnectionState, MetadataGeneration,
+    Moment,
+};
 
 use crate::{
     config::BrokerConfig,
@@ -19,6 +22,7 @@ use super::BrokerSetError;
 /// Shard-local owner of a seed connection and disjoint broker token namespaces.
 pub(in crate::reactor) struct BrokerSet {
     seed: Option<SingleBroker>,
+    directory: Option<BrokerDirectory>,
     broker_limits: BrokerLimits,
     owner_capacity: NonZeroUsize,
 }
@@ -36,6 +40,7 @@ impl BrokerSet {
             .ok_or(BrokerSetError::OwnerCapacityOverflow)?;
         Ok(Self {
             seed: None,
+            directory: None,
             broker_limits,
             owner_capacity: capacity,
         })
@@ -60,6 +65,32 @@ impl BrokerSet {
 
     pub(in crate::reactor) const fn has_seed(&self) -> bool {
         self.seed.is_some()
+    }
+
+    pub(in crate::reactor) fn install_directory(
+        &mut self,
+        directory: &BrokerDirectory,
+    ) -> Result<bool, BrokerSetError> {
+        let limit = self.owner_capacity.get() - 1;
+        if directory.len() > limit {
+            return Err(BrokerSetError::DirectoryCapacity {
+                observed: directory.len(),
+                limit,
+            });
+        }
+        if self.directory_generation() == Some(directory.generation()) {
+            return Ok(false);
+        }
+        self.directory = Some(directory.clone());
+        Ok(true)
+    }
+
+    pub(in crate::reactor) fn directory_generation(&self) -> Option<MetadataGeneration> {
+        self.directory.as_ref().map(BrokerDirectory::generation)
+    }
+
+    pub(in crate::reactor) fn advertised_brokers(&self) -> usize {
+        self.directory.as_ref().map_or(0, BrokerDirectory::len)
     }
 
     pub(in crate::reactor) fn seed_mut(&mut self) -> Option<&mut SingleBroker> {

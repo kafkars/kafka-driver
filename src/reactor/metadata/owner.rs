@@ -37,10 +37,8 @@ impl MetadataOwner {
         }
     }
 
-    pub(in crate::reactor) fn generation(&self) -> Option<MetadataGeneration> {
-        self.machine
-            .current()
-            .map(kafka_driver_core::MetadataSnapshot::generation)
+    pub(in crate::reactor) const fn current(&self) -> Option<&kafka_driver_core::MetadataSnapshot> {
+        self.machine.current()
     }
 
     pub(in crate::reactor) fn drive(

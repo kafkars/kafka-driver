@@ -10,12 +10,20 @@ impl Reactor {
         let Some(metadata) = &mut self.metadata else {
             return Ok(false);
         };
-        let Some(seed) = self.brokers.seed_mut() else {
-            return Ok(false);
+        let progress = {
+            let Some(seed) = self.brokers.seed_mut() else {
+                return Ok(false);
+            };
+            let now = self.clock.now().map_err(ReactorError::clock)?;
+            metadata
+                .drive(seed, &self.poller, now, &self.call_ids)
+                .map_err(ReactorError::metadata)?
         };
-        let now = self.clock.now().map_err(ReactorError::clock)?;
-        metadata
-            .drive(seed, &self.poller, now, &self.call_ids)
-            .map_err(ReactorError::metadata)
+        let installed = metadata.current().map_or(Ok(false), |snapshot| {
+            self.brokers
+                .install_directory(snapshot.brokers())
+                .map_err(ReactorError::broker_set)
+        })?;
+        Ok(progress || installed)
     }
 }

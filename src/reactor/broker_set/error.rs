@@ -7,6 +7,7 @@ use crate::reactor::broker::BrokerError;
 #[derive(Debug)]
 pub(in crate::reactor) enum BrokerSetError {
     OwnerCapacityOverflow,
+    DirectoryCapacity { observed: usize, limit: usize },
     NamespaceUnavailable,
     SeedMissing,
     SeedAlreadyInstalled,
@@ -19,6 +20,10 @@ impl fmt::Display for BrokerSetError {
             Self::OwnerCapacityOverflow => {
                 formatter.write_str("broker owner capacity cannot reserve its seed slot")
             }
+            Self::DirectoryCapacity { observed, limit } => write!(
+                formatter,
+                "broker directory has {observed} entries, set capacity is {limit}"
+            ),
             Self::NamespaceUnavailable => {
                 formatter.write_str("seed broker namespace could not be represented")
             }
@@ -36,6 +41,7 @@ impl Error for BrokerSetError {
         match self {
             Self::Broker(source) => Some(source),
             Self::OwnerCapacityOverflow
+            | Self::DirectoryCapacity { .. }
             | Self::NamespaceUnavailable
             | Self::SeedMissing
             | Self::SeedAlreadyInstalled => None,

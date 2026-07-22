@@ -67,6 +67,7 @@ fn numeric_bootstrap_resolves_off_shard_and_installs_a_ready_broker() {
     ));
     let diagnostics = format!("{reactor:?}");
     assert!(diagnostics.contains("metadata_generation: Some"));
+    assert!(diagnostics.contains("advertised_brokers: 1"));
     assert!(!diagnostics.contains("127.0.0.1"));
 
     let call = driver
