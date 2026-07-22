@@ -1,6 +1,8 @@
 //! Semantic request routing from immutable metadata into bounded broker ownership.
 
-use kafka_driver_core::{CallFailure, Delivery, DnsFailure, DnsOutcome, Moment};
+use kafka_driver_core::{
+    BrokerRoute, CallFailure, Delivery, DnsFailure, DnsOutcome, Moment, PartitionId, TopicName,
+};
 
 use crate::{RequestError, Route, request::ErasedRequest};
 
@@ -16,6 +18,9 @@ impl Reactor {
         match route {
             Route::AnyBroker => self.submit_any_broker(request, now),
             Route::Controller => self.submit_controller(request, now),
+            Route::PartitionLeader { topic, partition } => {
+                self.submit_partition_leader(&topic, partition, request, now)
+            }
         }
     }
 
@@ -47,6 +52,35 @@ impl Reactor {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());
         };
+        self.submit_broker_route(route, request, now)
+    }
+
+    fn submit_partition_leader(
+        &mut self,
+        topic: &TopicName,
+        partition: PartitionId,
+        request: Box<dyn ErasedRequest>,
+        now: Moment,
+    ) -> Result<(), ReactorError> {
+        let Some(route) = self
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.current())
+            .and_then(|snapshot| snapshot.partition_route(topic, partition))
+            .map(|route| route.broker_route())
+        else {
+            request.fail(RequestError::RouteUnavailable);
+            return Ok(());
+        };
+        self.submit_broker_route(route, request, now)
+    }
+
+    pub(super) fn submit_broker_route(
+        &mut self,
+        route: BrokerRoute,
+        request: Box<dyn ErasedRequest>,
+        now: Moment,
+    ) -> Result<(), ReactorError> {
         let Some(resolution) = &mut self.resolution else {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());

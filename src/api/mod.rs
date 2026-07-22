@@ -8,6 +8,9 @@ mod protocol;
 mod route;
 mod traffic;
 
+#[cfg(test)]
+mod route_test;
+
 pub use crate::completion::{CancellationRequest, CompletionError};
 pub use crate::response::{RequestError, ResponseCloseReason};
 pub use build::DriverBuildError;

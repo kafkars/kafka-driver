@@ -22,7 +22,7 @@ pub use config::TlsClientConfig;
 pub use config::{DriverLimits, MetadataLimits, ResolverLimits, SaslConfig, SaslConfigError};
 pub use kafka_driver_core::{
     BootstrapError, BootstrapLimits, BootstrapSet, BrokerDirectoryLimits, BrokerEndpoint, CallId,
-    HostName, HostNameError, Moment,
+    HostName, HostNameError, Moment, PartitionId, PartitionIdError, TopicName, TopicNameError,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use reactor::{Reactor, ReactorError, TurnOutcome, WakeHandle};
