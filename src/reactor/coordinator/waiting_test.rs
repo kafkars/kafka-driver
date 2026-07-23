@@ -7,13 +7,14 @@ use kafka_wire::ApiVersionsRequest;
 
 use crate::{RequestError, request::erased_request};
 
-use super::waiting::{CoordinatorWait, CoordinatorWaiters, WaitingCoordinatorOutcome};
+use super::waiting::{
+    CoordinatorWait, CoordinatorWaiters, WaitingCoordinatorOutcome, waiting_bytes,
+};
 
 #[test]
 fn exact_wait_capacity_is_admitted_and_one_more_call_is_rejected() {
     let (first_call, first) = request(1, Duration::from_secs(1));
-    let bytes = first.retained_bytes();
-    let mut waiters = CoordinatorWaiters::new(nonzero(1), nonzero(bytes * 2));
+    let mut waiters = CoordinatorWaiters::new(nonzero(1), nonzero(usize::MAX));
     assert!(waiters.admit(CoordinatorWait::new(key("orders"), first), Moment::ORIGIN));
     let (overflow_call, overflow) = request(2, Duration::from_secs(1));
 
@@ -33,12 +34,30 @@ fn exact_wait_capacity_is_admitted_and_one_more_call_is_rejected() {
 }
 
 #[test]
+fn coordinator_key_counts_against_the_wait_byte_limit() {
+    let (call, request) = request(1, Duration::from_secs(1));
+    let request_bytes = request.retained_bytes();
+    let requested_key = key("orders");
+    assert!(requested_key.heap_bytes() > 0);
+    let mut waiters = CoordinatorWaiters::new(nonzero(1), nonzero(request_bytes));
+
+    assert!(!waiters.admit(CoordinatorWait::new(requested_key, request), Moment::ORIGIN,));
+
+    assert!(matches!(
+        call.wait(),
+        Ok(Err(RequestError::RouteCapacityReached { byte_limit, .. }))
+            if byte_limit == request_bytes
+    ));
+}
+
+#[test]
 fn ready_waiter_preserves_its_original_absolute_deadline() {
     let (call, request) = request(1, Duration::from_nanos(10));
-    let bytes = request.retained_bytes();
+    let requested_key = key("orders");
+    let bytes = waiting_bytes(&requested_key, request.as_ref());
     let mut waiters = CoordinatorWaiters::new(nonzero(1), nonzero(bytes));
     assert!(waiters.admit(
-        CoordinatorWait::new(key("orders"), request),
+        CoordinatorWait::new(requested_key, request),
         Moment::from_nanos(100),
     ));
 
@@ -60,10 +79,11 @@ fn ready_waiter_preserves_its_original_absolute_deadline() {
 #[test]
 fn deadline_expiry_settles_without_delivery() {
     let (call, request) = request(1, Duration::from_nanos(10));
-    let bytes = request.retained_bytes();
+    let requested_key = key("orders");
+    let bytes = waiting_bytes(&requested_key, request.as_ref());
     let mut waiters = CoordinatorWaiters::new(nonzero(1), nonzero(bytes));
     assert!(waiters.admit(
-        CoordinatorWait::new(key("orders"), request),
+        CoordinatorWait::new(requested_key, request),
         Moment::from_nanos(100),
     ));
 
@@ -81,14 +101,14 @@ fn deadline_expiry_settles_without_delivery() {
 #[test]
 fn deadline_expiry_obeys_the_turn_budget_and_retains_due_work() {
     let (first_call, first) = request(1, Duration::from_nanos(10));
-    let bytes = first.retained_bytes();
-    let mut waiters = CoordinatorWaiters::new(nonzero(2), nonzero(bytes * 2));
-    assert!(waiters.admit(CoordinatorWait::new(key("orders"), first), Moment::ORIGIN,));
+    let first_key = key("orders");
+    let first_bytes = waiting_bytes(&first_key, first.as_ref());
     let (second_call, second) = request(2, Duration::from_nanos(10));
-    assert!(waiters.admit(
-        CoordinatorWait::new(key("payments"), second),
-        Moment::ORIGIN,
-    ));
+    let second_key = key("payments");
+    let second_bytes = waiting_bytes(&second_key, second.as_ref());
+    let mut waiters = CoordinatorWaiters::new(nonzero(2), nonzero(first_bytes + second_bytes));
+    assert!(waiters.admit(CoordinatorWait::new(first_key, first), Moment::ORIGIN,));
+    assert!(waiters.admit(CoordinatorWait::new(second_key, second), Moment::ORIGIN,));
 
     assert_eq!(waiters.expire_due(Moment::from_nanos(10), 1), 1);
 

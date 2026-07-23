@@ -49,7 +49,7 @@ impl PartitionWaiters {
             request.fail(deadline_exceeded());
             return false;
         }
-        let bytes = request.retained_bytes();
+        let bytes = waiting_bytes(&topic, request.as_ref());
         let Some(retained_bytes) = self.retained_bytes.checked_add(bytes) else {
             self.reject_capacity(request);
             return false;
@@ -179,6 +179,10 @@ impl PartitionWaiters {
             byte_limit: self.byte_limit.get(),
         });
     }
+}
+
+pub(super) fn waiting_bytes(topic: &TopicName, request: &dyn ErasedRequest) -> usize {
+    request.retained_bytes().saturating_add(topic.heap_bytes())
 }
 
 struct WaitingPartitionCall {

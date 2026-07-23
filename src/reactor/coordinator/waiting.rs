@@ -59,7 +59,7 @@ impl CoordinatorWaiters {
             request.fail(deadline_exceeded());
             return false;
         }
-        let bytes = request.retained_bytes();
+        let bytes = waiting_bytes(&key, request.as_ref());
         let Some(total) = self.retained_bytes.checked_add(bytes) else {
             self.reject_capacity(request);
             return false;
@@ -172,6 +172,10 @@ impl CoordinatorWaiters {
             byte_limit: self.byte_limit.get(),
         });
     }
+}
+
+pub(super) fn waiting_bytes(key: &CoordinatorKey, request: &dyn ErasedRequest) -> usize {
+    request.retained_bytes().saturating_add(key.heap_bytes())
 }
 
 pub(super) enum WaitingCoordinatorOutcome {
