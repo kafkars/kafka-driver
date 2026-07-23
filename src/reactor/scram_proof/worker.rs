@@ -35,4 +35,5 @@ fn run(
             break;
         }
     }
+    drop(wake.wake());
 }

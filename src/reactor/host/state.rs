@@ -1,8 +1,4 @@
-//! Terminal hosting state and bounded shutdown completion ownership.
-
-use std::num::NonZeroUsize;
-
-use crate::completion::CompletionSender;
+//! Terminal hosting state and shared shutdown barrier settlement.
 
 use super::{Reactor, ReactorError, TurnOutcome};
 
@@ -14,38 +10,11 @@ pub(super) enum HostState {
     Shutdown,
 }
 
-pub(super) struct ShutdownWaiters {
-    capacity: usize,
-    completions: Vec<CompletionSender<()>>,
-}
-
-impl ShutdownWaiters {
-    pub(super) fn new(capacity: NonZeroUsize) -> Self {
-        Self {
-            capacity: capacity.get(),
-            completions: Vec::with_capacity(capacity.get()),
-        }
-    }
-
-    pub(super) fn admit(
-        &mut self,
-        completion: CompletionSender<()>,
-    ) -> Result<(), CompletionSender<()>> {
-        if self.completions.len() >= self.capacity {
-            return Err(completion);
-        }
-        self.completions.push(completion);
-        Ok(())
-    }
-
-    pub(super) fn complete_all(&mut self) {
-        for completion in self.completions.drain(..) {
-            let _ = completion.complete(());
-        }
-    }
-}
-
 impl Reactor {
+    pub(super) const fn worker_shutdown_pending(&self) -> bool {
+        self.resolver_shutdown.is_some() || self.scram_proof_shutdown.is_some()
+    }
+
     pub(super) fn finish_shutdown_if_terminal(
         &mut self,
         commands: usize,
@@ -56,14 +25,40 @@ impl Reactor {
         self.resolution = None;
         self.metadata = None;
         self.coordinator = None;
-        self.brokers.release_scram_proof_senders();
-        if let Some(worker) = self.scram_proof.take() {
-            worker.shutdown().map_err(ReactorError::host)?;
+        let resolver_stopped = poll_resolver(&mut self.resolver_shutdown)?;
+        let scram_stopped = poll_scram_proof(&mut self.scram_proof_shutdown)?;
+        if !resolver_stopped || !scram_stopped {
+            return Ok(None);
         }
-        self.scram_proof_outcomes.clear();
         drop(self.commands.close());
         self.state = HostState::Shutdown;
-        self.shutdown_waiters.complete_all();
+        self.shutdown.complete();
         Ok(Some(TurnOutcome::Shutdown { commands }))
     }
+}
+
+fn poll_resolver(
+    worker: &mut Option<super::super::resolver::ResolverShutdown>,
+) -> Result<bool, ReactorError> {
+    let Some(shutdown) = worker else {
+        return Ok(true);
+    };
+    if !shutdown.poll_complete().map_err(ReactorError::host)? {
+        return Ok(false);
+    }
+    *worker = None;
+    Ok(true)
+}
+
+fn poll_scram_proof(
+    worker: &mut Option<super::super::scram_proof::ScramProofShutdown>,
+) -> Result<bool, ReactorError> {
+    let Some(shutdown) = worker else {
+        return Ok(true);
+    };
+    if !shutdown.poll_complete().map_err(ReactorError::host)? {
+        return Ok(false);
+    }
+    *worker = None;
+    Ok(true)
 }

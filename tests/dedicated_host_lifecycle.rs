@@ -2,7 +2,7 @@
 
 use std::net::TcpListener;
 
-use kafka_driver::{Driver, DriverHostError, SubmitError};
+use kafka_driver::{Driver, DriverHostError};
 
 #[test]
 fn explicit_shutdown_completes_before_the_host_joins_successfully() {
@@ -19,7 +19,10 @@ fn explicit_shutdown_completes_before_the_host_joins_successfully() {
     // Then
     assert_eq!(completion, Ok(()));
     assert!(joined.is_ok());
-    assert!(matches!(driver.shutdown(), Err(SubmitError::Closed)));
+    let completed = driver
+        .shutdown()
+        .unwrap_or_else(|error| panic!("subscribe to completed shutdown: {error}"));
+    assert_eq!(completed.wait(), Ok(()));
 }
 
 #[test]

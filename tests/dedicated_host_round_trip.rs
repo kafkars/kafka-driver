@@ -7,7 +7,7 @@ use std::{
 };
 
 use bytes::BytesMut;
-use kafka_driver::{ApiVersion, Call, Delivery, Driver, RequestError};
+use kafka_driver::{ApiVersion, Call, Delivery, Driver, RequestError, SubmitError};
 use kafka_driver_core::CallFailure;
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse,
@@ -37,16 +37,7 @@ fn dedicated_shutdown_waits_for_the_in_flight_fifo_response_before_join() {
     let shutdown = driver
         .shutdown()
         .unwrap_or_else(|error| panic!("admit dedicated graceful shutdown: {error}"));
-    let probe = driver
-        .call(ApiVersionsRequest::default(), Duration::from_secs(5))
-        .unwrap_or_else(|error| panic!("admit post-shutdown probe: {error}"));
-    assert_eq!(
-        probe.wait(),
-        Ok(Err(RequestError::Rejected {
-            failure: CallFailure::Draining,
-            delivery: Delivery::NotSent,
-        }))
-    );
+    assert_post_shutdown_rejection(&driver);
     assert!(!host.is_finished());
 
     // When
@@ -57,6 +48,20 @@ fn dedicated_shutdown_waits_for_the_in_flight_fifo_response_before_join() {
     assert_eq!(call.wait(), Ok(Ok(response)));
     assert_eq!(shutdown.wait(), Ok(()));
     assert!(host.join().is_ok());
+}
+
+fn assert_post_shutdown_rejection(driver: &Driver) {
+    match driver.call(ApiVersionsRequest::default(), Duration::from_secs(5)) {
+        Ok(probe) => assert_eq!(
+            probe.wait(),
+            Ok(Err(RequestError::Rejected {
+                failure: CallFailure::Draining,
+                delivery: Delivery::NotSent,
+            }))
+        ),
+        Err(SubmitError::Closed) => {}
+        Err(error) => panic!("reject post-shutdown probe: {error}"),
+    }
 }
 
 fn admit_ready_call(

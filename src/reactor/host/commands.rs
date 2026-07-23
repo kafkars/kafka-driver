@@ -1,6 +1,6 @@
 //! FIFO command interpretation and transition into graceful drain ownership.
 
-use std::{io, time::Instant};
+use std::time::Instant;
 
 use kafka_driver_core::{CallFailure, Delivery};
 
@@ -43,15 +43,7 @@ impl Reactor {
                     Command::Snapshot { completion } => {
                         let _ = completion.complete(Err(SnapshotError::Draining));
                     }
-                    Command::Shutdown { completion } => {
-                        self.shutdown_waiters
-                            .admit(completion)
-                            .map_err(|completion| {
-                                drop(completion);
-                                ReactorError::host(io::Error::other(
-                                    "shutdown waiter capacity exceeded mailbox capacity",
-                                ))
-                            })?;
+                    Command::Shutdown => {
                         if self.state == HostState::Running {
                             self.state = HostState::DrainRequested;
                         }
@@ -79,10 +71,15 @@ impl Reactor {
     }
 
     fn start_drain(&mut self) -> Result<(), ReactorError> {
-        self.close_admission()?;
+        self.close_admission();
         if let Some(resolution) = self.resolution.take() {
-            resolution.shutdown().map_err(ReactorError::host)?;
+            self.resolver_shutdown = Some(resolution.begin_shutdown());
         }
+        self.brokers.release_scram_proof_senders();
+        if let Some(worker) = self.scram_proof.take() {
+            self.scram_proof_shutdown = Some(worker.begin_shutdown());
+        }
+        self.scram_proof_outcomes.clear();
         if let Some(metadata) = &mut self.metadata {
             metadata.fail_waiters(&draining());
         }
@@ -99,7 +96,7 @@ impl Reactor {
         Ok(())
     }
 
-    fn close_admission(&mut self) -> Result<(), ReactorError> {
+    fn close_admission(&mut self) {
         for command in self.commands.close() {
             match command {
                 Command::Submit { mut request, .. } => {
@@ -112,19 +109,9 @@ impl Reactor {
                 Command::Snapshot { completion } => {
                     let _ = completion.complete(Err(SnapshotError::Draining));
                 }
-                Command::Shutdown { completion } => {
-                    self.shutdown_waiters
-                        .admit(completion)
-                        .map_err(|completion| {
-                            drop(completion);
-                            ReactorError::host(io::Error::other(
-                                "shutdown waiter capacity exceeded mailbox capacity",
-                            ))
-                        })?;
-                }
+                Command::Shutdown => {}
             }
         }
-        Ok(())
     }
 }
 

@@ -2,6 +2,8 @@
 
 use std::{
     num::{NonZeroU16, NonZeroUsize},
+    sync::mpsc::channel,
+    thread,
     time::Duration,
 };
 
@@ -11,7 +13,7 @@ use kafka_driver_core::{
 
 use crate::{ResolverLimits, reactor::Poller};
 
-use super::Resolver;
+use super::{Resolver, ResolverShutdown};
 
 #[test]
 fn numeric_resolution_wakes_the_reactor_with_exact_request_identity() {
@@ -84,6 +86,38 @@ fn shutdown_joins_a_worker_blocked_by_full_outcome_capacity() {
     resolver
         .shutdown()
         .unwrap_or_else(|error| panic!("join capacity-blocked DNS worker: {error}"));
+}
+
+#[test]
+fn shutdown_poll_returns_while_the_worker_is_still_blocked() {
+    let (release, blocked) = channel();
+    let worker = thread::spawn(move || {
+        let _ = blocked.recv();
+    });
+    let mut shutdown = ResolverShutdown::from_worker(worker);
+    let (observed, result) = channel();
+    let poll = thread::spawn(move || {
+        let progress = shutdown.poll_complete();
+        let _ = observed.send(progress);
+        shutdown
+    });
+
+    assert!(matches!(
+        result.recv_timeout(Duration::from_secs(1)),
+        Ok(Ok(false))
+    ));
+    release
+        .send(())
+        .unwrap_or_else(|error| panic!("release blocked resolver worker: {error}"));
+    shutdown = poll
+        .join()
+        .unwrap_or_else(|_| panic!("join resolver shutdown poll"));
+    while !shutdown
+        .poll_complete()
+        .unwrap_or_else(|error| panic!("finish resolver shutdown: {error}"))
+    {
+        thread::yield_now();
+    }
 }
 
 fn endpoint() -> BrokerEndpoint {

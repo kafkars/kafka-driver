@@ -8,6 +8,7 @@ mod debug;
 mod invalidation;
 mod metadata;
 mod observation;
+mod outcome;
 mod resolution;
 mod resolution_error;
 mod resolution_progress;
@@ -19,12 +20,15 @@ mod submission;
 #[cfg(test)]
 mod resolution_test;
 #[cfg(test)]
+mod shutdown_test;
+#[cfg(test)]
 mod submission_test;
 
 use std::{sync::Arc, time::Duration};
 
 use crate::{
     api::CallIds,
+    completion::{ShutdownCompleter, ShutdownRequester, shutdown_barrier},
     config::{DriverLimits, DriverTarget},
     observation::Observation,
 };
@@ -38,31 +42,15 @@ use super::{
     mailbox,
     mailbox::{DrainStatus, MailboxReceiver},
     metadata::MetadataOwner,
+    resolver::ResolverShutdown,
     scram_proof::{ScramProofOutcome, ScramProofWorker},
 };
 
 use resolution::NameResolution;
 use resolution_progress::BrokerDnsOutcome;
-use state::{HostState, ShutdownWaiters};
+use state::HostState;
 
-/// Result of one bounded reactor turn.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TurnOutcome {
-    /// No command was available before the host's wait limit.
-    Idle,
-    /// Bounded command, timer, or I/O work made progress.
-    Progress {
-        /// Number of commands processed during this turn.
-        commands: usize,
-        /// Whether bounded command, timer, or retained I/O work remains.
-        more_work: bool,
-    },
-    /// Shutdown reached its terminal state.
-    Shutdown {
-        /// Number of shutdown commands completed during this turn.
-        commands: usize,
-    },
-}
+pub use outcome::TurnOutcome;
 
 /// Single-owner embedded host for driver state and external resources.
 pub struct Reactor {
@@ -73,8 +61,10 @@ pub struct Reactor {
     poll_events: Vec<PollEvent>,
     brokers: BrokerSet,
     resolution: Option<NameResolution>,
+    resolver_shutdown: Option<ResolverShutdown>,
     broker_dns_outcomes: Vec<BrokerDnsOutcome>,
     scram_proof: Option<ScramProofWorker>,
+    scram_proof_shutdown: Option<super::scram_proof::ScramProofShutdown>,
     scram_proof_outcomes: Vec<ScramProofOutcome>,
     metadata: Option<MetadataOwner>,
     coordinator: Option<CoordinatorOwner>,
@@ -82,7 +72,7 @@ pub struct Reactor {
     observation: Arc<Observation>,
     clock: ReactorClock,
     state: HostState,
-    shutdown_waiters: ShutdownWaiters,
+    shutdown: ShutdownCompleter,
 }
 
 impl Reactor {
@@ -91,7 +81,7 @@ impl Reactor {
         target: Option<DriverTarget>,
         call_ids: Arc<CallIds>,
         observation: Arc<Observation>,
-    ) -> std::io::Result<(MailboxSender<Command>, Self)> {
+    ) -> std::io::Result<(MailboxSender<Command>, ShutdownRequester, Self)> {
         let poller = Poller::new(limits.poll_event_budget())?;
         let wake = WakeHandle::new(poller.wake_handle());
         let (sender, commands) = mailbox(
@@ -101,6 +91,7 @@ impl Reactor {
             wake.clone(),
         );
         let clock = ReactorClock::new();
+        let (shutdown_requester, shutdown) = shutdown_barrier(limits.mailbox_capacity());
         let now = clock.now().map_err(std::io::Error::other)?;
         let broker_template = match &target {
             Some(DriverTarget::Bootstrap(config)) => Some(config.broker_template().clone()),
@@ -141,8 +132,10 @@ impl Reactor {
             poller,
             brokers,
             resolution,
+            resolver_shutdown: None,
             broker_dns_outcomes: Vec::with_capacity(limits.resolver().outcome_budget().get()),
             scram_proof,
+            scram_proof_shutdown: None,
             scram_proof_outcomes: Vec::with_capacity(limits.scram_proof().outcome_budget().get()),
             metadata,
             coordinator,
@@ -150,9 +143,9 @@ impl Reactor {
             observation,
             clock,
             state: HostState::Running,
-            shutdown_waiters: ShutdownWaiters::new(limits.mailbox_capacity()),
+            shutdown,
         };
-        Ok((sender, reactor))
+        Ok((sender, shutdown_requester, reactor))
     }
 
     /// Drives at most one fairness-bounded turn, waiting up to `max_wait`.
@@ -220,6 +213,7 @@ impl Reactor {
                     || more_due
                     || more_resolution
                     || more_proofs
+                    || self.worker_shutdown_pending()
                     || self.broker_has_local_io()
                     || self.metadata_has_local_work()
                     || self.coordinator_has_local_work(),

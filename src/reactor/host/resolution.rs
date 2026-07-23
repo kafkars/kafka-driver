@@ -17,7 +17,9 @@ use crate::{
         ReactorError, WakeHandle,
         bootstrap::{BootstrapAction, BootstrapOwner},
         entropy::JitterEntropy,
-        resolver::{ResolutionOwner, Resolver, ResolverEffectIds, ResolverOwnership},
+        resolver::{
+            ResolutionOwner, Resolver, ResolverEffectIds, ResolverOwnership, ResolverShutdown,
+        },
     },
 };
 
@@ -92,8 +94,8 @@ impl NameResolution {
         (resolution, requests, outcomes)
     }
 
-    pub(super) fn shutdown(self) -> std::io::Result<()> {
-        self.resolver.shutdown()
+    pub(super) fn begin_shutdown(self) -> ResolverShutdown {
+        self.resolver.begin_shutdown()
     }
 
     fn drive(

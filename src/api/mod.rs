@@ -9,6 +9,7 @@ mod invalidation;
 mod observation;
 mod protocol;
 mod route;
+mod submission;
 mod tracked;
 mod traffic;
 
@@ -22,7 +23,7 @@ pub use crate::response::{RequestError, ResponseCloseReason};
 pub use build::DriverBuildError;
 pub use builder::DriverBuilder;
 pub use call::Call;
-pub use driver::{Driver, SubmitError};
+pub use driver::Driver;
 pub use invalidation::InvalidationDisposition;
 pub use kafka_driver_core::Delivery;
 pub use observation::{
@@ -32,6 +33,7 @@ pub use observation::{
 };
 pub use protocol::RequestResponsePair;
 pub use route::Route;
+pub use submission::SubmitError;
 pub use tracked::{RouteReceipt, RoutedCall, RoutedOutcome};
 pub use traffic::TrafficClass;
 

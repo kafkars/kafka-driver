@@ -13,7 +13,7 @@ use std::{
 };
 
 use bytes::BytesMut;
-use kafka_driver::{ApiVersion, Driver, SubmitError, TurnOutcome};
+use kafka_driver::{ApiVersion, Driver, TurnOutcome};
 use kafka_wire::{
     ApiVersionsRequest, ApiVersionsResponse, ResponseHeader, response_header_version_for,
 };
@@ -52,8 +52,11 @@ fn shutdown_waits_for_an_in_flight_call_and_closes_after_its_response() {
 
     // Then
     assert!(!reactor.is_shutdown());
-    assert!(matches!(driver.shutdown(), Err(SubmitError::Closed)));
+    let mut follower = driver
+        .shutdown()
+        .unwrap_or_else(|error| panic!("subscribe to pending shutdown: {error}"));
     assert_pending(&mut shutdown);
+    assert_pending(&mut follower);
 
     // When
     peer.write_all(&encoded_response(&response))
@@ -65,6 +68,7 @@ fn shutdown_waits_for_an_in_flight_call_and_closes_after_its_response() {
     assert!(reactor.is_shutdown());
     assert_eq!(call.wait(), Ok(Ok(response)));
     assert_eq!(shutdown.wait(), Ok(()));
+    assert_eq!(follower.wait(), Ok(()));
 }
 
 fn drive_progress(reactor: &mut kafka_driver::Reactor, wait: Duration, commands: usize) {

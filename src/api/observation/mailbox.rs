@@ -61,7 +61,7 @@ impl MailboxSnapshot {
         self.queued_work_bytes
     }
 
-    /// Returns priority shutdown controls waiting behind the current drain batch.
+    /// Returns priority control commands waiting behind the current drain batch.
     pub const fn queued_control(self) -> usize {
         self.queued_control
     }

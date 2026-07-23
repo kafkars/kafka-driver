@@ -74,7 +74,7 @@ impl DriverLimits {
         self
     }
 
-    /// Returns each independent request and shutdown-control command bound.
+    /// Returns each mailbox lane and pending shutdown-subscriber count bound.
     pub const fn mailbox_capacity(self) -> NonZeroUsize {
         self.mailbox_capacity
     }

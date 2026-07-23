@@ -82,14 +82,17 @@ impl DriverBuilder {
         let target = target.with_sasl(self.sasl);
         let call_ids = Arc::new(CallIds::new());
         let observation = Arc::new(Observation::default());
-        let (commands, reactor) = Reactor::new(
+        let (commands, shutdown, reactor) = Reactor::new(
             self.limits,
             Some(target),
             Arc::clone(&call_ids),
             Arc::clone(&observation),
         )
         .map_err(DriverBuildError::new)?;
-        Ok((Driver::new(commands, call_ids, observation), reactor))
+        Ok((
+            Driver::new(commands, shutdown, call_ids, observation),
+            reactor,
+        ))
     }
 
     /// Builds a driver and starts its reactor on one dedicated thread.

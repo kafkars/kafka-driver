@@ -96,9 +96,20 @@ impl Resolver {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) fn shutdown(mut self) -> io::Result<()> {
         self.close_channels();
-        self.join_worker()
+        ResolverShutdown {
+            worker: self.worker.take(),
+        }
+        .join()
+    }
+
+    pub(in crate::reactor) fn begin_shutdown(mut self) -> ResolverShutdown {
+        self.close_channels();
+        ResolverShutdown {
+            worker: self.worker.take(),
+        }
     }
 
     fn close_channels(&mut self) {
@@ -119,6 +130,50 @@ impl Resolver {
 impl Drop for Resolver {
     fn drop(&mut self) {
         self.close_channels();
+        drop(self.join_worker());
+    }
+}
+
+pub(in crate::reactor) struct ResolverShutdown {
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl ResolverShutdown {
+    pub(in crate::reactor) fn poll_complete(&mut self) -> io::Result<bool> {
+        let Some(worker) = &self.worker else {
+            return Ok(true);
+        };
+        if !worker.is_finished() {
+            return Ok(false);
+        }
+        self.join_worker()?;
+        Ok(true)
+    }
+
+    #[cfg(test)]
+    fn join(mut self) -> io::Result<()> {
+        self.join_worker()
+    }
+
+    fn join_worker(&mut self) -> io::Result<()> {
+        let Some(worker) = self.worker.take() else {
+            return Ok(());
+        };
+        worker
+            .join()
+            .map_err(|_| io::Error::other("DNS worker panicked"))
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn from_worker(worker: thread::JoinHandle<()>) -> Self {
+        Self {
+            worker: Some(worker),
+        }
+    }
+}
+
+impl Drop for ResolverShutdown {
+    fn drop(&mut self) {
         drop(self.join_worker());
     }
 }

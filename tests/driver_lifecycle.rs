@@ -7,7 +7,7 @@ use std::{
     net::TcpListener,
     num::NonZeroUsize,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Barrier},
     task::{Context, Poll, Wake, Waker},
     thread,
     time::Duration,
@@ -37,11 +37,14 @@ fn embedded_shutdown_completes_once_and_closes_admission() {
         panic!("the admitted shutdown call must be present");
     };
     assert_eq!(call.wait(), Ok(()));
-    assert!(matches!(driver.shutdown(), Err(SubmitError::Closed)));
+    let completed = driver
+        .shutdown()
+        .unwrap_or_else(|error| panic!("subscribe to completed shutdown: {error}"));
+    assert_eq!(completed.wait(), Ok(()));
 }
 
 #[test]
-fn mailbox_capacity_rejects_a_second_pending_shutdown() {
+fn shutdown_subscriber_capacity_rejects_one_more_pending_observer() {
     let limits = DriverLimits::new(NonZeroUsize::MIN, NonZeroUsize::MIN);
     let (driver, mut reactor, _listener) = build_reactor(limits);
     let first = driver.shutdown();
@@ -57,6 +60,41 @@ fn mailbox_capacity_rejects_a_second_pending_shutdown() {
         panic!("the first shutdown must be admitted");
     };
     assert_eq!(first.wait(), Ok(()));
+}
+
+#[test]
+fn concurrent_shutdown_subscribers_share_one_control_command() {
+    let subscriber_count = 8;
+    let limits = DriverLimits::new(nonzero(subscriber_count), NonZeroUsize::MIN);
+    let (driver, mut reactor, _listener) = build_reactor(limits);
+    let start = Arc::new(Barrier::new(subscriber_count));
+    let mut subscribers = Vec::with_capacity(subscriber_count);
+    for _ in 0..subscriber_count {
+        let driver = driver.clone();
+        let start = Arc::clone(&start);
+        subscribers.push(thread::spawn(move || {
+            start.wait();
+            driver.shutdown()
+        }));
+    }
+    let calls = subscribers
+        .into_iter()
+        .map(|subscriber| {
+            subscriber
+                .join()
+                .unwrap_or_else(|_| panic!("join shutdown subscriber"))
+                .unwrap_or_else(|error| panic!("subscribe to shutdown: {error}"))
+        })
+        .collect::<Vec<_>>();
+
+    let outcome = reactor
+        .turn(Duration::ZERO)
+        .unwrap_or_else(|error| panic!("drive shared shutdown: {error}"));
+
+    assert_eq!(outcome, TurnOutcome::Shutdown { commands: 1 });
+    for call in calls {
+        assert_eq!(call.wait(), Ok(()));
+    }
 }
 
 #[test]
@@ -122,13 +160,22 @@ fn explicit_wake_releases_an_idle_embedded_turn() {
 #[test]
 fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
     let (driver, mut reactor, _listener) = build_reactor(DriverLimits::default());
-    let owner = thread::spawn(move || reactor.turn(Duration::from_secs(30)));
+    let owner = thread::spawn(move || {
+        loop {
+            let outcome = reactor
+                .turn(Duration::from_secs(30))
+                .unwrap_or_else(|error| panic!("drive implicit shutdown: {error}"));
+            if matches!(outcome, TurnOutcome::Shutdown { .. }) {
+                break outcome;
+            }
+        }
+    });
 
     drop(driver);
 
     assert!(matches!(
         owner.join(),
-        Ok(Ok(TurnOutcome::Shutdown { commands: 0 }))
+        Ok(TurnOutcome::Shutdown { commands: 0 })
     ));
 }
 
@@ -217,4 +264,8 @@ struct NoopWake;
 
 impl Wake for NoopWake {
     fn wake(self: Arc<Self>) {}
+}
+
+fn nonzero(value: usize) -> NonZeroUsize {
+    NonZeroUsize::new(value).unwrap_or_else(|| panic!("test limit must be nonzero"))
 }

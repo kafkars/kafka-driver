@@ -42,6 +42,7 @@ fn run(
             break;
         }
     }
+    drop(wake.wake());
 }
 
 fn resolve(request: &DnsRequest, limits: ResolutionLimits) -> DnsOutcome {

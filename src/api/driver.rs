@@ -1,7 +1,6 @@
 //! Public construction, admission, and shutdown handle for one driver reactor.
 
 use std::{
-    fmt, io,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -9,20 +8,22 @@ use std::{
 use kafka_wire::RequestResponsePair;
 
 use crate::{
-    completion::completion_pair,
+    completion::ShutdownRequester,
     observation::{CallTimeline, Observation},
-    reactor::{Command, MailboxSender, TrySendError},
+    reactor::{Command, MailboxSender},
     request::{observed_request, observed_request_in, observed_routed_request_in},
 };
 
 use super::{
-    Call, DriverBuilder, RequestError, Route, RoutedCall, TrafficClass, identity::CallIds,
+    Call, DriverBuilder, RequestError, Route, RoutedCall, SubmitError, TrafficClass,
+    identity::CallIds,
 };
 
 /// Cloneable command-admission handle for one driver reactor.
 #[derive(Clone, Debug)]
 pub struct Driver {
     pub(super) commands: MailboxSender<Command>,
+    shutdown: ShutdownRequester,
     call_ids: Arc<CallIds>,
     observation: Arc<Observation>,
 }
@@ -30,11 +31,13 @@ pub struct Driver {
 impl Driver {
     pub(super) const fn new(
         commands: MailboxSender<Command>,
+        shutdown: ShutdownRequester,
         call_ids: Arc<CallIds>,
         observation: Arc<Observation>,
     ) -> Self {
         Self {
             commands,
+            shutdown,
             call_ids,
             observation,
         }
@@ -45,19 +48,17 @@ impl Driver {
         DriverBuilder::default()
     }
 
-    /// Requests terminal shutdown through the separately bounded control lane.
+    /// Subscribes to the shared terminal shutdown barrier.
     ///
-    /// A full request lane cannot reject or delay this command. Admission can
-    /// still fail if the shutdown-control bound itself is exhausted, command
-    /// admission is closed, or the reactor cannot be woken.
+    /// The first subscriber requests drain through the separately bounded
+    /// control lane. Later subscribers observe the same outcome without adding
+    /// commands. Admission remains bounded and completed shutdown is idempotent.
     pub fn shutdown(&self) -> Result<Call<()>, SubmitError> {
-        let (completion, sender) = completion_pair();
-        let call = Call::new(completion);
-        let command = Command::Shutdown { completion: sender };
-        self.commands
-            .try_send_control(command)
+        let completion = self
+            .shutdown
+            .subscribe(|| self.commands.try_send_control(Command::Shutdown))
             .map_err(SubmitError::from)?;
-        Ok(call)
+        Ok(Call::new(completion))
     }
 
     /// Submits one generated request using that connection's negotiated version.
@@ -185,53 +186,5 @@ impl Driver {
             })
             .map_err(SubmitError::from)?;
         Ok(call)
-    }
-}
-
-/// Why a command could not enter the bounded reactor mailbox.
-#[derive(Debug)]
-pub enum SubmitError {
-    /// The mailbox has reached its configured command capacity.
-    Full,
-    /// The reactor has closed command admission permanently.
-    Closed,
-    /// The command remained unadmitted because the OS poller could not be woken.
-    Wake(io::Error),
-    /// Every public call identity has been allocated for this driver instance.
-    IdentityExhausted,
-}
-
-impl fmt::Display for SubmitError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Full => formatter.write_str("the driver command mailbox is full"),
-            Self::Closed => formatter.write_str("the driver command mailbox is closed"),
-            Self::Wake(_) => formatter.write_str("the driver I/O shard could not be woken"),
-            Self::IdentityExhausted => {
-                formatter.write_str("the driver call identity space is exhausted")
-            }
-        }
-    }
-}
-
-impl std::error::Error for SubmitError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Wake(source) => Some(source),
-            Self::Full | Self::Closed | Self::IdentityExhausted => None,
-        }
-    }
-}
-
-impl From<TrySendError<Command>> for SubmitError {
-    fn from(error: TrySendError<Command>) -> Self {
-        match error {
-            TrySendError::Full(_) => Self::Full,
-            TrySendError::Closed(_) => Self::Closed,
-            TrySendError::Wake { command, source } => {
-                drop(command);
-                Self::Wake(source)
-            }
-        }
     }
 }

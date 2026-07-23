@@ -87,9 +87,20 @@ impl ScramProofWorker {
         })
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) fn shutdown(mut self) -> io::Result<()> {
         self.close_channels();
-        self.join_worker()
+        ScramProofShutdown {
+            worker: self.worker.take(),
+        }
+        .join()
+    }
+
+    pub(in crate::reactor) fn begin_shutdown(mut self) -> ScramProofShutdown {
+        self.close_channels();
+        ScramProofShutdown {
+            worker: self.worker.take(),
+        }
     }
 
     fn close_channels(&mut self) {
@@ -110,6 +121,43 @@ impl ScramProofWorker {
 impl Drop for ScramProofWorker {
     fn drop(&mut self) {
         self.close_channels();
+        drop(self.join_worker());
+    }
+}
+
+pub(in crate::reactor) struct ScramProofShutdown {
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl ScramProofShutdown {
+    pub(in crate::reactor) fn poll_complete(&mut self) -> io::Result<bool> {
+        let Some(worker) = &self.worker else {
+            return Ok(true);
+        };
+        if !worker.is_finished() {
+            return Ok(false);
+        }
+        self.join_worker()?;
+        Ok(true)
+    }
+
+    #[cfg(test)]
+    fn join(mut self) -> io::Result<()> {
+        self.join_worker()
+    }
+
+    fn join_worker(&mut self) -> io::Result<()> {
+        let Some(worker) = self.worker.take() else {
+            return Ok(());
+        };
+        worker
+            .join()
+            .map_err(|_| io::Error::other("SCRAM proof worker panicked"))
+    }
+}
+
+impl Drop for ScramProofShutdown {
+    fn drop(&mut self) {
         drop(self.join_worker());
     }
 }
