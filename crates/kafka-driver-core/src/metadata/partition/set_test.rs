@@ -70,6 +70,7 @@ fn leader(raw_topic: &str, raw_partition: i32, raw_broker: i32, raw_epoch: i32) 
         partition(raw_partition),
         broker(raw_broker),
         LeaderEpoch::new(raw_epoch).ok(),
+        crate::MetadataRevision::from_raw(1),
     )
 }
 

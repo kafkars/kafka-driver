@@ -10,7 +10,7 @@ impl Reactor {
             return Ok(false);
         }
         let now = self.clock.now().map_err(ReactorError::clock)?;
-        let (progress, directory, waiting) = {
+        let (progress, directory, waiting, invalidations) = {
             let Some(metadata) = &mut self.metadata else {
                 return Ok(false);
             };
@@ -24,7 +24,8 @@ impl Reactor {
                 .current()
                 .map(|snapshot| snapshot.brokers().clone());
             let waiting = metadata.drain_partition_waiters(now);
-            (progress, directory, waiting)
+            let invalidations = metadata.drain_invalidation_waiters();
+            (progress, directory, waiting, invalidations)
         };
         let installed = directory.as_ref().map_or(Ok(false), |directory| {
             self.brokers
@@ -43,7 +44,7 @@ impl Reactor {
             };
             self.submit_broker_route(route, request, now)?;
         }
-        Ok(progress || installed || waiting_progress || waiting_more)
+        Ok(progress || installed || waiting_progress || waiting_more || invalidations)
     }
 
     pub(super) fn metadata_has_local_work(&self) -> bool {

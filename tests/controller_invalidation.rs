@@ -43,12 +43,13 @@ fn exact_receipt_moves_the_controller_and_then_becomes_stale() {
 
     let (old_receipt, _first_peer) =
         tracked_controller_call(&driver, &mut reactor, &first_listener);
-    let invalidation = driver
+    let mut invalidation = driver
         .invalidate(old_receipt.clone())
         .unwrap_or_else(|error| panic!("admit controller invalidation: {error}"));
     assert_progress(&reactor.turn(Duration::ZERO), 1);
-    assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
+    assert_pending(&mut invalidation);
     install_metadata(&mut seed, &mut reactor, second_port);
+    assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
 
     let (new_receipt, _second_peer) =
         tracked_controller_call(&driver, &mut reactor, &second_listener);
@@ -60,6 +61,11 @@ fn exact_receipt_moves_the_controller_and_then_becomes_stale() {
     assert_progress(&reactor.turn(Duration::ZERO), 1);
     assert_eq!(stale.wait(), Ok(InvalidationDisposition::IgnoredStale));
     assert_no_frame(&seed);
+}
+
+fn assert_pending(call: &mut kafka_driver::Call<InvalidationDisposition>) {
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(matches!(Pin::new(call).poll(&mut context), Poll::Pending));
 }
 
 fn tracked_controller_call(

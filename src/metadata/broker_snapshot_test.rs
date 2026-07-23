@@ -177,6 +177,7 @@ fn build(
     snapshot_from_response(
         response,
         generation(raw_generation),
+        kafka_driver_core::OperationId::from_raw(raw_generation),
         &MetadataQuery::Cluster,
         None,
         BrokerDirectoryLimits::new(limit),

@@ -179,6 +179,7 @@ fn snapshot(raw_generation: u64, raw_topic: &str, raw_partition: i32) -> Metadat
             partition(raw_partition),
             broker_id,
             None,
+            kafka_driver_core::MetadataRevision::from_raw(raw_generation),
         )],
         PartitionLeaderLimits::default(),
     )

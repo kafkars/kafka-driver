@@ -3,6 +3,7 @@
 mod error;
 mod identity;
 mod invalidation;
+mod invalidation_wait;
 mod owner;
 mod request;
 mod routing;
@@ -11,6 +12,8 @@ mod waiting_progress;
 
 #[cfg(test)]
 mod identity_test;
+#[cfg(test)]
+mod invalidation_wait_test;
 #[cfg(test)]
 mod owner_test;
 #[cfg(test)]

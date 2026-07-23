@@ -12,6 +12,7 @@ const DEFAULT_LANE_TURN_BUDGET: NonZeroUsize = nonzero(256);
 const DEFAULT_PARTITION_WAITING_CALLS: NonZeroUsize = nonzero(256);
 const DEFAULT_PARTITION_WAITING_BYTES: NonZeroUsize = nonzero(8 * 1024 * 1024);
 const DEFAULT_PARTITION_ADMISSION_BUDGET: NonZeroUsize = nonzero(64);
+const DEFAULT_INVALIDATION_WAITERS: NonZeroUsize = nonzero(256);
 
 /// Resource and wait bounds applied to cluster metadata refreshes.
 #[must_use]
@@ -28,6 +29,7 @@ pub struct MetadataLimits {
     partition_waiting_calls: NonZeroUsize,
     partition_waiting_bytes: NonZeroUsize,
     partition_admission_budget: NonZeroUsize,
+    invalidation_waiters: NonZeroUsize,
 }
 
 impl MetadataLimits {
@@ -45,6 +47,7 @@ impl MetadataLimits {
             partition_waiting_calls: DEFAULT_PARTITION_WAITING_CALLS,
             partition_waiting_bytes: DEFAULT_PARTITION_WAITING_BYTES,
             partition_admission_budget: DEFAULT_PARTITION_ADMISSION_BUDGET,
+            invalidation_waiters: DEFAULT_INVALIDATION_WAITERS,
         }
     }
 
@@ -92,6 +95,12 @@ impl MetadataLimits {
         self.partition_waiting_calls = waiting_calls;
         self.partition_waiting_bytes = waiting_bytes;
         self.partition_admission_budget = admission_budget;
+        self
+    }
+
+    /// Replaces the bound on public invalidations awaiting newer evidence.
+    pub const fn with_invalidation_waiters(mut self, invalidation_waiters: NonZeroUsize) -> Self {
+        self.invalidation_waiters = invalidation_waiters;
         self
     }
 
@@ -148,6 +157,11 @@ impl MetadataLimits {
     /// Returns maximum topic-route waiters examined in one reactor turn.
     pub const fn partition_admission_budget(self) -> NonZeroUsize {
         self.partition_admission_budget
+    }
+
+    /// Returns maximum public invalidations awaiting newer metadata evidence.
+    pub const fn invalidation_waiters(self) -> NonZeroUsize {
+        self.invalidation_waiters
     }
 
     pub(super) const fn default_limits() -> Self {

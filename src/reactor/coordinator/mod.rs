@@ -7,6 +7,7 @@ mod entry;
 mod error;
 mod identity;
 mod invalidation;
+mod invalidation_wait;
 mod owner;
 mod routing;
 mod waiting;

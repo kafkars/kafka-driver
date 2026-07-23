@@ -1,14 +1,15 @@
 //! One validated topic-partition leader assignment.
 
-use crate::{BrokerId, LeaderEpoch, PartitionId, TopicName};
+use crate::{BrokerId, LeaderEpoch, MetadataRevision, PartitionId, TopicName};
 
-/// Broker ownership for one partition in an immutable metadata generation.
+/// Broker ownership for one partition from one accepted topic observation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PartitionLeader {
     topic: TopicName,
     partition: PartitionId,
     broker_id: BrokerId,
     leader_epoch: Option<LeaderEpoch>,
+    revision: MetadataRevision,
 }
 
 impl PartitionLeader {
@@ -18,12 +19,14 @@ impl PartitionLeader {
         partition: PartitionId,
         broker_id: BrokerId,
         leader_epoch: Option<LeaderEpoch>,
+        revision: MetadataRevision,
     ) -> Self {
         Self {
             topic,
             partition,
             broker_id,
             leader_epoch,
+            revision,
         }
     }
 
@@ -45,5 +48,10 @@ impl PartitionLeader {
     /// Returns the broker-issued leader epoch when the negotiated API supplied one.
     pub const fn leader_epoch(&self) -> Option<LeaderEpoch> {
         self.leader_epoch
+    }
+
+    /// Returns the accepted Metadata operation that observed this leader fact.
+    pub const fn revision(&self) -> MetadataRevision {
+        self.revision
     }
 }

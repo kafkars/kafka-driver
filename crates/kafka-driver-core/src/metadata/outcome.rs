@@ -13,10 +13,10 @@ impl MetadataMachine {
     pub(super) fn succeed(
         &mut self,
         operation_id: OperationId,
-        snapshot: MetadataSnapshot,
+        mut snapshot: MetadataSnapshot,
         followup_operation_id: OperationId,
     ) -> MetadataTransition {
-        let (expected, target_generation, regresses) = match &self.state {
+        let (expected, target_generation, query, regresses) = match &self.state {
             MetadataState::Refreshing {
                 operation_id,
                 target_generation,
@@ -26,6 +26,7 @@ impl MetadataMachine {
             } => (
                 *operation_id,
                 *target_generation,
+                query.clone(),
                 matches!(query, MetadataQuery::Topic(_))
                     && current.as_ref().is_some_and(|previous| {
                         snapshot
@@ -45,6 +46,7 @@ impl MetadataMachine {
                 MetadataDisposition::RejectedLeaderEpochRegression,
             );
         }
+        self.revocations.apply(&mut snapshot, &query, operation_id);
         let next_query = match &mut self.state {
             MetadataState::Refreshing { queued, .. } => queued.pop_front(),
             MetadataState::Empty { .. } | MetadataState::Ready { .. } => unreachable!(),

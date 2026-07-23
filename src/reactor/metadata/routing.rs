@@ -58,11 +58,12 @@ impl MetadataOwner {
     }
 
     pub(in crate::reactor) const fn has_pending_wait_scan(&self) -> bool {
-        self.waiters.has_pending_scan()
+        self.waiters.has_pending_scan() || self.invalidations.has_pending_scan()
     }
 
     pub(in crate::reactor) fn fail_waiters(&mut self, failure: &RequestError) {
         self.waiters.fail_all(failure);
+        self.invalidations.fail_all();
     }
 
     fn reject_query_capacity(&mut self, call_id: CallId) -> Result<(), MetadataOwnerError> {

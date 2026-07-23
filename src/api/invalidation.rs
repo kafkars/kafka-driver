@@ -8,22 +8,25 @@ use super::{Call, Driver, RouteReceipt, SubmitError};
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InvalidationDisposition {
-    /// The receipt started or queued a newer metadata/discovery operation.
+    /// Post-failure metadata or discovery evidence crossed the revocation barrier.
     Applied,
-    /// Existing newer work already represents this invalidation demand.
+    /// An identical public revocation barrier already owns this demand.
     Coalesced,
     /// The receipt names a generation or epoch older than current ownership.
     IgnoredStale,
-    /// Cluster routing or its seed connection is not currently available.
+    /// Newer evidence could not be obtained or barrier capacity was unavailable.
     Unavailable,
 }
 
 impl Driver {
     /// Invalidates only the exact route fact observed by a tracked request.
     ///
-    /// A receipt from an older metadata generation or coordinator epoch cannot
-    /// disturb newer routing ownership. Invalidation is bounded ordinary work
-    /// and may be rejected by the public mailbox before admission.
+    /// Exact admission withdraws the failed fact immediately. This call
+    /// completes only after a query started after the failure supplies newer
+    /// evidence; failed discovery completes it as unavailable. A receipt from
+    /// older fact provenance cannot disturb newer routing ownership.
+    /// Invalidation is bounded ordinary work and may be rejected by the public
+    /// mailbox before admission.
     pub fn invalidate(
         &self,
         receipt: RouteReceipt,

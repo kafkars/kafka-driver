@@ -3,7 +3,7 @@
 use crate::{CoordinatorEpoch, CoordinatorRoute, OperationId};
 
 use super::{
-    CoordinatorMachine, CoordinatorState, CoordinatorTransition,
+    CoordinatorFollowup, CoordinatorMachine, CoordinatorState, CoordinatorTransition,
     decision::{coalesced, exhausted, find, known, queued, stale},
 };
 
@@ -18,13 +18,11 @@ impl CoordinatorMachine {
 
     pub(super) fn refresh(&mut self, operation_id: OperationId) -> CoordinatorTransition {
         match &mut self.state {
-            CoordinatorState::Discovering {
-                refresh_pending, ..
-            } => {
-                if *refresh_pending {
+            CoordinatorState::Discovering { followup, .. } => {
+                if followup.is_some() {
                     coalesced()
                 } else {
-                    *refresh_pending = true;
+                    *followup = Some(CoordinatorFollowup::Refresh);
                     queued()
                 }
             }
@@ -47,13 +45,30 @@ impl CoordinatorMachine {
         route: &CoordinatorRoute,
         operation_id: OperationId,
     ) -> CoordinatorTransition {
-        if self.current() != Some(route) {
-            return stale();
+        match &mut self.state {
+            CoordinatorState::Unknown { .. } => stale(),
+            CoordinatorState::Ready { route: current } if current != route => stale(),
+            CoordinatorState::Ready { route: current } => {
+                let Some(epoch) = current.epoch().next() else {
+                    return exhausted();
+                };
+                self.start(None, operation_id, epoch)
+            }
+            CoordinatorState::Discovering { current, .. } if current.as_ref() != Some(route) => {
+                stale()
+            }
+            CoordinatorState::Discovering {
+                current, followup, ..
+            } => {
+                *current = None;
+                if *followup == Some(CoordinatorFollowup::Revocation) {
+                    coalesced()
+                } else {
+                    *followup = Some(CoordinatorFollowup::Revocation);
+                    queued()
+                }
+            }
         }
-        if matches!(self.state, CoordinatorState::Discovering { .. }) {
-            return coalesced();
-        }
-        self.refresh(operation_id)
     }
 
     pub(super) fn start(
@@ -66,7 +81,7 @@ impl CoordinatorMachine {
             current,
             operation_id,
             target_epoch,
-            refresh_pending: false,
+            followup: None,
         };
         find(operation_id, self.key.clone(), target_epoch)
     }

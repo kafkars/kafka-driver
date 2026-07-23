@@ -15,8 +15,8 @@ use crate::{
 };
 
 use super::{
-    error::MetadataOwnerError, identity::MetadataOperationIds, request::metadata_request,
-    waiting::PartitionWaiters,
+    error::MetadataOwnerError, identity::MetadataOperationIds,
+    invalidation_wait::MetadataInvalidations, request::metadata_request, waiting::PartitionWaiters,
 };
 
 /// Reactor owner joining generated responses to deterministic metadata policy.
@@ -26,6 +26,7 @@ pub(in crate::reactor) struct MetadataOwner {
     operation_ids: MetadataOperationIds,
     pending: Option<PendingMetadata>,
     pub(super) waiters: PartitionWaiters,
+    pub(super) invalidations: MetadataInvalidations,
     initial_refresh: bool,
 }
 
@@ -43,6 +44,7 @@ impl MetadataOwner {
                 limits.partition_waiting_calls(),
                 limits.partition_waiting_bytes(),
             ),
+            invalidations: MetadataInvalidations::new(limits.invalidation_waiters()),
             initial_refresh: true,
         }
     }
@@ -61,6 +63,7 @@ impl MetadataOwner {
         let mut progress = self.observe_completion(broker, poller, now, call_ids)?;
         if progress {
             self.waiters.begin_scan();
+            self.invalidations.begin_scan();
         }
         if self.initial_refresh && broker.state().phase() == ConnectionPhase::Ready {
             self.initial_refresh = false;
@@ -108,6 +111,7 @@ impl MetadataOwner {
         let Ok(snapshot) = snapshot_from_response(
             response,
             pending.generation,
+            pending.operation_id,
             &pending.query,
             self.machine.current(),
             self.limits.broker_directory(),

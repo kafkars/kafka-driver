@@ -1,6 +1,4 @@
-//! Public route invalidation dispatch into metadata and coordinator owners.
-
-use kafka_driver_core::{CoordinatorDisposition, MetadataDisposition};
+//! Public route invalidation dispatch into causal metadata and coordinator barriers.
 
 use crate::{InvalidationDisposition, RouteReceipt, completion::CompletionSender};
 
@@ -12,20 +10,25 @@ impl Reactor {
         receipt: RouteReceipt,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
-        let disposition = self.invalidate_route(receipt)?;
-        let _ = completion.complete(disposition);
-        Ok(())
+        self.invalidate_route(receipt, completion)
     }
 
     fn invalidate_route(
         &mut self,
         receipt: RouteReceipt,
-    ) -> Result<InvalidationDisposition, ReactorError> {
+        completion: CompletionSender<InvalidationDisposition>,
+    ) -> Result<(), ReactorError> {
         let now = self.clock.now().map_err(ReactorError::clock)?;
         match receipt {
-            RouteReceipt::Controller { route } => self.invalidate_broker_route(route, now),
-            RouteReceipt::Coordinator { route } => self.invalidate_coordinator(route, now),
-            RouteReceipt::PartitionLeader { route } => self.invalidate_partition(route, now),
+            RouteReceipt::Controller { route } => {
+                self.invalidate_broker_route(route, now, completion)
+            }
+            RouteReceipt::Coordinator { route } => {
+                self.invalidate_coordinator(route, now, completion)
+            }
+            RouteReceipt::PartitionLeader { route } => {
+                self.invalidate_partition(route, now, completion)
+            }
         }
     }
 
@@ -33,13 +36,14 @@ impl Reactor {
         &mut self,
         route: kafka_driver_core::BrokerRoute,
         now: kafka_driver_core::Moment,
-    ) -> Result<InvalidationDisposition, ReactorError> {
+        completion: CompletionSender<InvalidationDisposition>,
+    ) -> Result<(), ReactorError> {
         let (Some(metadata), Some(seed)) = (&mut self.metadata, self.brokers.seed_mut()) else {
-            return Ok(InvalidationDisposition::Unavailable);
+            let _ = completion.complete(InvalidationDisposition::Unavailable);
+            return Ok(());
         };
         metadata
-            .invalidate_broker_route(route, seed, &self.poller, now, &self.call_ids)
-            .map(metadata_disposition)
+            .invalidate_broker_route(route, seed, &self.poller, now, &self.call_ids, completion)
             .map_err(ReactorError::metadata)
     }
 
@@ -47,13 +51,14 @@ impl Reactor {
         &mut self,
         route: kafka_driver_core::PartitionRoute,
         now: kafka_driver_core::Moment,
-    ) -> Result<InvalidationDisposition, ReactorError> {
+        completion: CompletionSender<InvalidationDisposition>,
+    ) -> Result<(), ReactorError> {
         let (Some(metadata), Some(seed)) = (&mut self.metadata, self.brokers.seed_mut()) else {
-            return Ok(InvalidationDisposition::Unavailable);
+            let _ = completion.complete(InvalidationDisposition::Unavailable);
+            return Ok(());
         };
         metadata
-            .invalidate_partition_route(route, seed, &self.poller, now, &self.call_ids)
-            .map(metadata_disposition)
+            .invalidate_partition_route(route, seed, &self.poller, now, &self.call_ids, completion)
             .map_err(ReactorError::metadata)
     }
 
@@ -61,40 +66,15 @@ impl Reactor {
         &mut self,
         route: kafka_driver_core::CoordinatorRoute,
         now: kafka_driver_core::Moment,
-    ) -> Result<InvalidationDisposition, ReactorError> {
+        completion: CompletionSender<InvalidationDisposition>,
+    ) -> Result<(), ReactorError> {
         let (Some(coordinator), Some(seed)) = (&mut self.coordinator, self.brokers.seed_mut())
         else {
-            return Ok(InvalidationDisposition::Unavailable);
+            let _ = completion.complete(InvalidationDisposition::Unavailable);
+            return Ok(());
         };
         coordinator
-            .invalidate(route, seed, &self.poller, now, &self.call_ids)
-            .map(coordinator_disposition)
+            .invalidate(route, seed, &self.poller, now, &self.call_ids, completion)
             .map_err(ReactorError::coordinator)
-    }
-}
-
-fn metadata_disposition(disposition: MetadataDisposition) -> InvalidationDisposition {
-    match disposition {
-        MetadataDisposition::Applied | MetadataDisposition::Queued => {
-            InvalidationDisposition::Applied
-        }
-        MetadataDisposition::Coalesced => InvalidationDisposition::Coalesced,
-        MetadataDisposition::IgnoredStale => InvalidationDisposition::IgnoredStale,
-        MetadataDisposition::QueryCapacityReached
-        | MetadataDisposition::RejectedLeaderEpochRegression => {
-            InvalidationDisposition::Unavailable
-        }
-    }
-}
-
-fn coordinator_disposition(disposition: CoordinatorDisposition) -> InvalidationDisposition {
-    match disposition {
-        CoordinatorDisposition::Applied | CoordinatorDisposition::RefreshQueued => {
-            InvalidationDisposition::Applied
-        }
-        CoordinatorDisposition::AlreadyKnown | CoordinatorDisposition::Coalesced => {
-            InvalidationDisposition::Coalesced
-        }
-        CoordinatorDisposition::IgnoredStale => InvalidationDisposition::IgnoredStale,
     }
 }

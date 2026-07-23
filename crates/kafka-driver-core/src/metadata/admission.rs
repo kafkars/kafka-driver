@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::{
-    MetadataMachine, MetadataState, MetadataTransition,
+    MetadataDisposition, MetadataMachine, MetadataState, MetadataTransition,
     decision::{capacity_reached, coalesced, exhausted, fetch, query_queued, stale},
 };
 
@@ -72,10 +72,18 @@ impl MetadataMachine {
         let Some(current) = self.current() else {
             return stale();
         };
-        if route.generation() != current.generation() {
+        if current.controller_route() != Some(route) {
             return stale();
         }
-        self.refresh(MetadataQuery::Cluster, operation_id)
+        let transition = self.refresh(MetadataQuery::Cluster, operation_id);
+        if transition.disposition() == MetadataDisposition::QueryCapacityReached {
+            return transition;
+        }
+        if let Some(current) = self.current_mut() {
+            current.revoke_controller();
+        }
+        self.revocations.revoke_controller(route, operation_id);
+        transition
     }
 
     pub(super) fn invalidate_partition(
@@ -87,10 +95,21 @@ impl MetadataMachine {
             return stale();
         };
         let current_route = current.partition_route(route.topic(), route.partition());
-        if current_route.as_ref() != Some(route) {
+        if current_route
+            .as_ref()
+            .is_none_or(|current| !current.is_same_fact(route))
+        {
             return stale();
         }
-        self.resolve(MetadataQuery::Topic(route.topic().clone()), operation_id)
+        let transition = self.refresh(MetadataQuery::Topic(route.topic().clone()), operation_id);
+        if transition.disposition() == MetadataDisposition::QueryCapacityReached {
+            return transition;
+        }
+        if let Some(current) = self.current_mut() {
+            current.revoke_partition(route.topic(), route.partition());
+        }
+        self.revocations.revoke_partition(route, operation_id);
+        transition
     }
 
     pub(super) fn start(

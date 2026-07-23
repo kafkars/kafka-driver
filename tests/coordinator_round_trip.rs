@@ -173,8 +173,15 @@ fn exact_coordinator_receipt_refreshes_once_and_then_becomes_stale() {
         Duration::ZERO,
         "interpret coordinator invalidation",
     );
-    assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
-    answer_discovery(&mut seed, &mut reactor, "orders-readers", coordinator_port);
+    await_fresh_coordinator(
+        &driver,
+        &mut reactor,
+        &mut seed,
+        &mut coordinator,
+        &key,
+        coordinator_port,
+        invalidation,
+    );
 
     let stale = driver
         .invalidate(receipt)
@@ -186,6 +193,52 @@ fn exact_coordinator_receipt_refreshes_once_and_then_becomes_stale() {
     );
     assert_eq!(stale.wait(), Ok(InvalidationDisposition::IgnoredStale));
     assert_no_frame(&seed);
+}
+
+fn await_fresh_coordinator(
+    driver: &Driver,
+    reactor: &mut kafka_driver::Reactor,
+    seed: &mut TcpStream,
+    coordinator: &mut TcpStream,
+    key: &CoordinatorKey,
+    coordinator_port: u16,
+    invalidation: kafka_driver::Call<InvalidationDisposition>,
+) {
+    let retry = driver
+        .request_tracked(
+            Route::Coordinator { key: key.clone() },
+            ApiVersionsRequest::default(),
+            Duration::from_secs(10),
+        )
+        .unwrap_or_else(|error| panic!("admit post-invalidation request: {error}"));
+    drive(
+        reactor,
+        Duration::ZERO,
+        "hold request behind coordinator revocation",
+    );
+    assert_no_frame(coordinator);
+    answer_discovery(seed, reactor, "orders-readers", coordinator_port);
+    assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
+    wait_for_frame(coordinator, reactor);
+    let request = read_request(coordinator);
+    coordinator
+        .write_all(&api_versions_response(
+            request.correlation_id,
+            &ApiVersionsResponse::default(),
+        ))
+        .unwrap_or_else(|error| panic!("write refreshed coordinator response: {error}"));
+    drive(
+        reactor,
+        Duration::from_secs(1),
+        "read refreshed coordinator response",
+    );
+    let retried = retry
+        .wait()
+        .unwrap_or_else(|error| panic!("observe post-invalidation request: {error}"));
+    assert!(matches!(
+        retried.receipt(),
+        Some(RouteReceipt::Coordinator { route }) if route.epoch().get() > 1
+    ));
 }
 
 fn answer_discovery(

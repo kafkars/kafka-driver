@@ -1,8 +1,8 @@
 //! Atomic assembly of generated broker and partition facts into one generation.
 
 use kafka_driver_core::{
-    BrokerDirectoryLimits, MetadataGeneration, MetadataQuery, MetadataSnapshot,
-    PartitionLeaderLimits, PartitionLeaderSet,
+    BrokerDirectoryLimits, MetadataGeneration, MetadataQuery, MetadataRevision, MetadataSnapshot,
+    OperationId, PartitionLeaderLimits, PartitionLeaderSet,
 };
 use kafka_wire::MetadataResponse;
 
@@ -11,6 +11,7 @@ use super::{MetadataBuildError, broker_snapshot, partition_snapshot::partition_l
 pub(crate) fn snapshot_from_response(
     response: &MetadataResponse,
     generation: MetadataGeneration,
+    operation_id: OperationId,
     query: &MetadataQuery,
     current: Option<&MetadataSnapshot>,
     broker_limits: BrokerDirectoryLimits,
@@ -27,7 +28,9 @@ pub(crate) fn snapshot_from_response(
     let leaders = match query {
         MetadataQuery::Cluster => PartitionLeaderSet::empty(),
         MetadataQuery::Topic(topic) => {
-            let refreshed = partition_leaders_for_topic(response, topic, partition_limits)?;
+            let revision = MetadataRevision::from_raw(operation_id.get());
+            let refreshed =
+                partition_leaders_for_topic(response, topic, revision, partition_limits)?;
             let retained = current
                 .into_iter()
                 .flat_map(|snapshot| snapshot.partition_leaders().iter())

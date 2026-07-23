@@ -112,24 +112,56 @@ fn partition_route_fetches_and_invalidates_only_its_exact_topic() {
         .receipt()
         .cloned()
         .unwrap_or_else(|| panic!("partition call must publish its route"));
-    assert!(matches!(
-        &receipt,
-        RouteReceipt::PartitionLeader { route }
-            if route.topic() == &topic && route.partition() == partition
-    ));
-    assert_exact_topic_invalidation(&driver, &mut reactor, &mut seed, receipt);
+    assert_exact_topic_invalidation(
+        &driver,
+        &mut reactor,
+        &mut seed,
+        &mut leader,
+        (seed_port, leader_port),
+        (&topic, partition),
+        receipt,
+    );
 }
 
 fn assert_exact_topic_invalidation(
     driver: &Driver,
     reactor: &mut Reactor,
     seed: &mut TcpStream,
+    leader: &mut TcpStream,
+    ports: (u16, u16),
+    target: (&TopicName, PartitionId),
     receipt: RouteReceipt,
 ) {
+    let (topic, partition) = target;
+    let (seed_port, leader_port) = ports;
+    let old_revision = match &receipt {
+        RouteReceipt::PartitionLeader { route }
+            if route.topic() == topic && route.partition() == partition =>
+        {
+            route.revision()
+        }
+        _ => panic!("partition scenario requires a partition receipt"),
+    };
     let invalidation = driver
         .invalidate(receipt)
         .unwrap_or_else(|error| panic!("admit partition invalidation: {error}"));
     drive(reactor, Duration::ZERO, "interpret partition invalidation");
+    let retry = driver
+        .request_tracked(
+            Route::PartitionLeader {
+                topic: topic.clone(),
+                partition,
+            },
+            ApiVersionsRequest::default(),
+            Duration::from_secs(10),
+        )
+        .unwrap_or_else(|error| panic!("admit post-invalidation request: {error}"));
+    drive(
+        reactor,
+        Duration::ZERO,
+        "hold request behind route revocation",
+    );
+    assert_no_frame(leader);
     drive(
         reactor,
         Duration::from_secs(1),
@@ -146,5 +178,47 @@ fn assert_exact_topic_invalidation(
         refreshed_topics[0].name.as_ref().map(StrBytes::as_str),
         Some("orders")
     );
+    seed.write_all(&metadata_response(
+        refresh.correlation_id,
+        seed_port,
+        leader_port,
+        Some((topic, partition)),
+    ))
+    .unwrap_or_else(|error| panic!("write refreshed topic Metadata: {error}"));
+    drive(
+        reactor,
+        Duration::from_secs(1),
+        "install post-invalidation Metadata",
+    );
     assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
+    wait_for_frame(leader, reactor);
+    let request = read_request(leader);
+    leader
+        .write_all(&api_versions_response(
+            request.correlation_id,
+            &ApiVersionsResponse::default(),
+        ))
+        .unwrap_or_else(|error| panic!("write post-invalidation leader response: {error}"));
+    drive(
+        reactor,
+        Duration::from_secs(1),
+        "read post-invalidation leader response",
+    );
+    let outcome = retry
+        .wait()
+        .unwrap_or_else(|error| panic!("observe post-invalidation request: {error}"));
+    assert!(matches!(
+        outcome.receipt(),
+        Some(RouteReceipt::PartitionLeader { route }) if route.revision() > old_revision
+    ));
+}
+
+fn assert_no_frame(peer: &TcpStream) {
+    peer.set_nonblocking(true)
+        .unwrap_or_else(|error| panic!("make leader peer nonblocking: {error}"));
+    let mut byte = [0; 1];
+    assert!(matches!(
+        peer.peek(&mut byte),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+    ));
 }

@@ -25,9 +25,9 @@ pub enum RouteReceipt {
         /// Exact key and discovery-epoch route used by the request.
         route: CoordinatorRoute,
     },
-    /// Partition leader selected with metadata generation and leader epoch.
+    /// Partition leader selected with topic evidence revision and leader epoch.
     PartitionLeader {
-        /// Exact generation, topic-partition, broker, and leader-epoch route.
+        /// Exact topic revision, partition, broker, and leader-epoch route.
         route: PartitionRoute,
     },
 }

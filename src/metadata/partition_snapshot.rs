@@ -1,8 +1,8 @@
 //! Bounded conversion of generated topic partitions into known leader facts.
 
 use kafka_driver_core::{
-    BrokerId, LeaderEpoch, PartitionId, PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet,
-    TopicName,
+    BrokerId, LeaderEpoch, MetadataRevision, PartitionId, PartitionLeader, PartitionLeaderLimits,
+    PartitionLeaderSet, TopicName,
 };
 use kafka_wire::{
     MetadataResponse,
@@ -14,6 +14,7 @@ use super::MetadataBuildError;
 pub(super) fn partition_leaders_for_topic(
     response: &MetadataResponse,
     expected: &TopicName,
+    revision: MetadataRevision,
     limits: PartitionLeaderLimits,
 ) -> Result<PartitionLeaderSet, MetadataBuildError> {
     enforce_input_bounds(response, limits)?;
@@ -31,7 +32,7 @@ pub(super) fn partition_leaders_for_topic(
         return Err(MetadataBuildError::RequestedTopicMismatch);
     }
     let leaders = if topic.error_code == 0 {
-        topic_leaders(topic, &name)?
+        topic_leaders(topic, &name, revision)?
     } else {
         Vec::new()
     };
@@ -69,6 +70,7 @@ fn enforce_input_bounds(
 fn topic_leaders(
     topic: &MetadataResponseTopic,
     name: &TopicName,
+    revision: MetadataRevision,
 ) -> Result<Vec<PartitionLeader>, MetadataBuildError> {
     let mut leaders = Vec::with_capacity(topic.partitions.len().min(16));
     for partition in topic
@@ -76,7 +78,7 @@ fn topic_leaders(
         .iter()
         .filter(|partition| partition.error_code == 0)
     {
-        if let Some(leader) = partition_leader(name.clone(), partition)? {
+        if let Some(leader) = partition_leader(name.clone(), partition, revision)? {
             leaders.push(leader);
         }
     }
@@ -86,6 +88,7 @@ fn topic_leaders(
 fn partition_leader(
     topic: TopicName,
     partition: &MetadataResponsePartition,
+    revision: MetadataRevision,
 ) -> Result<Option<PartitionLeader>, MetadataBuildError> {
     let partition_id =
         PartitionId::new(partition.partition_index).map_err(MetadataBuildError::PartitionId)?;
@@ -112,5 +115,6 @@ fn partition_leader(
         partition_id,
         broker_id,
         leader_epoch,
+        revision,
     )))
 }

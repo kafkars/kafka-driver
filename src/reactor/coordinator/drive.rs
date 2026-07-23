@@ -117,6 +117,7 @@ impl CoordinatorOwner {
         };
         let transition = self.entries[index].machine.apply(input);
         self.interpret(index, transition, broker, poller, now, call_ids)?;
+        self.entries[index].settle_invalidation();
         self.waiters.begin_scan();
         Ok(true)
     }

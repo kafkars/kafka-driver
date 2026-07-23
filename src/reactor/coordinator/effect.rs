@@ -114,7 +114,10 @@ impl CoordinatorOwner {
             self.waiters.begin_scan();
             let mut effects = transition.into_effects().into_iter();
             match (effects.next(), effects.next()) {
-                (None, None) => return Ok(()),
+                (None, None) => {
+                    self.entries[index].settle_invalidation();
+                    return Ok(());
+                }
                 (
                     Some(CoordinatorEffect::Find {
                         operation_id: next_operation,

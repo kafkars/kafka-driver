@@ -73,6 +73,7 @@ fn partition_receipt(raw_generation: u64) -> (RouteReceipt, usize) {
             partition,
             broker_id(),
             LeaderEpoch::new(1).ok(),
+            kafka_driver_core::MetadataRevision::from_raw(raw_generation),
         )],
         PartitionLeaderLimits::default(),
     )

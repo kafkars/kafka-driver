@@ -2,6 +2,15 @@
 
 use crate::{CoordinatorEpoch, CoordinatorRoute, OperationId};
 
+/// Why a discovery result must be followed by another external query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CoordinatorFollowup {
+    /// Explicit refresh demand arrived while discovery was already active.
+    Refresh,
+    /// A failed route was withdrawn after the active discovery had started.
+    Revocation,
+}
+
 /// Current route and at most one in-flight discovery for one coordinator key.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CoordinatorState {
@@ -18,8 +27,8 @@ pub enum CoordinatorState {
         operation_id: OperationId,
         /// Epoch reserved for a successful result.
         target_epoch: CoordinatorEpoch,
-        /// Whether one explicitly newer discovery must follow this result.
-        refresh_pending: bool,
+        /// Strongest reason another discovery must follow this result.
+        followup: Option<CoordinatorFollowup>,
     },
     /// One discovered route is authoritative.
     Ready {

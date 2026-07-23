@@ -87,6 +87,15 @@ impl PartitionLeaderSet {
                 .is_some_and(|previous| assignment_regresses(previous, current))
         })
     }
+
+    pub(in crate::metadata) fn remove(&mut self, topic: &TopicName, partition: PartitionId) {
+        if let Ok(index) = self
+            .entries
+            .binary_search_by(|entry| compare_key(entry, topic, partition))
+        {
+            self.entries.remove(index);
+        }
+    }
 }
 
 fn assignment_regresses(previous: &PartitionLeader, current: &PartitionLeader) -> bool {

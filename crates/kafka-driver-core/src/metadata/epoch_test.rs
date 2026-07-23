@@ -120,6 +120,7 @@ fn snapshot(raw_generation: u64, raw_leader: i32, raw_epoch: Option<i32>) -> Met
             partition(),
             broker(raw_leader),
             raw_epoch.and_then(|epoch| LeaderEpoch::new(epoch).ok()),
+            crate::MetadataRevision::from_raw(raw_generation),
         )],
         PartitionLeaderLimits::new(nonzero(1), nonzero(1)),
     )

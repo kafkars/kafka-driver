@@ -28,7 +28,7 @@ pub enum MetadataInput {
     },
     /// Invalidates one leader fact only when its complete route remains current.
     InvalidatePartitionRoute {
-        /// Exact generation, broker, topic-partition, and leader-epoch route.
+        /// Exact topic revision, broker, partition, and leader-epoch route.
         route: PartitionRoute,
         /// Reserved operation identity used only if a fetch starts.
         operation_id: OperationId,

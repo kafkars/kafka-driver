@@ -1,6 +1,6 @@
-//! Partition ownership fenced by metadata generation and broker-issued leader epoch.
+//! Partition ownership fenced by topic evidence and broker-issued leader epoch.
 
-use crate::{BrokerRoute, LeaderEpoch, PartitionId, TopicName};
+use crate::{BrokerRoute, LeaderEpoch, MetadataRevision, PartitionId, TopicName};
 
 /// Permission to route one call using one immutable leader assignment.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -9,6 +9,7 @@ pub struct PartitionRoute {
     topic: TopicName,
     partition: PartitionId,
     leader_epoch: Option<LeaderEpoch>,
+    revision: MetadataRevision,
 }
 
 impl PartitionRoute {
@@ -17,12 +18,14 @@ impl PartitionRoute {
         topic: TopicName,
         partition: PartitionId,
         leader_epoch: Option<LeaderEpoch>,
+        revision: MetadataRevision,
     ) -> Self {
         Self {
             broker,
             topic,
             partition,
             leader_epoch,
+            revision,
         }
     }
 
@@ -44,5 +47,19 @@ impl PartitionRoute {
     /// Returns the known leader epoch, if supplied by the negotiated Metadata API.
     pub const fn leader_epoch(&self) -> Option<LeaderEpoch> {
         self.leader_epoch
+    }
+
+    /// Returns the topic-scoped metadata evidence revision for this fact.
+    pub const fn revision(&self) -> MetadataRevision {
+        self.revision
+    }
+
+    /// Returns whether two routes name the same leader fact despite directory restamping.
+    pub fn is_same_fact(&self, other: &Self) -> bool {
+        self.topic == other.topic
+            && self.partition == other.partition
+            && self.broker.broker_id() == other.broker.broker_id()
+            && self.leader_epoch == other.leader_epoch
+            && self.revision == other.revision
     }
 }

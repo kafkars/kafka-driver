@@ -150,6 +150,7 @@ fn topic_refresh_replaces_only_its_topic_and_cluster_refresh_clears_routes() {
     let merged = snapshot_from_response(
         &payments_response,
         generation(4),
+        operation(4),
         &MetadataQuery::Topic(topic_name("payments")),
         Some(&orders),
         BrokerDirectoryLimits::new(nonzero(2)),
@@ -160,6 +161,7 @@ fn topic_refresh_replaces_only_its_topic_and_cluster_refresh_clears_routes() {
     let cluster = snapshot_from_response(
         &cluster_response,
         generation(5),
+        operation(5),
         &MetadataQuery::Cluster,
         Some(&merged),
         BrokerDirectoryLimits::new(nonzero(2)),
@@ -176,6 +178,18 @@ fn topic_refresh_replaces_only_its_topic_and_cluster_refresh_clears_routes() {
         merged
             .partition_route(&topic_name("payments"), partition_id(0))
             .is_some()
+    );
+    assert_eq!(
+        merged
+            .partition_route(&topic_name("orders"), partition_id(0))
+            .map(|route| route.revision().get()),
+        Some(3)
+    );
+    assert_eq!(
+        merged
+            .partition_route(&topic_name("payments"), partition_id(0))
+            .map(|route| route.revision().get()),
+        Some(4)
     );
     assert!(cluster.partition_leaders().is_empty());
 }
@@ -237,6 +251,7 @@ fn build(
     snapshot_from_response(
         response,
         generation(3),
+        operation(3),
         &MetadataQuery::Topic(topic_name("orders")),
         None,
         BrokerDirectoryLimits::new(nonzero(max_brokers)),
@@ -258,6 +273,10 @@ fn broker_id(value: i32) -> BrokerId {
 
 const fn generation(raw: u64) -> MetadataGeneration {
     MetadataGeneration::from_raw(raw)
+}
+
+const fn operation(raw: u64) -> kafka_driver_core::OperationId {
+    kafka_driver_core::OperationId::from_raw(raw)
 }
 
 fn nonzero(value: usize) -> NonZeroUsize {

@@ -17,5 +17,5 @@ pub use effect::CoordinatorEffect;
 pub use input::CoordinatorInput;
 pub use machine::CoordinatorMachine;
 pub use route::CoordinatorRoute;
-pub use state::CoordinatorState;
+pub use state::{CoordinatorFollowup, CoordinatorState};
 pub use transition::{CoordinatorDisposition, CoordinatorTransition};

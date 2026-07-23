@@ -6,10 +6,13 @@ use kafka_wire_core::ApiVersion;
 
 use crate::{Call, RequestError};
 
+use super::invalidation_wait::CoordinatorInvalidation;
+
 pub(super) struct CoordinatorEntry {
     pub(super) machine: CoordinatorMachine,
     pub(super) pending: Option<PendingCoordinator>,
     pub(super) discovery_requested: bool,
+    pub(super) invalidation: Option<CoordinatorInvalidation>,
 }
 
 impl CoordinatorEntry {
@@ -18,6 +21,7 @@ impl CoordinatorEntry {
             machine,
             pending: None,
             discovery_requested: false,
+            invalidation: None,
         }
     }
 }

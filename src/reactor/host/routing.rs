@@ -139,7 +139,7 @@ impl Reactor {
         };
         if let Some(route) = current {
             owner
-                .invalidate(route, seed, &self.poller, now, &self.call_ids)
+                .invalidate_unobserved(route, seed, &self.poller, now, &self.call_ids)
                 .map_err(ReactorError::coordinator)?;
         }
         owner

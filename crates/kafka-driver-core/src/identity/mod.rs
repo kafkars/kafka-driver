@@ -17,7 +17,7 @@ mod partition_test;
 #[cfg(test)]
 mod topic_test;
 
-pub use broker::{BrokerId, BrokerIdError, MetadataGeneration};
+pub use broker::{BrokerId, BrokerIdError, MetadataGeneration, MetadataRevision};
 pub use call::{CallId, OperationId};
 pub use coordinator::{CoordinatorEpoch, CoordinatorKey, CoordinatorKeyError, CoordinatorKind};
 pub use effect::{EffectId, TimerId};

@@ -47,6 +47,23 @@ impl MetadataGeneration {
     }
 }
 
+/// Monotonic provenance of one topic's most recent accepted metadata evidence.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MetadataRevision(u64);
+
+impl MetadataRevision {
+    /// Creates a fact revision from its driver-local numeric value.
+    pub const fn from_raw(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the driver-local fact revision.
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// Rejection of a Kafka sentinel or otherwise negative broker node ID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BrokerIdError {

@@ -4,8 +4,8 @@ use std::num::NonZeroU16;
 
 use crate::{
     BrokerEndpoint, BrokerId, CoordinatorDisposition, CoordinatorEffect, CoordinatorEpoch,
-    CoordinatorInput, CoordinatorKey, CoordinatorKind, CoordinatorMachine, CoordinatorState,
-    HostName, OperationId,
+    CoordinatorFollowup, CoordinatorInput, CoordinatorKey, CoordinatorKind, CoordinatorMachine,
+    CoordinatorRoute, CoordinatorState, HostName, OperationId,
 };
 
 #[test]
@@ -107,6 +107,53 @@ fn exact_route_invalidation_refreshes_and_stale_route_is_ignored() {
         [CoordinatorEffect::Find { operation_id, epoch, .. }]
             if *operation_id == operation(3) && *epoch == CoordinatorEpoch::from_raw(2)
     ));
+    assert!(machine.current().is_none());
+}
+
+#[test]
+fn invalidation_during_active_discovery_withdraws_route_and_requires_followup() {
+    let mut machine = ready_machine();
+    let failed = machine
+        .current()
+        .cloned()
+        .unwrap_or_else(|| panic!("ready route"));
+    let _ = machine.apply(refresh(2));
+
+    let invalidated = machine.apply(CoordinatorInput::Invalidate {
+        route: failed,
+        operation_id: operation(3),
+    });
+
+    assert_eq!(
+        invalidated.disposition(),
+        CoordinatorDisposition::RefreshQueued
+    );
+    assert!(machine.current().is_none());
+    assert!(matches!(
+        machine.state(),
+        CoordinatorState::Discovering {
+            followup: Some(CoordinatorFollowup::Revocation),
+            ..
+        }
+    ));
+
+    let active = machine.apply(success(2, 2, 8, 4));
+    assert_eq!(
+        active.effects(),
+        [CoordinatorEffect::Find {
+            operation_id: operation(4),
+            key: key(),
+            epoch: CoordinatorEpoch::from_raw(3),
+        }]
+    );
+    assert!(machine.current().is_none());
+
+    let followup = machine.apply(success(4, 3, 9, 5));
+    assert!(followup.effects().is_empty());
+    assert_eq!(
+        machine.current().map(CoordinatorRoute::epoch),
+        Some(CoordinatorEpoch::from_raw(3))
+    );
 }
 
 #[test]

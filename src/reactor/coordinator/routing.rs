@@ -57,5 +57,8 @@ impl CoordinatorOwner {
 
     pub(in crate::reactor) fn fail_waiters(&mut self, failure: &RequestError) {
         self.waiters.fail_all(failure);
+        for entry in &mut self.entries {
+            entry.fail_invalidation();
+        }
     }
 }

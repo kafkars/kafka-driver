@@ -9,6 +9,7 @@ mod machine;
 mod outcome;
 mod partition;
 mod query;
+mod revocation;
 mod snapshot;
 mod state;
 mod transition;

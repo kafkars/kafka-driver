@@ -2,7 +2,7 @@
 
 use crate::{MetadataGeneration, MetadataInput, MetadataQueryLimits, MetadataSnapshot};
 
-use super::{MetadataState, MetadataTransition};
+use super::{MetadataState, MetadataTransition, revocation::MetadataRevocations};
 
 /// Deterministic single-owner policy for cluster metadata generations.
 #[must_use]
@@ -10,6 +10,7 @@ use super::{MetadataState, MetadataTransition};
 pub struct MetadataMachine {
     pub(super) state: MetadataState,
     pub(super) query_limits: MetadataQueryLimits,
+    pub(super) revocations: MetadataRevocations,
 }
 
 impl MetadataMachine {
@@ -28,6 +29,7 @@ impl MetadataMachine {
                 next_generation: initial_generation,
             },
             query_limits,
+            revocations: MetadataRevocations::new(),
         }
     }
 
@@ -86,5 +88,23 @@ impl MetadataMachine {
                 ..
             } if active == query || queued.contains(query)
         )
+    }
+
+    /// Returns whether controller routing remains withdrawn pending newer evidence.
+    pub fn controller_revocation_pending(&self, route: crate::BrokerRoute) -> bool {
+        self.revocations.controller_pending(route)
+    }
+
+    /// Returns whether this exact partition remains withdrawn pending newer evidence.
+    pub fn partition_revocation_pending(&self, route: &crate::PartitionRoute) -> bool {
+        self.revocations.partition_pending(route)
+    }
+
+    pub(super) fn current_mut(&mut self) -> Option<&mut MetadataSnapshot> {
+        match &mut self.state {
+            MetadataState::Empty { .. } => None,
+            MetadataState::Refreshing { current, .. } => current.as_mut(),
+            MetadataState::Ready { snapshot } => Some(snapshot),
+        }
     }
 }

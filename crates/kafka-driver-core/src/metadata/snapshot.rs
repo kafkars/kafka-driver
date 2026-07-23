@@ -72,7 +72,7 @@ impl MetadataSnapshot {
         &self.leaders
     }
 
-    /// Issues a route only when this generation has a known leader for the partition.
+    /// Issues a route with the retained topic revision for this leader fact.
     pub fn partition_route(
         &self,
         topic: &TopicName,
@@ -85,6 +85,7 @@ impl MetadataSnapshot {
             leader.topic().clone(),
             leader.partition(),
             leader.leader_epoch(),
+            leader.revision(),
         ))
     }
 
@@ -94,5 +95,13 @@ impl MetadataSnapshot {
         route: BrokerRoute,
     ) -> Result<&BrokerDirectoryEntry, BrokerRouteError> {
         self.brokers.resolve(route)
+    }
+
+    pub(super) fn revoke_controller(&mut self) {
+        self.controller = None;
+    }
+
+    pub(super) fn revoke_partition(&mut self, topic: &TopicName, partition: PartitionId) {
+        self.leaders.remove(topic, partition);
     }
 }

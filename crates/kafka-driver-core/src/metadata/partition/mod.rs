@@ -1,4 +1,4 @@
-//! Bounded partition-leader facts and generation-fenced route vocabulary.
+//! Bounded partition-leader facts with independent evidence provenance.
 
 mod entry;
 mod error;
