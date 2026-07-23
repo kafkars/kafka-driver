@@ -2,7 +2,7 @@
 
 use std::{
     num::{NonZeroU16, NonZeroUsize},
-    sync::mpsc::channel,
+    sync::mpsc::{Receiver, Sender, channel},
     thread,
     time::Duration,
 };
@@ -118,6 +118,47 @@ fn shutdown_poll_returns_while_the_worker_is_still_blocked() {
     {
         thread::yield_now();
     }
+}
+
+#[test]
+fn dropping_live_resolver_detaches_an_unfinished_worker() {
+    let (release, exited, worker) = blocked_worker();
+
+    assert_drop_returns(Resolver::from_worker(worker), &release, &exited);
+}
+
+#[test]
+fn dropping_resolver_shutdown_detaches_an_unfinished_worker() {
+    let (release, exited, worker) = blocked_worker();
+
+    assert_drop_returns(ResolverShutdown::from_worker(worker), &release, &exited);
+}
+
+fn blocked_worker() -> (Sender<()>, Receiver<()>, thread::JoinHandle<()>) {
+    let (release, blocked) = channel();
+    let (finished, exited) = channel();
+    let worker = thread::spawn(move || {
+        let _ = blocked.recv();
+        let _ = finished.send(());
+    });
+    (release, exited, worker)
+}
+
+fn assert_drop_returns(owner: impl Send + 'static, release: &Sender<()>, exited: &Receiver<()>) {
+    let (completed, observed) = channel();
+    let dropper = thread::spawn(move || {
+        drop(owner);
+        let _ = completed.send(());
+    });
+
+    assert_eq!(observed.recv_timeout(Duration::from_secs(1)), Ok(()));
+    release
+        .send(())
+        .unwrap_or_else(|error| panic!("release detached resolver worker: {error}"));
+    assert_eq!(exited.recv_timeout(Duration::from_secs(1)), Ok(()));
+    dropper
+        .join()
+        .unwrap_or_else(|_| panic!("join nonblocking drop observer"));
 }
 
 fn endpoint() -> BrokerEndpoint {

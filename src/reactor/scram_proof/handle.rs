@@ -103,28 +103,29 @@ impl ScramProofWorker {
         }
     }
 
+    #[cfg(test)]
+    pub(in crate::reactor) fn from_worker(worker: thread::JoinHandle<()>) -> Self {
+        Self {
+            sender: None,
+            outcomes: None,
+            outcome_budget: 1,
+            worker: Some(worker),
+        }
+    }
+
     fn close_channels(&mut self) {
         self.sender = None;
         self.outcomes = None;
-    }
-
-    fn join_worker(&mut self) -> io::Result<()> {
-        let Some(worker) = self.worker.take() else {
-            return Ok(());
-        };
-        worker
-            .join()
-            .map_err(|_| io::Error::other("SCRAM proof worker panicked"))
     }
 }
 
 impl Drop for ScramProofWorker {
     fn drop(&mut self) {
         self.close_channels();
-        drop(self.join_worker());
     }
 }
 
+/// Graceful-shutdown ownership of a proof worker pending nonblocking observation.
 pub(in crate::reactor) struct ScramProofShutdown {
     worker: Option<thread::JoinHandle<()>>,
 }
@@ -154,11 +155,12 @@ impl ScramProofShutdown {
             .join()
             .map_err(|_| io::Error::other("SCRAM proof worker panicked"))
     }
-}
 
-impl Drop for ScramProofShutdown {
-    fn drop(&mut self) {
-        drop(self.join_worker());
+    #[cfg(test)]
+    pub(in crate::reactor) fn from_worker(worker: thread::JoinHandle<()>) -> Self {
+        Self {
+            worker: Some(worker),
+        }
     }
 }
 

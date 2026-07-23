@@ -112,28 +112,29 @@ impl Resolver {
         }
     }
 
+    #[cfg(test)]
+    pub(in crate::reactor) fn from_worker(worker: thread::JoinHandle<()>) -> Self {
+        Self {
+            requests: None,
+            outcomes: None,
+            outcome_budget: 1,
+            worker: Some(worker),
+        }
+    }
+
     fn close_channels(&mut self) {
         self.requests = None;
         self.outcomes = None;
-    }
-
-    fn join_worker(&mut self) -> io::Result<()> {
-        let Some(worker) = self.worker.take() else {
-            return Ok(());
-        };
-        worker
-            .join()
-            .map_err(|_| io::Error::other("DNS worker panicked"))
     }
 }
 
 impl Drop for Resolver {
     fn drop(&mut self) {
         self.close_channels();
-        drop(self.join_worker());
     }
 }
 
+/// Graceful-shutdown ownership of a DNS worker pending nonblocking observation.
 pub(in crate::reactor) struct ResolverShutdown {
     worker: Option<thread::JoinHandle<()>>,
 }
@@ -169,12 +170,6 @@ impl ResolverShutdown {
         Self {
             worker: Some(worker),
         }
-    }
-}
-
-impl Drop for ResolverShutdown {
-    fn drop(&mut self) {
-        drop(self.join_worker());
     }
 }
 

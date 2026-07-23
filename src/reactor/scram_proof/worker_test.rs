@@ -1,6 +1,11 @@
-//! Focused real-worker scenario for proof completion identity and reactor wake.
+//! Focused worker scenarios for proof identity, wake, and nonblocking teardown.
 
-use std::{num::NonZeroUsize, time::Duration};
+use std::{
+    num::NonZeroUsize,
+    sync::mpsc::{Receiver, Sender, channel},
+    thread,
+    time::Duration,
+};
 
 use crate::{
     ScramProofLimits,
@@ -8,7 +13,7 @@ use crate::{
 };
 
 use super::{
-    ScramProofWorker,
+    ScramProofShutdown, ScramProofWorker,
     queue_test::{assert_continues, request},
 };
 
@@ -71,6 +76,47 @@ fn shutdown_joins_a_worker_blocked_by_full_outcome_capacity() {
     worker
         .shutdown()
         .unwrap_or_else(|error| panic!("join capacity-blocked proof worker: {error}"));
+}
+
+#[test]
+fn dropping_live_proof_owner_detaches_an_unfinished_worker() {
+    let (release, exited, worker) = blocked_worker();
+
+    assert_drop_returns(ScramProofWorker::from_worker(worker), &release, &exited);
+}
+
+#[test]
+fn dropping_proof_shutdown_detaches_an_unfinished_worker() {
+    let (release, exited, worker) = blocked_worker();
+
+    assert_drop_returns(ScramProofShutdown::from_worker(worker), &release, &exited);
+}
+
+fn blocked_worker() -> (Sender<()>, Receiver<()>, thread::JoinHandle<()>) {
+    let (release, blocked) = channel();
+    let (finished, exited) = channel();
+    let worker = thread::spawn(move || {
+        let _ = blocked.recv();
+        let _ = finished.send(());
+    });
+    (release, exited, worker)
+}
+
+fn assert_drop_returns(owner: impl Send + 'static, release: &Sender<()>, exited: &Receiver<()>) {
+    let (completed, observed) = channel();
+    let dropper = thread::spawn(move || {
+        drop(owner);
+        let _ = completed.send(());
+    });
+
+    assert_eq!(observed.recv_timeout(Duration::from_secs(1)), Ok(()));
+    release
+        .send(())
+        .unwrap_or_else(|error| panic!("release detached proof worker: {error}"));
+    assert_eq!(exited.recv_timeout(Duration::from_secs(1)), Ok(()));
+    dropper
+        .join()
+        .unwrap_or_else(|_| panic!("join nonblocking drop observer"));
 }
 
 fn nonzero(value: usize) -> NonZeroUsize {
