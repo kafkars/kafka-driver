@@ -31,7 +31,9 @@ impl BrokerSet {
     }
 
     fn allocate_child(&mut self, lane: BrokerLane) -> Result<usize, BrokerSetError> {
-        self.reclaim_reusable_children()?;
+        if self.free_slots.is_empty() {
+            self.reclaim_one_reusable()?;
+        }
         if let Some(index) = self.free_slots.pop() {
             let child = self
                 .children
@@ -55,47 +57,74 @@ impl BrokerSet {
             self.waiting_bytes,
             self.admission_budget,
         )));
+        self.active_positions.push(None);
         self.activate_slot(lane, index)?;
         Ok(index)
     }
 
     fn activate_slot(&mut self, lane: BrokerLane, index: usize) -> Result<(), BrokerSetError> {
-        if self.lane_slots.contains_key(&lane) {
+        if self.lane_slots.contains_key(&lane)
+            || self.active_positions.get(index).is_none_or(Option::is_some)
+        {
             return Err(BrokerSetError::UnknownBrokerChild);
         }
+        let position = self.active_slots.len();
         self.lane_slots.insert(lane, index);
         self.active_slots.push(index);
+        self.active_positions[index] = Some(position);
         Ok(())
     }
 
-    pub(super) fn reclaim_reusable_children(&mut self) -> Result<bool, BrokerSetError> {
-        let mut reclaimed = false;
-        let mut position = 0;
-        while position < self.active_slots.len() {
-            let index = self.active_slots[position];
-            let child = self
-                .children
-                .get(index)
-                .ok_or(BrokerSetError::UnknownBrokerChild)?;
-            if !child.is_reusable() {
-                position += 1;
-                continue;
+    fn reclaim_one_reusable(&mut self) -> Result<bool, BrokerSetError> {
+        while let Some(lane) = self.reusable_lanes.pop() {
+            if self.reclaim_lane(lane)? {
+                return Ok(true);
             }
-            let lane = child.lane();
+        }
+        Ok(false)
+    }
+
+    pub(super) fn reclaim_lane(&mut self, lane: BrokerLane) -> Result<bool, BrokerSetError> {
+        let Some(index) = self.child_index(lane) else {
             self.remove_lane_indexes(lane);
-            if self.lane_slots.remove(&lane) != Some(index) {
-                return Err(BrokerSetError::UnknownBrokerChild);
-            }
-            self.active_slots.swap_remove(position);
-            if position <= self.admission_cursor {
-                self.admission_cursor = position;
-            }
-            self.free_slots.push(index);
-            reclaimed = true;
+            return Ok(false);
+        };
+        let child = self
+            .children
+            .get(index)
+            .ok_or(BrokerSetError::UnknownBrokerChild)?;
+        if !child.is_reusable() {
+            self.sync_lane(lane)?;
+            return Ok(false);
         }
-        if self.active_slots.is_empty() || self.admission_cursor >= self.active_slots.len() {
-            self.admission_cursor = 0;
+        let position = self
+            .active_positions
+            .get(index)
+            .copied()
+            .flatten()
+            .ok_or(BrokerSetError::UnknownBrokerChild)?;
+        if self.active_slots.get(position).copied() != Some(index)
+            || self.lane_slots.get(&lane).copied() != Some(index)
+        {
+            return Err(BrokerSetError::UnknownBrokerChild);
         }
-        Ok(reclaimed)
+        let moved = (position + 1 < self.active_slots.len())
+            .then(|| self.active_slots.last().copied())
+            .flatten();
+        if moved.is_some_and(|moved| {
+            self.active_positions.get(moved).copied().flatten() != Some(self.active_slots.len() - 1)
+        }) {
+            return Err(BrokerSetError::UnknownBrokerChild);
+        }
+
+        self.remove_lane_indexes(lane);
+        debug_assert_eq!(self.lane_slots.remove(&lane), Some(index));
+        self.active_positions[index] = None;
+        debug_assert_eq!(self.active_slots.swap_remove(position), index);
+        if let Some(moved) = moved {
+            self.active_positions[moved] = Some(position);
+        }
+        self.free_slots.push(index);
+        Ok(true)
     }
 }

@@ -29,9 +29,12 @@ pub(in crate::reactor) struct BrokerSet {
     )]
     pub(super) children: Vec<Box<BrokerChild>>,
     pub(super) active_slots: Vec<usize>,
+    pub(super) active_positions: Vec<Option<usize>>,
     pub(super) free_slots: Vec<usize>,
     pub(super) lane_slots: BTreeMap<super::BrokerLane, usize>,
     pub(super) address_refreshes: LaneQueue,
+    pub(super) runnable_lanes: LaneQueue,
+    pub(super) reusable_lanes: LaneQueue,
     pub(super) deadlines: DeadlineIndex,
     pub(super) broker_template: Option<BrokerTemplate>,
     pub(super) scram_proof: Option<ScramProofSender>,
@@ -39,7 +42,6 @@ pub(in crate::reactor) struct BrokerSet {
     pub(super) waiting_bytes: NonZeroUsize,
     pub(super) admission_budget: NonZeroUsize,
     pub(super) lane_turn_budget: NonZeroUsize,
-    pub(super) admission_cursor: usize,
 }
 
 impl BrokerSet {
@@ -83,9 +85,12 @@ impl BrokerSet {
             child_capacity: lane_capacity,
             children: Vec::new(),
             active_slots: Vec::new(),
+            active_positions: Vec::new(),
             free_slots: Vec::new(),
             lane_slots: BTreeMap::new(),
             address_refreshes: LaneQueue::new(lane_capacity),
+            runnable_lanes: LaneQueue::new(lane_capacity),
+            reusable_lanes: LaneQueue::new(lane_capacity),
             deadlines: DeadlineIndex::new(lane_capacity),
             broker_template,
             scram_proof,
@@ -93,7 +98,6 @@ impl BrokerSet {
             waiting_bytes: metadata_limits.waiting_bytes(),
             admission_budget: metadata_limits.admission_budget(),
             lane_turn_budget: metadata_limits.lane_turn_budget(),
-            admission_cursor: 0,
         })
     }
 
@@ -133,7 +137,6 @@ impl BrokerSet {
             position += 1;
         }
         self.directory = Some(directory.clone());
-        self.reclaim_reusable_children()?;
         Ok(true)
     }
 

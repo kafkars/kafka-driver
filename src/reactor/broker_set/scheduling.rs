@@ -12,14 +12,18 @@ impl BrokerSet {
             return Ok(());
         };
         let needs_refresh = child.needs_address_refresh();
+        let needs_turn = child.needs_runnable_turn();
+        let is_reusable = child.is_reusable();
         let deadline = child.next_deadline();
-        if needs_refresh {
-            self.address_refreshes
-                .push(lane)
-                .map_err(|_| BrokerSetError::SchedulerCapacityReached)?;
-        } else {
-            self.address_refreshes.remove(lane);
-        }
+        self.address_refreshes
+            .sync(lane, needs_refresh)
+            .map_err(|_| BrokerSetError::SchedulerCapacityReached)?;
+        self.runnable_lanes
+            .sync(lane, needs_turn)
+            .map_err(|_| BrokerSetError::SchedulerCapacityReached)?;
+        self.reusable_lanes
+            .sync(lane, is_reusable)
+            .map_err(|_| BrokerSetError::SchedulerCapacityReached)?;
         self.deadlines
             .sync(lane, deadline)
             .map_err(|_| BrokerSetError::SchedulerCapacityReached)?;
@@ -28,6 +32,8 @@ impl BrokerSet {
 
     pub(super) fn remove_lane_indexes(&mut self, lane: BrokerLane) {
         self.address_refreshes.remove(lane);
+        self.runnable_lanes.remove(lane);
+        self.reusable_lanes.remove(lane);
         self.deadlines.remove(lane);
     }
 }

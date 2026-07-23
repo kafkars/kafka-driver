@@ -44,7 +44,7 @@ impl BrokerSet {
         let lane = child.lane();
         let progress = child.observe(poller, event, now)?;
         self.sync_lane(lane)?;
-        Ok(progress | self.reclaim_reusable_children()?)
+        Ok(progress)
     }
 
     pub(in crate::reactor) fn continue_io(
@@ -56,20 +56,7 @@ impl BrokerSet {
             seed.continue_io(poller, now)
                 .map_err(BrokerSetError::Broker)
         })?;
-        let mut position = 0;
-        while let Some(index) = self.active_slots.get(position).copied() {
-            let child = self
-                .children
-                .get_mut(index)
-                .ok_or(BrokerSetError::UnknownBrokerChild)?;
-            let lane = child.lane();
-            progress |= child.continue_io(poller, now)?;
-            self.sync_lane(lane)?;
-            position += 1;
-        }
-        progress |= self.activate_pending(poller, now)?;
-        progress |= self.admit_waiting(poller, now)?;
-        progress |= self.reclaim_reusable_children()?;
+        progress |= self.continue_runnable_lanes(poller, now)?;
         Ok(progress)
     }
 
@@ -101,10 +88,7 @@ impl BrokerSet {
             progressed_lanes += 1;
         }
         let more_due = self.deadlines.next_deadline().is_some_and(|at| at <= now);
-        progress = progress.merge(DeadlineProgress::from_work(
-            usize::from(self.reclaim_reusable_children()?),
-            more_due,
-        ));
+        progress = progress.merge(DeadlineProgress::from_work(0, more_due));
         Ok(progress)
     }
 
@@ -150,34 +134,7 @@ impl BrokerSet {
 
     pub(in crate::reactor) fn has_local_io(&self) -> bool {
         self.seed.as_ref().is_some_and(SingleBroker::has_local_io)
-            || self
-                .active_slots
-                .iter()
-                .filter_map(|index| self.children.get(*index))
-                .any(|child| child.has_local_io())
-    }
-
-    fn admit_waiting(&mut self, poller: &Poller, now: Moment) -> Result<bool, BrokerSetError> {
-        let mut progress = false;
-        let mut admitted = 0;
-        let mut idle_slots = 0;
-        while admitted < self.admission_budget.get() && idle_slots < self.active_slots.len() {
-            let slot_position = self.admission_cursor;
-            self.admission_cursor = (self.admission_cursor + 1) % self.active_slots.len();
-            let index = self.active_slots[slot_position];
-            let made_progress = self
-                .children
-                .get_mut(index)
-                .ok_or(BrokerSetError::UnknownBrokerChild)?
-                .admit_one(poller, now)?;
-            if made_progress {
-                progress = true;
-                admitted += 1;
-                idle_slots = 0;
-            } else {
-                idle_slots += 1;
-            }
-        }
-        Ok(progress)
+            || !self.address_refreshes.is_empty()
+            || !self.runnable_lanes.is_empty()
     }
 }

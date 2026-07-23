@@ -47,6 +47,7 @@ fn calls_for_one_unresolved_broker_share_one_dns_request_and_fail_together() {
         .unwrap_or_else(|error| panic!("second route demand: {error}"));
 
     assert!(coalesced.is_none());
+    assert!(!brokers.has_local_io());
     brokers
         .complete_resolution(
             lane,

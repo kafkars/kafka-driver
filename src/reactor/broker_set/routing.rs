@@ -73,26 +73,6 @@ impl BrokerSet {
         Ok(true)
     }
 
-    pub(super) fn activate_pending(
-        &mut self,
-        poller: &Poller,
-        now: Moment,
-    ) -> Result<bool, BrokerSetError> {
-        let mut progress = false;
-        let mut position = 0;
-        while let Some(index) = self.active_slots.get(position).copied() {
-            let lane = self
-                .children
-                .get(index)
-                .ok_or(BrokerSetError::UnknownBrokerChild)?
-                .lane();
-            progress |= self.activate_child(index, poller, now)?;
-            self.sync_lane(lane)?;
-            position += 1;
-        }
-        Ok(progress)
-    }
-
     pub(in crate::reactor) fn take_address_refresh(&mut self) -> Option<BrokerLane> {
         while let Some(lane) = self.address_refreshes.pop() {
             let still_needed = self
@@ -118,7 +98,7 @@ impl BrokerSet {
         Ok(request)
     }
 
-    fn activate_child(
+    pub(super) fn activate_child(
         &mut self,
         index: usize,
         poller: &Poller,

@@ -105,12 +105,18 @@ impl BrokerChild {
             .is_none_or(SingleBroker::is_terminal)
     }
 
-    pub(super) fn has_local_io(&self) -> bool {
+    pub(super) fn needs_runnable_turn(&self) -> bool {
         self.connection
             .as_ref()
-            .is_some_and(SingleBroker::has_local_io)
+            .is_some_and(SingleBroker::has_continuation_io)
             || (self.is_ready() && !self.waiting.is_empty())
-            || (self.is_terminal() && !self.waiting.is_empty())
+            || (self
+                .connection
+                .as_ref()
+                .is_some_and(SingleBroker::is_terminal)
+                && !self.waiting.is_empty())
+            || self.has_installable()
+            || self.is_reusable()
             || (self.retired
                 && !self.retirement_started
                 && self

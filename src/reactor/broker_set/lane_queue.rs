@@ -34,6 +34,19 @@ impl LaneQueue {
         Ok(true)
     }
 
+    pub(super) fn sync(
+        &mut self,
+        lane: BrokerLane,
+        should_contain: bool,
+    ) -> Result<(), LaneQueueFull> {
+        if should_contain {
+            self.push(lane)?;
+        } else {
+            self.remove(lane);
+        }
+        Ok(())
+    }
+
     pub(super) fn pop(&mut self) -> Option<BrokerLane> {
         let (sequence, lane) = self.lanes_by_sequence.pop_first()?;
         debug_assert_eq!(self.sequence_by_lane.remove(&lane), Some(sequence));
@@ -48,7 +61,6 @@ impl LaneQueue {
         true
     }
 
-    #[cfg(test)]
     pub(super) fn is_empty(&self) -> bool {
         self.lanes_by_sequence.is_empty()
     }

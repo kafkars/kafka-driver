@@ -77,11 +77,17 @@ impl BrokerChild {
     }
 
     pub(super) fn take_installable(&mut self) -> Option<PendingBroker> {
-        let terminal = self
-            .connection
-            .as_ref()
-            .is_none_or(super::super::broker::SingleBroker::is_terminal);
-        terminal.then(|| self.pending_install.take()).flatten()
+        self.has_installable()
+            .then(|| self.pending_install.take())
+            .flatten()
+    }
+
+    pub(super) fn has_installable(&self) -> bool {
+        self.pending_install.is_some()
+            && self
+                .connection
+                .as_ref()
+                .is_none_or(super::super::broker::SingleBroker::is_terminal)
     }
 
     pub(super) fn replacement_in_flight(&self) -> bool {
