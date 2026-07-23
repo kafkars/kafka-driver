@@ -187,12 +187,25 @@ fn ci_delegates_validation_to_the_canonical_repository_gate() {
 }
 
 #[test]
-fn ci_runs_the_same_gate_on_linux_and_macos() {
+fn ci_runs_the_same_gate_on_linux_macos_and_windows() {
     let root = workspace_root();
     let workflow = read(&root.join(".github/workflows/ci.yml"));
 
-    assert!(workflow.contains("os: [ubuntu-latest, macos-latest]"));
+    assert!(workflow.contains("os: [ubuntu-latest, macos-latest, windows-latest]"));
     assert!(workflow.contains("runs-on: ${{ matrix.os }}"));
+}
+
+#[test]
+fn extensionless_gate_scripts_keep_unix_line_endings_on_every_runner() {
+    let root = workspace_root();
+    let attributes = read(&root.join(".gitattributes"));
+
+    assert!(
+        attributes
+            .lines()
+            .any(|line| line.trim() == "scripts/* text eol=lf"),
+        "extensionless scripts must retain LF endings for Windows Git Bash"
+    );
 }
 
 #[test]
