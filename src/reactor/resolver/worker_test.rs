@@ -36,7 +36,9 @@ fn numeric_resolution_wakes_the_reactor_with_exact_request_identity() {
         .poll_into(Some(Duration::from_secs(1)), &mut events)
         .unwrap_or_else(|error| panic!("wait for DNS worker wake: {error}"));
     let mut outcomes = Vec::new();
-    let progress = resolver.drain_into(&mut outcomes);
+    let progress = resolver
+        .drain_into(&mut outcomes)
+        .unwrap_or_else(|error| panic!("drain numeric DNS outcome: {error}"));
 
     assert_eq!(progress.outcomes(), 1);
     assert!(!progress.more_work());

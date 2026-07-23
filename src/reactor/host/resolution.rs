@@ -114,7 +114,7 @@ impl NameResolution {
     ) -> Result<ResolutionProgress, NameResolutionError> {
         let restarted = self.restart_exhausted_bootstrap(now)?;
         self.outcomes.clear();
-        let drained = self.resolver.drain_into(&mut self.outcomes);
+        let drained = self.resolver.drain_into(&mut self.outcomes)?;
         let mut broker = None;
         let mut outcomes = std::mem::take(&mut self.outcomes);
         for outcome in outcomes.drain(..) {

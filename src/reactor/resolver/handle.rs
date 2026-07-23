@@ -10,7 +10,7 @@ use kafka_driver_core::{DnsOutcome, DnsRequest, ResolutionLimits};
 
 use crate::{ResolverLimits, reactor::WakeHandle};
 
-use super::{ResolverSubmitError, worker};
+use super::{ResolverSubmitError, ResolverWorkerError, worker};
 
 /// Reactor-owned half of one bounded internal DNS worker.
 pub(in crate::reactor) struct Resolver {
@@ -72,28 +72,24 @@ impl Resolver {
     pub(in crate::reactor) fn drain_into(
         &self,
         destination: &mut Vec<DnsOutcome>,
-    ) -> ResolverProgress {
-        let mut disconnected = false;
+    ) -> Result<ResolverProgress, ResolverWorkerError> {
         let Some(outcomes) = &self.outcomes else {
-            return ResolverProgress {
+            return Ok(ResolverProgress {
                 outcomes: 0,
                 more_work: false,
-            };
+            });
         };
         for _ in 0..self.outcome_budget {
             match outcomes.try_recv() {
                 Ok(outcome) => destination.push(outcome),
                 Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    disconnected = true;
-                    break;
-                }
+                Err(TryRecvError::Disconnected) => return Err(ResolverWorkerError::Lost),
             }
         }
-        ResolverProgress {
+        Ok(ResolverProgress {
             outcomes: destination.len(),
-            more_work: !disconnected && destination.len() == self.outcome_budget,
-        }
+            more_work: destination.len() == self.outcome_budget,
+        })
     }
 
     #[cfg(test)]

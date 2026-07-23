@@ -8,7 +8,7 @@ use kafka_driver_core::{
 
 use crate::ResolverLimits;
 
-use super::{Resolver, ResolverSubmitError};
+use super::{Resolver, ResolverSubmitError, ResolverWorkerError};
 
 #[test]
 fn request_queue_accepts_exact_capacity_and_returns_one_more_request() {
@@ -34,15 +34,30 @@ fn outcome_drain_stops_at_its_turn_budget_and_retains_remaining_work() {
     }
     let mut batch = Vec::new();
 
-    let first = resolver.drain_into(&mut batch);
+    let first = resolver
+        .drain_into(&mut batch)
+        .unwrap_or_else(|error| panic!("drain first DNS batch: {error}"));
     assert_eq!(first.outcomes(), 2);
     assert!(first.more_work());
     assert_eq!(batch.len(), 2);
 
     batch.clear();
-    let second = resolver.drain_into(&mut batch);
+    let second = resolver
+        .drain_into(&mut batch)
+        .unwrap_or_else(|error| panic!("drain second DNS batch: {error}"));
     assert_eq!(second.outcomes(), 1);
     assert!(!second.more_work());
+}
+
+#[test]
+fn closed_outcome_channel_reports_lost_worker_instead_of_idle_progress() {
+    let (resolver, _requests, outcomes) = Resolver::isolated(limits(1, 1, 1));
+    drop(outcomes);
+
+    assert_eq!(
+        resolver.drain_into(&mut Vec::new()),
+        Err(ResolverWorkerError::Lost)
+    );
 }
 
 fn limits(requests: usize, outcomes: usize, budget: usize) -> ResolverLimits {

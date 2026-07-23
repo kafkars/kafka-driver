@@ -10,7 +10,10 @@ use kafka_driver_core::{
 use crate::{
     BootstrapLimits, ResolverLimits, TrafficClass,
     config::BootstrapConfig,
-    reactor::{broker_set::BrokerLane, resolver::ResolverSubmitError},
+    reactor::{
+        broker_set::BrokerLane,
+        resolver::{ResolverSubmitError, ResolverWorkerError},
+    },
 };
 
 use super::{NameResolution, resolution_error::NameResolutionError};
@@ -90,6 +93,29 @@ fn closed_worker_is_host_failure_without_discarding_the_pending_request() {
         failure,
         Err(NameResolutionError::Resolver(ResolverSubmitError::Closed(request)))
             if request == broker_request
+    ));
+    assert!(broker_outcomes.is_empty());
+}
+
+#[test]
+fn lost_worker_outcome_channel_is_host_fatal_with_owned_dns_in_flight() {
+    let limits = resolver_limits();
+    let (mut resolution, _requests, outcomes) = NameResolution::isolated(bootstrap(), limits);
+    let broker_request = request(2);
+    let permit = resolution
+        .try_reserve_broker(lane())
+        .unwrap_or_else(|error| panic!("reserve broker DNS ownership: {error}"))
+        .unwrap_or_else(|| panic!("broker DNS ownership must fit"));
+    assert_eq!(permit.effect_id(), broker_request.effect_id());
+    assert!(resolution.submit(permit, broker_request).is_ok());
+    drop(outcomes);
+    let mut broker_outcomes = Vec::new();
+
+    let failure = resolution.drive_for_test(&mut broker_outcomes, Moment::ORIGIN);
+
+    assert!(matches!(
+        failure,
+        Err(NameResolutionError::Worker(ResolverWorkerError::Lost))
     ));
     assert!(broker_outcomes.is_empty());
 }
