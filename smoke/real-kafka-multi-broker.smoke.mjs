@@ -6,6 +6,7 @@ import {
   stopBroker,
   upBroker,
 } from "./support/kafka-cluster.mjs";
+import { requireDeadFirstLocalhost } from "./support/localhost-addresses.mjs";
 
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 
@@ -60,6 +61,18 @@ smoke.suite("real Kafka multi-broker failover", { tags: ["real-kafka-multi-broke
     for (const broker of ["kafka-1", "kafka-3"]) {
       await awaitBroker(t, docker.command, stack, composeFile, composeEnv, broker);
     }
+  });
+
+  const deadFirstHost = await t.step("require dead-first A/AAAA resolver order", async () => {
+    return await requireDeadFirstLocalhost(first.port);
+  });
+
+  await t.step("rotate one logical host past its refused first address", async () => {
+    const result = await t.cmd(probe, ["dns-rotation", deadFirstHost], {
+      cwd: root,
+      timeout: "30s",
+    });
+    expect.value(result.stdout).toContain("PASS dead-first DNS address rotation");
   });
 
   await t.step("skip one dead bootstrap endpoint", async () => {
