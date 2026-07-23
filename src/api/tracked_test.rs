@@ -40,6 +40,27 @@ fn completed_request_returns_the_exact_route_published_before_it() {
 }
 
 #[test]
+fn routed_result_can_be_extracted_without_blocking() {
+    let (receiver, completion) = completion_pair();
+    let call = RoutedCall::new(Call::new(receiver));
+
+    assert!(call.try_result().is_none());
+    assert!(
+        completion
+            .complete(RoutedOutcome::new(Ok("response"), None))
+            .is_ok()
+    );
+    let Some(Ok(outcome)) = call.try_result() else {
+        panic!("ready routed result must be extracted");
+    };
+    assert_eq!(outcome.result(), &Ok("response"));
+    assert!(matches!(
+        call.try_result(),
+        Some(Err(crate::CompletionError::Consumed))
+    ));
+}
+
+#[test]
 fn foreign_driver_rejects_token_before_mailbox_admission() {
     let (issuing, _issuing_reactor) = super::Driver::builder()
         .broker(address(9092))

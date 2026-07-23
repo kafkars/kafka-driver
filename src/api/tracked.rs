@@ -89,6 +89,14 @@ impl<T> RoutedCall<T> {
         self.call.wait()
     }
 
+    /// Takes the routed terminal result without blocking, or returns `None` while pending.
+    ///
+    /// A returned `Some` consumes the single result and its optional route
+    /// failure token. Later extraction reports [`CompletionError::Consumed`].
+    pub fn try_result(&self) -> Option<Result<RoutedOutcome<T>, CompletionError>> {
+        self.call.try_result()
+    }
+
     /// Abandons result and route observation without cancelling driver work.
     pub fn abandon(self) {
         drop(self);

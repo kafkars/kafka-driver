@@ -34,7 +34,11 @@ impl<T> Call<T> {
         drop(self);
     }
 
-    pub(crate) fn try_result(&self) -> Option<Result<T, CompletionError>> {
+    /// Takes the terminal result without blocking, or returns `None` while pending.
+    ///
+    /// A returned `Some` consumes the single result. Later calls, waits, or
+    /// polls return [`CompletionError::Consumed`].
+    pub fn try_result(&self) -> Option<Result<T, CompletionError>> {
         self.completion.try_result()
     }
 }
