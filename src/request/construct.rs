@@ -6,12 +6,12 @@ use kafka_driver_core::CallId;
 use kafka_wire::RequestResponsePair;
 
 use crate::{
-    Call, RequestError, RoutedCall, TrafficClass, api::route_receipt_pair,
-    completion::completion_pair, observation::CallTimeline,
+    Call, RequestError, RoutedCall, TrafficClass, completion::completion_pair,
+    observation::CallTimeline,
 };
 
 use super::{
-    ErasedRequest, RequestDeadline,
+    ErasedRequest, RequestCompletion, RequestDeadline,
     typed::{RequestLifecycle, TypedRequest},
 };
 
@@ -47,7 +47,7 @@ where
         traffic_class,
         request,
         RequestDeadline::new(timeout),
-        completion,
+        RequestCompletion::plain(completion),
         RequestLifecycle::unobserved(),
     );
     (Call::new(receiver), Box::new(request))
@@ -89,8 +89,8 @@ where
         traffic_class,
         request,
         RequestDeadline::new(timeout),
-        completion,
-        RequestLifecycle::observed(timeline, None),
+        RequestCompletion::plain(completion),
+        RequestLifecycle::observed(timeline),
     );
     (Call::new(receiver), Box::new(request))
 }
@@ -107,19 +107,15 @@ where
     R::Response: Send + 'static,
 {
     let (receiver, completion) = completion_pair();
-    let (receipt, writer) = route_receipt_pair();
     let request = TypedRequest::new(
         call_id,
         traffic_class,
         request,
         RequestDeadline::new(timeout),
-        completion,
-        RequestLifecycle::observed(timeline, Some(writer)),
+        RequestCompletion::routed(completion),
+        RequestLifecycle::observed(timeline),
     );
-    (
-        RoutedCall::new(Call::new(receiver), receipt),
-        Box::new(request),
-    )
+    (RoutedCall::new(Call::new(receiver)), Box::new(request))
 }
 
 pub(super) fn retained_bytes<R>(request: &R) -> usize

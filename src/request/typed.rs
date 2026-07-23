@@ -9,10 +9,8 @@ use kafka_wire_core::{ApiVersion, Bytes};
 
 use crate::{
     RequestError, RouteReceipt, TrafficClass,
-    api::RouteReceiptWriter,
-    completion::CompletionSender,
     observation::{CallOutcome, CallTimeline},
-    request::RequestDeadline,
+    request::{RequestCompletion, RequestDeadline},
     response::{ResponseAdmissionError, ResponseRegistry},
 };
 
@@ -27,29 +25,21 @@ where
     request: R,
     deadline: RequestDeadline,
     retained_bytes: usize,
-    completion: CompletionSender<Result<R::Response, RequestError>>,
+    completion: RequestCompletion<R::Response>,
     lifecycle: RequestLifecycle,
 }
 
 pub(super) struct RequestLifecycle {
-    receipt: Option<RouteReceiptWriter>,
     timeline: Option<CallTimeline>,
 }
 
 impl RequestLifecycle {
     pub(super) const fn unobserved() -> Self {
-        Self {
-            receipt: None,
-            timeline: None,
-        }
+        Self { timeline: None }
     }
 
-    pub(super) const fn observed(
-        timeline: CallTimeline,
-        receipt: Option<RouteReceiptWriter>,
-    ) -> Self {
+    pub(super) const fn observed(timeline: CallTimeline) -> Self {
         Self {
-            receipt,
             timeline: Some(timeline),
         }
     }
@@ -64,7 +54,7 @@ where
         traffic_class: TrafficClass,
         request: R,
         deadline: RequestDeadline,
-        completion: CompletionSender<Result<R::Response, RequestError>>,
+        completion: RequestCompletion<R::Response>,
         lifecycle: RequestLifecycle,
     ) -> Self {
         let retained_bytes = retained_bytes(&request);
@@ -122,10 +112,7 @@ where
 
     fn record_route(&mut self, receipt: RouteReceipt) -> Result<(), RouteReceipt> {
         self.mark_routed(Instant::now());
-        self.lifecycle
-            .receipt
-            .as_ref()
-            .map_or(Ok(()), |writer| writer.publish(receipt))
+        self.completion.record_route(receipt)
     }
 
     fn prepare(
@@ -176,7 +163,7 @@ where
     }
 
     fn fail(self: Box<Self>, failure: RequestError) {
-        let delivered = self.completion.complete(Err(failure.clone())).is_ok();
+        let delivered = self.completion.complete(Err(failure.clone()));
         if let Some(timeline) = self.lifecycle.timeline {
             timeline.finish(CallOutcome::Failed(&failure), delivered);
         }
@@ -184,11 +171,11 @@ where
 }
 
 fn fail<T>(
-    completion: CompletionSender<Result<T, RequestError>>,
+    completion: RequestCompletion<T>,
     timeline: Option<CallTimeline>,
     failure: RequestError,
 ) -> Result<Bytes, RequestError> {
-    let delivered = completion.complete(Err(failure.clone())).is_ok();
+    let delivered = completion.complete(Err(failure.clone()));
     if let Some(timeline) = timeline {
         timeline.finish(CallOutcome::Failed(&failure), delivered);
     }

@@ -4,7 +4,6 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
-    sync::{Arc, Mutex, MutexGuard},
     task::{Context, Poll},
 };
 
@@ -41,6 +40,13 @@ pub struct RoutedOutcome<T> {
 }
 
 impl<T> RoutedOutcome<T> {
+    pub(crate) const fn new(
+        result: Result<T, RequestError>,
+        receipt: Option<RouteReceipt>,
+    ) -> Self {
+        Self { result, receipt }
+    }
+
     /// Borrows the ordinary generated request result.
     pub const fn result(&self) -> &Result<T, RequestError> {
         &self.result
@@ -60,25 +66,17 @@ impl<T> RoutedOutcome<T> {
 /// Runtime-neutral completion handle retaining one exact route receipt.
 #[must_use = "dropping a routed call abandons result and route observation"]
 pub struct RoutedCall<T> {
-    call: Call<Result<T, RequestError>>,
-    receipt: RouteReceiptReader,
+    call: Call<RoutedOutcome<T>>,
 }
 
 impl<T> RoutedCall<T> {
-    pub(crate) const fn new(
-        call: Call<Result<T, RequestError>>,
-        receipt: RouteReceiptReader,
-    ) -> Self {
-        Self { call, receipt }
+    pub(crate) const fn new(call: Call<RoutedOutcome<T>>) -> Self {
+        Self { call }
     }
 
     /// Blocks until the request settles, retaining any route used before settlement.
     pub fn wait(self) -> Result<RoutedOutcome<T>, CompletionError> {
-        let Self { call, receipt } = self;
-        call.wait().map(|result| RoutedOutcome {
-            result,
-            receipt: receipt.take(),
-        })
+        self.call.wait()
     }
 
     /// Abandons result and route observation without cancelling driver work.
@@ -92,13 +90,7 @@ impl<T> Future for RoutedCall<T> {
 
     fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        match Pin::new(&mut this.call).poll(context) {
-            Poll::Ready(result) => Poll::Ready(result.map(|result| RoutedOutcome {
-                result,
-                receipt: this.receipt.take(),
-            })),
-            Poll::Pending => Poll::Pending,
-        }
+        Pin::new(&mut this.call).poll(context)
     }
 }
 
@@ -107,49 +99,5 @@ impl<T> Unpin for RoutedCall<T> {}
 impl<T> fmt::Debug for RoutedCall<T> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.debug_struct("RoutedCall").finish_non_exhaustive()
-    }
-}
-
-pub(crate) fn route_receipt_pair() -> (RouteReceiptReader, RouteReceiptWriter) {
-    let shared = Arc::new(Mutex::new(None));
-    (
-        RouteReceiptReader {
-            shared: Arc::clone(&shared),
-        },
-        RouteReceiptWriter { shared },
-    )
-}
-
-pub(crate) struct RouteReceiptReader {
-    shared: Arc<Mutex<Option<RouteReceipt>>>,
-}
-
-impl RouteReceiptReader {
-    fn take(&self) -> Option<RouteReceipt> {
-        self.lock().take()
-    }
-
-    fn lock(&self) -> MutexGuard<'_, Option<RouteReceipt>> {
-        self.shared
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-}
-
-pub(crate) struct RouteReceiptWriter {
-    shared: Arc<Mutex<Option<RouteReceipt>>>,
-}
-
-impl RouteReceiptWriter {
-    pub(crate) fn publish(&self, receipt: RouteReceipt) -> Result<(), RouteReceipt> {
-        let mut current = self
-            .shared
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if current.is_some() {
-            return Err(receipt);
-        }
-        *current = Some(receipt);
-        Ok(())
     }
 }

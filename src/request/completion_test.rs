@@ -1,4 +1,4 @@
-//! Scenarios for exact route publication and routed result observation.
+//! Exact route ownership scenarios inside one typed request completion.
 
 use std::num::{NonZeroU16, NonZeroUsize};
 
@@ -7,26 +7,35 @@ use kafka_driver_core::{
     HostName, MetadataGeneration,
 };
 
-use crate::{Call, completion::completion_pair};
+use crate::completion::completion_pair;
+use crate::{RequestError, RouteReceipt};
 
-use super::{RouteReceipt, RoutedCall, RoutedOutcome};
+use super::completion::RequestCompletion;
 
 #[test]
-fn completed_request_returns_the_exact_route_published_before_it() {
+fn one_request_completion_cannot_replace_its_first_route_receipt() {
+    let first = controller_receipt(7);
+    let second = controller_receipt(8);
+    let (_receiver, sender) = completion_pair();
+    let mut completion = RequestCompletion::<()>::routed(sender);
+
+    assert!(completion.record_route(first).is_ok());
+    assert_eq!(completion.record_route(second.clone()), Err(second));
+}
+
+#[test]
+fn routed_failure_returns_the_route_owned_before_settlement() {
     let receipt = controller_receipt(7);
-    let (receiver, completion) = completion_pair();
-    let call = RoutedCall::new(Call::new(receiver));
-    assert!(
-        completion
-            .complete(RoutedOutcome::new(Ok("response"), Some(receipt.clone())))
-            .is_ok()
-    );
+    let (receiver, sender) = completion_pair();
+    let mut completion = RequestCompletion::<()>::routed(sender);
+    assert!(completion.record_route(receipt.clone()).is_ok());
 
-    let outcome = call
+    assert!(completion.complete(Err(RequestError::RouteUnavailable)));
+
+    let outcome = receiver
         .wait()
-        .unwrap_or_else(|error| panic!("routed result must complete: {error}"));
-
-    assert_eq!(outcome.result(), &Ok("response"));
+        .unwrap_or_else(|error| panic!("completion must remain observable: {error}"));
+    assert_eq!(outcome.result(), &Err(RequestError::RouteUnavailable));
     assert_eq!(outcome.receipt(), Some(&receipt));
 }
 

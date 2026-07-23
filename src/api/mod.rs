@@ -38,4 +38,3 @@ pub use tracked::{RouteReceipt, RoutedCall, RoutedOutcome};
 pub use traffic::TrafficClass;
 
 pub(crate) use identity::CallIds;
-pub(crate) use tracked::{RouteReceiptWriter, route_receipt_pair};

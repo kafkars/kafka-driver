@@ -9,12 +9,13 @@ use kafka_wire_core::{ApiVersion, DecodeLimits, Decoder, KafkaDecode};
 
 #[cfg(test)]
 use crate::{api::Call, completion::completion_pair};
-use crate::{completion::CompletionSender, observation::CallTimeline};
+use crate::{observation::CallTimeline, request::RequestCompletion};
 
+#[cfg(test)]
+use super::ResponseFailure;
 use super::{
     CompletionDisposition, RequestError, ResponseAdmissionError, ResponseDispatch,
-    ResponseDispatchError, ResponseEnvelope, ResponseFailError, ResponseFailure,
-    ResponseInspectError,
+    ResponseDispatchError, ResponseEnvelope, ResponseFailError, ResponseInspectError,
     slot::{PendingResponse, TypedSlot},
 };
 /// Bounded typed response ownership in Kafka connection order.
@@ -53,7 +54,7 @@ impl ResponseRegistry {
             correlation_id,
             version,
             header_version,
-            completion,
+            RequestCompletion::plain(completion),
             None,
         );
         Ok(Call::new(receiver))
@@ -66,7 +67,7 @@ impl ResponseRegistry {
         correlation_id: CorrelationId,
         version: ApiVersion,
         header_version: ApiVersion,
-        completion: CompletionSender<Result<R::Response, ResponseFailure>>,
+        completion: RequestCompletion<R::Response>,
         timeline: Option<CallTimeline>,
     ) where
         R: RequestResponsePair,

@@ -6,8 +6,8 @@ use kafka_driver_core::{CallId, CorrelationId};
 use kafka_wire_core::{ApiVersion, Bytes, DecodeError, DecodeLimits, Decoder, KafkaDecode};
 
 use crate::{
-    completion::CompletionSender,
     observation::{CallOutcome, CallTimeline},
+    request::RequestCompletion,
 };
 
 use super::{CompletionDisposition, RequestError, ResponseFailure};
@@ -30,7 +30,7 @@ pub(super) struct TypedSlot<T> {
     correlation_id: CorrelationId,
     version: ApiVersion,
     header_version: ApiVersion,
-    completion: CompletionSender<Result<T, ResponseFailure>>,
+    completion: RequestCompletion<T>,
     timeline: Option<CallTimeline>,
 }
 
@@ -40,7 +40,7 @@ impl<T> TypedSlot<T> {
         correlation_id: CorrelationId,
         version: ApiVersion,
         header_version: ApiVersion,
-        completion: CompletionSender<Result<T, ResponseFailure>>,
+        completion: RequestCompletion<T>,
         timeline: Option<CallTimeline>,
     ) -> Self {
         Self {
@@ -94,13 +94,13 @@ where
         });
         match decoded {
             Ok(response) => {
-                let delivered = completion.complete(Ok(response)).is_ok();
+                let delivered = completion.complete(Ok(response));
                 finish(timeline, CallOutcome::Succeeded, delivered);
                 Ok(disposition(delivered))
             }
             Err(error) => {
                 let failure = ResponseFailure::Decode(error.clone());
-                let delivered = completion.complete(Err(failure.clone())).is_ok();
+                let delivered = completion.complete(Err(failure.clone()));
                 finish(timeline, CallOutcome::Failed(&failure), delivered);
                 Err(SlotDecodeError {
                     error,
@@ -111,7 +111,7 @@ where
     }
 
     fn fail(self: Box<Self>, failure: RequestError) -> CompletionDisposition {
-        let delivered = self.completion.complete(Err(failure.clone())).is_ok();
+        let delivered = self.completion.complete(Err(failure.clone()));
         finish(self.timeline, CallOutcome::Failed(&failure), delivered);
         disposition(delivered)
     }

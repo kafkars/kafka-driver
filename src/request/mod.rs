@@ -1,15 +1,19 @@
 //! Type-erased generated request ownership before FIFO response registration.
 
+mod completion;
 mod construct;
 mod deadline;
 mod erased;
 mod typed;
 
 #[cfg(test)]
+mod completion_test;
+#[cfg(test)]
 mod deadline_test;
 #[cfg(test)]
 mod typed_test;
 
+pub(crate) use completion::RequestCompletion;
 #[cfg(test)]
 pub(crate) use construct::erased_request;
 pub(crate) use construct::{
