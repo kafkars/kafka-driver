@@ -3,6 +3,7 @@
 use std::{fmt, io};
 
 use kafka_driver_core::{BrokerEffect, CallId, ConnectionEffect, ConnectionMachineError};
+use kafka_driver_transport::WriteAdmissionFailure;
 
 use crate::reactor::timer::TimerScheduleError;
 use crate::response::{ResponseDispatchError, ResponseFailError};
@@ -36,6 +37,10 @@ pub(in crate::reactor) enum BrokerError {
     ResourceClose(io::Error),
     /// A broker slot attempted replacement before its prior owner became terminal.
     ReplacementBeforeTerminal,
+    /// The shared SCRAM proof worker closed while a broker still required it.
+    ScramProofWorkerLost,
+    /// Authentication write admission contradicted the generated exchange contract.
+    AuthenticationWrite(WriteAdmissionFailure),
 }
 
 impl fmt::Display for BrokerError {
@@ -69,6 +74,13 @@ impl fmt::Display for BrokerError {
             Self::ReplacementBeforeTerminal => {
                 formatter.write_str("broker replacement started before prior terminal state")
             }
+            Self::ScramProofWorkerLost => formatter.write_str("SCRAM proof worker was lost"),
+            Self::AuthenticationWrite(failure) => {
+                write!(
+                    formatter,
+                    "authentication write invariant failed: {failure}"
+                )
+            }
         }
     }
 }
@@ -87,6 +99,8 @@ impl std::error::Error for BrokerError {
             | Self::MissingEffect
             | Self::DeadlineOverflow
             | Self::ReplacementBeforeTerminal
+            | Self::ScramProofWorkerLost
+            | Self::AuthenticationWrite(_)
             | Self::RequestOwnership { .. } => None,
         }
     }

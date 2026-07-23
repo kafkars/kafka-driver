@@ -32,12 +32,12 @@ pub use config::{
 pub use config::{TlsClientConfig, TlsClientPolicy};
 pub use host::{DriverHost, DriverHostError};
 pub use kafka_driver_core::{
-    AuthenticationFailure, BootstrapError, BootstrapLimits, BootstrapSet, BrokerDirectoryLimits,
-    BrokerEndpoint, BrokerRoute, BrokerState, CallFailure, CallId,
-    CloseReason as ConnectionCloseReason, ConnectionPhase, CoordinatorKey, CoordinatorKeyError,
-    CoordinatorKind, CoordinatorRoute, HostName, HostNameError, MetadataGeneration, Moment,
-    NegotiationFailure, PartitionId, PartitionIdError, PartitionRoute, TopicName, TopicNameError,
-    TransportFailure,
+    AuthenticationFailure, AuthenticationFailureDisposition, BootstrapError, BootstrapLimits,
+    BootstrapSet, BrokerDirectoryLimits, BrokerEndpoint, BrokerRoute, BrokerState, CallFailure,
+    CallId, CloseReason as ConnectionCloseReason, ConnectionPhase, CoordinatorKey,
+    CoordinatorKeyError, CoordinatorKind, CoordinatorRoute, HostName, HostNameError,
+    MetadataGeneration, Moment, NegotiationFailure, PartitionId, PartitionIdError, PartitionRoute,
+    TopicName, TopicNameError, TransportFailure,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use reactor::{Reactor, ReactorError, TurnOutcome, WakeHandle};

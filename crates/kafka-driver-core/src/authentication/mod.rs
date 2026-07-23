@@ -13,12 +13,14 @@ mod state;
 mod transition;
 
 #[cfg(test)]
+mod failure_test;
+#[cfg(test)]
 mod machine_test;
 #[cfg(test)]
 mod mechanism_test;
 
 pub use effect::AuthenticationEffect;
-pub use failure::AuthenticationFailure;
+pub use failure::{AuthenticationFailure, AuthenticationFailureDisposition};
 pub use input::{AuthenticationAttempt, AuthenticationInput, ExchangeOutcome};
 pub use limits::AuthenticationLimits;
 pub use machine::AuthenticationMachine;

@@ -13,7 +13,7 @@ use crate::{
     reactor::resource::{ResourceIdentity, ResourceToken},
 };
 
-use super::{ScramProofRequest, ScramProofSubmitError, ScramProofWorker};
+use super::{ScramProofRequest, ScramProofSubmitError, ScramProofWorker, ScramProofWorkerError};
 
 #[test]
 fn request_queue_accepts_exact_capacity_and_returns_one_more_secret_owner() {
@@ -37,16 +37,31 @@ fn outcome_drain_stops_at_its_turn_budget_and_retains_remaining_work() {
     }
     let mut batch = Vec::new();
 
-    let first = worker.drain_into(&mut batch);
+    let first = worker
+        .drain_into(&mut batch)
+        .unwrap_or_else(|error| panic!("drain first proof batch: {error}"));
     assert_eq!(first.outcomes(), 2);
     assert!(first.more_work());
     batch.clear();
-    let second = worker.drain_into(&mut batch);
+    let second = worker
+        .drain_into(&mut batch)
+        .unwrap_or_else(|error| panic!("drain second proof batch: {error}"));
     assert_eq!(second.outcomes(), 1);
     assert!(!second.more_work());
 }
 
-pub(super) fn request(raw: u64) -> ScramProofRequest {
+#[test]
+fn closed_outcome_channel_reports_lost_worker_instead_of_idle_progress() {
+    let (worker, _requests, outcomes) = ScramProofWorker::isolated(limits(1, 1, 1));
+    drop(outcomes);
+
+    assert_eq!(
+        worker.drain_into(&mut Vec::new()),
+        Err(ScramProofWorkerError::Lost)
+    );
+}
+
+pub(in crate::reactor) fn request(raw: u64) -> ScramProofRequest {
     let config = SaslConfig::scram_sha_256("worker-user", "worker-password")
         .unwrap_or_else(|error| panic!("valid worker config: {error}"));
     let mut session = AuthenticationSession::new(config)

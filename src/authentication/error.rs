@@ -26,7 +26,7 @@ impl AuthenticationExchangeError {
                 EncodeError::FrameLimitExceeded { .. }
                 | EncodeError::FrameTooLarge { .. }
                 | EncodeError::LengthOverflow { .. },
-            ) => AuthenticationFailure::Capacity,
+            ) => AuthenticationFailure::PolicyLimitExceeded,
             Self::Encode(_) | Self::Decode(_) | Self::Correlation { .. } => {
                 AuthenticationFailure::Malformed
             }

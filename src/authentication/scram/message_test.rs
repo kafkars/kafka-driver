@@ -30,7 +30,7 @@ fn challenge_rejects_work_one_iteration_above_the_cpu_limit() {
 
     assert_eq!(
         parse_server_first(b"r=clientserver,s=YWJj,i=4097", &nonce, limits,).err(),
-        Some(AuthenticationFailure::Capacity)
+        Some(AuthenticationFailure::PolicyLimitExceeded)
     );
 }
 
@@ -42,7 +42,7 @@ fn challenge_rejects_oversized_salt_before_decoding() {
 
     assert_eq!(
         parse_server_first(b"r=clientserver,s=YWJjZA==,i=4096", &nonce, limits,).err(),
-        Some(AuthenticationFailure::Capacity)
+        Some(AuthenticationFailure::PolicyLimitExceeded)
     );
 }
 

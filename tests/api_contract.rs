@@ -1,8 +1,8 @@
 //! Public scenario proving kafka-wire supplies typed response pairing.
 
 use kafka_driver::{
-    AuthenticationFailure, CallFailure, ConnectionCloseReason, Delivery, RequestError,
-    RequestResponsePair,
+    AuthenticationFailure, AuthenticationFailureDisposition, CallFailure, ConnectionCloseReason,
+    Delivery, RequestError, RequestResponsePair,
 };
 use kafka_wire::{ApiVersionsRequest, ApiVersionsResponse};
 
@@ -53,4 +53,8 @@ fn public_rejection_exposes_nameable_authentication_failure_vocabulary() {
             delivery: Delivery::NotSent,
         }
     ));
+    assert_eq!(
+        AuthenticationFailure::Timeout.disposition(),
+        AuthenticationFailureDisposition::Retryable
+    );
 }

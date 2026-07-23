@@ -43,7 +43,7 @@ fn exact_capacity_is_accepted_and_one_fewer_byte_is_rejected() {
     );
     assert_eq!(
         rejected.next_message(12),
-        Err(AuthenticationFailure::Capacity)
+        Err(AuthenticationFailure::PolicyLimitExceeded)
     );
 }
 

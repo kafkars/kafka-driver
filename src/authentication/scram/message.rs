@@ -119,7 +119,7 @@ fn decode_salt(
     limits: ScramLimits,
 ) -> Result<Zeroizing<Vec<u8>>, AuthenticationFailure> {
     if encoded_len(limits.max_salt_bytes(), true).is_none_or(|max| encoded.len() > max) {
-        return Err(AuthenticationFailure::Capacity);
+        return Err(AuthenticationFailure::PolicyLimitExceeded);
     }
     let salt = STANDARD
         .decode(encoded)
@@ -143,7 +143,7 @@ fn parse_iterations(value: &str, limits: ScramLimits) -> Result<NonZeroU32, Auth
         .and_then(NonZeroU32::new)
         .ok_or(AuthenticationFailure::Malformed)?;
     if iterations.get() > limits.max_iterations() {
-        return Err(AuthenticationFailure::Capacity);
+        return Err(AuthenticationFailure::PolicyLimitExceeded);
     }
     Ok(iterations)
 }

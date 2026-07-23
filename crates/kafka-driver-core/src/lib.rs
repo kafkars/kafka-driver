@@ -28,9 +28,9 @@ mod time_test;
 
 pub use authentication::{
     AuthenticationAttempt, AuthenticationDisposition, AuthenticationEffect, AuthenticationFailure,
-    AuthenticationInput, AuthenticationLimits, AuthenticationMachine, AuthenticationPhase,
-    AuthenticationPolicy, AuthenticationRound, AuthenticationState, AuthenticationTransition,
-    ExchangeOutcome, SaslMechanism, SaslProtocol,
+    AuthenticationFailureDisposition, AuthenticationInput, AuthenticationLimits,
+    AuthenticationMachine, AuthenticationPhase, AuthenticationPolicy, AuthenticationRound,
+    AuthenticationState, AuthenticationTransition, ExchangeOutcome, SaslMechanism, SaslProtocol,
 };
 pub use bootstrap::{
     BootstrapCursor, BootstrapDisposition, BootstrapEffect, BootstrapError, BootstrapInput,

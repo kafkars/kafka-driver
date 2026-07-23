@@ -41,9 +41,9 @@ impl PlainSession {
             .checked_add(config.username().len())
             .and_then(|bytes| bytes.checked_add(config.password().len()))
             .and_then(|bytes| bytes.checked_add(2))
-            .ok_or(AuthenticationFailure::Capacity)?;
+            .ok_or(AuthenticationFailure::PolicyLimitExceeded)?;
         if message_bytes > max_bytes {
-            return Err(AuthenticationFailure::Capacity);
+            return Err(AuthenticationFailure::PolicyLimitExceeded);
         }
         let mut message = Zeroizing::new(Vec::with_capacity(message_bytes));
         message.extend_from_slice(config.authorization_identity().as_bytes());

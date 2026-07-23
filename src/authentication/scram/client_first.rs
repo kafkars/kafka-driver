@@ -28,14 +28,14 @@ pub(super) fn client_first(
             .saturating_add(escaped.len() + nonce.as_str().len() + 3)
             > max_bytes
         {
-            return Err(AuthenticationFailure::Capacity);
+            return Err(AuthenticationFailure::PolicyLimitExceeded);
         }
         bare.extend_from_slice(escaped);
     }
     bare.extend_from_slice(b",r=");
     bare.extend_from_slice(nonce.as_str().as_bytes());
     if bare.len().saturating_add(3) > max_bytes {
-        return Err(AuthenticationFailure::Capacity);
+        return Err(AuthenticationFailure::PolicyLimitExceeded);
     }
     let mut message = Zeroizing::new(Vec::with_capacity(bare.len() + 3));
     message.extend_from_slice(b"n,,");

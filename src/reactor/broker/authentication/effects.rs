@@ -4,11 +4,16 @@ use kafka_driver_core::{
     AuthenticationEffect, AuthenticationFailure, AuthenticationRound, CallId, ConnectionEffect,
     ConnectionPhase, EffectId,
 };
+use kafka_driver_transport::WriteAdmissionFailure;
 use kafka_wire_core::Bytes;
 
 use crate::{
     authentication::{AuthenticateExchange, AuthenticationExchange, HandshakeExchange},
-    reactor::{PollInterest, Poller, resource::ResourceIdentity, timer::DeadlineTimer},
+    reactor::{
+        PollInterest, Poller,
+        resource::ResourceIdentity,
+        timer::{DeadlineTimer, TimerScheduleError},
+    },
 };
 
 use super::super::{BrokerError, owner::SingleBroker};
@@ -58,13 +63,16 @@ impl SingleBroker {
                 at,
             } => {
                 let deadline = DeadlineTimer::for_authentication(timer_id, epoch, at);
-                if self.timers.schedule(deadline).is_err() {
-                    self.fail_active_authentication(
-                        poller,
-                        identity,
-                        AuthenticationFailure::Capacity,
-                    )?;
-                    return Ok(false);
+                if let Err(error) = self.timers.schedule(deadline) {
+                    if matches!(error, TimerScheduleError::CapacityReached { .. }) {
+                        self.fail_active_authentication(
+                            poller,
+                            identity,
+                            AuthenticationFailure::LocalCapacity,
+                        )?;
+                        return Ok(false);
+                    }
+                    return Err(error.into());
                 }
             }
             AuthenticationEffect::SendHandshake {
@@ -99,7 +107,7 @@ impl SingleBroker {
                         poller,
                         identity,
                         effect_id,
-                        AuthenticationFailure::Capacity,
+                        AuthenticationFailure::LocalCapacity,
                     )?;
                     return Ok(false);
                 }
@@ -182,7 +190,7 @@ impl SingleBroker {
                 identity,
                 effect_id,
                 round,
-                AuthenticationFailure::Capacity,
+                AuthenticationFailure::LocalCapacity,
             )?;
             return Ok(false);
         }
@@ -196,18 +204,25 @@ impl SingleBroker {
         effect_id: EffectId,
         frame: Bytes,
     ) -> Result<bool, BrokerError> {
-        let Some(token) = self.resource_token else {
-            return Ok(false);
-        };
-        let admitted = self
+        let token = self.resource_token.ok_or(BrokerError::MissingEffect)?;
+        let (observed, connection) = self
             .resources
             .get_mut(token)
-            .is_some_and(|(observed, connection)| {
-                observed == identity
-                    && connection
-                        .admit_write(AUTHENTICATION_CALL, effect_id, frame)
-                        .is_ok()
-            });
+            .ok_or(BrokerError::MissingEffect)?;
+        if observed != identity {
+            return Err(BrokerError::MissingEffect);
+        }
+        let admitted = match connection.admit_write(AUTHENTICATION_CALL, effect_id, frame) {
+            Ok(_) => true,
+            Err(error) => match error.failure() {
+                WriteAdmissionFailure::FrameCapacityReached { .. }
+                | WriteAdmissionFailure::ByteCapacityReached { .. } => false,
+                failure @ (WriteAdmissionFailure::FrameTooShort { .. }
+                | WriteAdmissionFailure::IdentityInUse(_)) => {
+                    return Err(BrokerError::AuthenticationWrite(failure));
+                }
+            },
+        };
         if admitted {
             self.resources
                 .reregister(poller, token, PollInterest::ReadWrite)

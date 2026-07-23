@@ -10,21 +10,6 @@ pub(in crate::reactor) enum ScramProofSubmitError {
     Closed(Box<ScramProofRequest>),
 }
 
-impl ScramProofSubmitError {
-    pub(in crate::reactor) const fn failure(&self) -> kafka_driver_core::AuthenticationFailure {
-        match self {
-            Self::Full(_) => kafka_driver_core::AuthenticationFailure::Capacity,
-            Self::Closed(_) => kafka_driver_core::AuthenticationFailure::Protocol,
-        }
-    }
-
-    pub(in crate::reactor) fn into_request(self) -> ScramProofRequest {
-        match self {
-            Self::Full(request) | Self::Closed(request) => *request,
-        }
-    }
-}
-
 impl fmt::Display for ScramProofSubmitError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -35,3 +20,18 @@ impl fmt::Display for ScramProofSubmitError {
 }
 
 impl std::error::Error for ScramProofSubmitError {}
+
+/// Loss of the live proof worker's outcome channel.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::reactor) enum ScramProofWorkerError {
+    /// The worker exited or panicked while the host still owned it.
+    Lost,
+}
+
+impl fmt::Display for ScramProofWorkerError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SCRAM proof worker was lost")
+    }
+}
+
+impl std::error::Error for ScramProofWorkerError {}

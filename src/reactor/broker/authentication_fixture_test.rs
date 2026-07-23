@@ -22,7 +22,11 @@ use kafka_wire_core::{
 use crate::{
     SaslConfig, ScramProofLimits,
     config::BrokerConfig,
-    reactor::{Poller, WakeHandle, resource::ResourceNamespace, scram_proof::ScramProofWorker},
+    reactor::{
+        Poller, WakeHandle,
+        resource::ResourceNamespace,
+        scram_proof::{ScramProofSender, ScramProofWorker},
+    },
 };
 
 use super::{limits::BrokerLimits, owner::SingleBroker, scenario_support_test::observe_once};
@@ -44,6 +48,16 @@ pub(super) fn start_authenticated_broker_with_proof(
     (poller, broker, peer, worker)
 }
 
+pub(super) fn start_authenticated_broker_with_sender(
+    config: SaslConfig,
+    sender: ScramProofSender,
+) -> (Poller, SingleBroker, TcpStream) {
+    let (poller, broker, peer, worker) =
+        start_authenticated_broker_in(config, ProofMode::Sender(sender));
+    assert!(worker.is_none());
+    (poller, broker, peer)
+}
+
 fn start_authenticated_broker_in(
     config: SaslConfig,
     proof_mode: ProofMode,
@@ -56,8 +70,7 @@ fn start_authenticated_broker_in(
     let broker_config = BrokerConfig::plaintext(address).with_sasl(Some(config));
     let poller = Poller::new(NonZeroUsize::new(4).unwrap_or(NonZeroUsize::MIN))
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));
-    let proof_worker = proof_mode.spawn(&poller);
-    let proof_sender = proof_worker.as_ref().map(ScramProofWorker::sender);
+    let (proof_sender, proof_worker) = proof_mode.owners(&poller);
     let mut broker = SingleBroker::new_configured_in(
         broker_config,
         BrokerLimits::default(),
@@ -75,23 +88,25 @@ fn start_authenticated_broker_in(
     (poller, broker, peer, proof_worker)
 }
 
-#[derive(Clone, Copy)]
 enum ProofMode {
     Inline,
     Worker,
+    Sender(ScramProofSender),
 }
 
 impl ProofMode {
-    fn spawn(self, poller: &Poller) -> Option<ScramProofWorker> {
+    fn owners(self, poller: &Poller) -> (Option<ScramProofSender>, Option<ScramProofWorker>) {
         match self {
-            Self::Inline => None,
-            Self::Worker => Some(
-                ScramProofWorker::spawn(
+            Self::Inline => (None, None),
+            Self::Worker => {
+                let worker = ScramProofWorker::spawn(
                     ScramProofLimits::default(),
                     WakeHandle::new(poller.wake_handle()),
                 )
-                .unwrap_or_else(|error| panic!("spawn SCRAM proof worker: {error}")),
-            ),
+                .unwrap_or_else(|error| panic!("spawn SCRAM proof worker: {error}"));
+                (Some(worker.sender()), Some(worker))
+            }
+            Self::Sender(sender) => (Some(sender), None),
         }
     }
 }
@@ -127,6 +142,17 @@ pub(super) fn authenticate_response(correlation_id: i32, auth_bytes: Bytes) -> V
     let mut response = SaslAuthenticateResponse::default();
     response.error_message = None;
     response.auth_bytes = auth_bytes;
+    encode_response(
+        correlation_id,
+        &response,
+        AUTHENTICATE_VERSION,
+        ApiVersion::new(0),
+    )
+}
+
+pub(super) fn rejected_authenticate_response(correlation_id: i32) -> Vec<u8> {
+    let mut response = SaslAuthenticateResponse::default();
+    response.error_code = 1;
     encode_response(
         correlation_id,
         &response,

@@ -108,7 +108,7 @@ impl ScramSession {
                         server_key,
                         auth_message,
                     };
-                    return Err(AuthenticationFailure::Capacity);
+                    return Err(AuthenticationFailure::PolicyLimitExceeded);
                 }
                 self.state = ScramState::AwaitingServerFinal {
                     server_key,

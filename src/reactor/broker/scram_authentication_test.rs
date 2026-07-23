@@ -207,7 +207,9 @@ fn await_proof(
         poller
             .poll_into(Some(Duration::from_secs(1)), &mut events)
             .unwrap_or_else(|error| panic!("wait for SCRAM proof: {error}"));
-        worker.drain_into(&mut outcomes);
+        worker
+            .drain_into(&mut outcomes)
+            .unwrap_or_else(|error| panic!("drain SCRAM proof outcome: {error}"));
         if !outcomes.is_empty() {
             break;
         }

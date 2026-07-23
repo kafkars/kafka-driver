@@ -8,7 +8,9 @@ impl Reactor {
             return Ok(ScramProofTurn::idle());
         };
         self.scram_proof_outcomes.clear();
-        let progress = worker.drain_into(&mut self.scram_proof_outcomes);
+        let progress = worker
+            .drain_into(&mut self.scram_proof_outcomes)
+            .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
         let mut delivered = 0;
         for outcome in self.scram_proof_outcomes.drain(..) {
             delivered += usize::from(

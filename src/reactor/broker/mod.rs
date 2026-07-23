@@ -12,6 +12,7 @@ mod limits;
 mod local_rejection;
 mod negotiation;
 mod observation;
+mod open;
 mod owner;
 mod readiness;
 mod reconnect;
@@ -46,6 +47,8 @@ mod replacement_test;
 mod round_trip_test;
 #[cfg(test)]
 pub(super) mod scenario_support_test;
+#[cfg(test)]
+mod scram_authentication_failure_test;
 #[cfg(test)]
 mod scram_authentication_test;
 #[cfg(test)]

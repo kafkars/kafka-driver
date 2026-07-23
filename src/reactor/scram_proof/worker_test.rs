@@ -31,7 +31,9 @@ fn completed_proof_wakes_the_reactor_with_exact_request_identity() {
         .poll_into(Some(Duration::from_secs(1)), &mut events)
         .unwrap_or_else(|error| panic!("wait for proof worker wake: {error}"));
     let mut outcomes = Vec::new();
-    let progress = worker.drain_into(&mut outcomes);
+    let progress = worker
+        .drain_into(&mut outcomes)
+        .unwrap_or_else(|error| panic!("drain proof outcome: {error}"));
 
     assert_eq!(progress.outcomes(), 1);
     assert!(!progress.more_work());

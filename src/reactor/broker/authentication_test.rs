@@ -13,8 +13,8 @@ use crate::SaslConfig;
 use super::{
     authentication_fixture_test::{
         accepted_handshake_response, advance_to_handshake, authenticate_response,
-        decode_authenticate, read_frame, start_authenticated_broker,
-        unsupported_handshake_response,
+        decode_authenticate, read_frame, rejected_authenticate_response,
+        start_authenticated_broker, unsupported_handshake_response,
     },
     scenario_support_test::observe_once,
 };
@@ -80,7 +80,40 @@ fn unsupported_plain_handshake_is_terminal_without_reconnect() {
 }
 
 #[test]
-fn authentication_deadline_closes_without_leaving_timer_or_retry_work() {
+fn broker_credential_rejection_is_terminal_without_reconnect() {
+    // Given
+    let (mut poller, mut broker, mut peer) = start_plain_broker();
+    let _ = advance_to_handshake(&mut poller, &mut broker, &mut peer);
+    peer.write_all(&accepted_handshake_response("PLAIN"))
+        .unwrap_or_else(|error| panic!("write accepted handshake: {error}"));
+    observe_once(&mut poller, &mut broker);
+    observe_once(&mut poller, &mut broker);
+    let _ = decode_authenticate(read_frame(&mut peer));
+
+    // When
+    peer.write_all(&rejected_authenticate_response(2))
+        .unwrap_or_else(|error| panic!("write credential rejection: {error}"));
+    observe_once(&mut poller, &mut broker);
+
+    // Then
+    let failure = AuthenticationFailure::Rejected;
+    assert!(matches!(
+        broker.state(),
+        ConnectionState::Closed {
+            reason: CloseReason::AuthenticationFailed(AuthenticationFailure::Rejected),
+            ..
+        }
+    ));
+    assert_eq!(
+        broker.broker_state(),
+        BrokerState::Closed {
+            reason: BrokerCloseReason::AuthenticationFailed(failure),
+        }
+    );
+}
+
+#[test]
+fn authentication_deadline_closes_epoch_and_schedules_bounded_reconnect() {
     // Given
     let (mut poller, mut broker, mut peer) = start_plain_broker();
     let _ = advance_to_handshake(&mut poller, &mut broker, &mut peer);
@@ -100,13 +133,9 @@ fn authentication_deadline_closes_without_leaving_timer_or_retry_work() {
             reason: CloseReason::AuthenticationFailed(failure),
         }
     );
-    assert_eq!(
-        broker.broker_state(),
-        BrokerState::Closed {
-            reason: BrokerCloseReason::AuthenticationFailed(failure),
-        }
-    );
-    assert_eq!(broker.admitted_counts(), (0, 0, 0));
+    assert!(matches!(broker.broker_state(), BrokerState::Backoff { .. }));
+    assert!(broker.next_deadline().is_some());
+    assert_eq!(broker.admitted_counts(), (0, 1, 0));
 }
 
 fn start_plain_broker() -> (

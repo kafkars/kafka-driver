@@ -1,14 +1,15 @@
 //! Bounded SCRAM proof dispatch and identity-fenced outcome reattachment.
 
 use kafka_driver_core::{
-    AuthenticationInput, AuthenticationState, ConnectionInput, ConnectionState,
+    AuthenticationFailure, AuthenticationInput, AuthenticationState, ConnectionInput,
+    ConnectionState,
 };
 use kafka_wire_core::Bytes;
 
 use crate::reactor::{
     Poller,
     resource::ResourceIdentity,
-    scram_proof::{ScramProofOutcome, ScramProofRequest},
+    scram_proof::{ScramProofOutcome, ScramProofRequest, ScramProofSubmitError},
 };
 
 use super::super::{BrokerError, owner::SingleBroker};
@@ -37,11 +38,20 @@ impl SingleBroker {
         let request = ScramProofRequest::new(token, identity, effect_id, round, session, response);
         match sender.submit(request) {
             Ok(()) => Ok(true),
-            Err(error) => {
-                let failure = error.failure();
-                self.authentication_session = Some(error.into_request().into_session());
-                self.fail_exchange(poller, identity, effect_id, round, failure)?;
+            Err(ScramProofSubmitError::Full(request)) => {
+                self.authentication_session = Some(request.into_session());
+                self.fail_exchange(
+                    poller,
+                    identity,
+                    effect_id,
+                    round,
+                    AuthenticationFailure::LocalCapacity,
+                )?;
                 Ok(true)
+            }
+            Err(ScramProofSubmitError::Closed(request)) => {
+                self.authentication_session = Some(request.into_session());
+                Err(BrokerError::ScramProofWorkerLost)
             }
         }
     }

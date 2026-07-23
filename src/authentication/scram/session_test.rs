@@ -99,7 +99,7 @@ fn outbound_capacity_is_checked_before_state_progress() {
 
     assert_eq!(
         session.next_message(CLIENT_FIRST.len() - 1),
-        Err(AuthenticationFailure::Capacity)
+        Err(AuthenticationFailure::PolicyLimitExceeded)
     );
     assert_eq!(next(&mut session).as_slice(), CLIENT_FIRST);
 }

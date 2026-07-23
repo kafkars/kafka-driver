@@ -8,7 +8,9 @@ use std::{
 
 use crate::{ScramProofLimits, reactor::WakeHandle};
 
-use super::{ScramProofOutcome, ScramProofRequest, ScramProofSubmitError, worker};
+use super::{
+    ScramProofOutcome, ScramProofRequest, ScramProofSubmitError, ScramProofWorkerError, worker,
+};
 
 pub(in crate::reactor) struct ScramProofWorker {
     sender: Option<ScramProofSender>,
@@ -19,7 +21,7 @@ pub(in crate::reactor) struct ScramProofWorker {
 
 impl ScramProofWorker {
     #[cfg(test)]
-    pub(super) fn isolated(
+    pub(in crate::reactor) fn isolated(
         limits: ScramProofLimits,
     ) -> (
         Self,
@@ -65,28 +67,24 @@ impl ScramProofWorker {
     pub(in crate::reactor) fn drain_into(
         &self,
         destination: &mut Vec<ScramProofOutcome>,
-    ) -> ScramProofProgress {
-        let mut disconnected = false;
+    ) -> Result<ScramProofProgress, ScramProofWorkerError> {
         let Some(outcomes) = &self.outcomes else {
-            return ScramProofProgress {
+            return Ok(ScramProofProgress {
                 outcomes: 0,
                 more_work: false,
-            };
+            });
         };
         for _ in 0..self.outcome_budget {
             match outcomes.try_recv() {
                 Ok(outcome) => destination.push(outcome),
                 Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    disconnected = true;
-                    break;
-                }
+                Err(TryRecvError::Disconnected) => return Err(ScramProofWorkerError::Lost),
             }
         }
-        ScramProofProgress {
+        Ok(ScramProofProgress {
             outcomes: destination.len(),
-            more_work: !disconnected && destination.len() == self.outcome_budget,
-        }
+            more_work: destination.len() == self.outcome_budget,
+        })
     }
 
     pub(in crate::reactor) fn shutdown(mut self) -> io::Result<()> {

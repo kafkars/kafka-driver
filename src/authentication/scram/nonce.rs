@@ -62,7 +62,7 @@ fn validate_nonce(nonce: &str, limits: ScramLimits) -> Result<(), Authentication
         return Err(AuthenticationFailure::Malformed);
     }
     if nonce.len() > limits.max_nonce_bytes() {
-        return Err(AuthenticationFailure::Capacity);
+        return Err(AuthenticationFailure::PolicyLimitExceeded);
     }
     Ok(())
 }
