@@ -1,5 +1,6 @@
 //! Typed response ownership between frame decoding and public completion.
 
+mod delivery;
 mod envelope;
 mod error;
 mod local_rejection;
@@ -13,6 +14,8 @@ mod testing;
 
 #[cfg(test)]
 mod admission_test;
+#[cfg(test)]
+mod delivery_test;
 #[cfg(test)]
 mod dispatch_test;
 #[cfg(test)]

@@ -8,41 +8,28 @@ use super::{latency::increment, owner::Observation};
 
 impl Observation {
     pub(super) fn classify_failure(&self, failure: &RequestError) {
+        self.classify_delivery(failure.delivery());
         match failure {
-            RequestError::NameResolutionFailed { .. } => {
-                increment(&self.dns);
-                increment(&self.not_sent);
-            }
-            RequestError::ResponseCapacityReached { .. } => {
-                increment(&self.response_capacity);
-                increment(&self.not_sent);
-            }
+            RequestError::NameResolutionFailed { .. } => increment(&self.dns),
+            RequestError::ResponseCapacityReached { .. } => increment(&self.response_capacity),
             RequestError::NameResolutionCapacityReached { .. } => {
                 increment(&self.local_rejection);
-                increment(&self.not_sent);
             }
             RequestError::RouteCapacityReached { .. }
             | RequestError::MetadataQueryCapacityReached { .. }
             | RequestError::CoordinatorCapacityReached { .. } => {
                 increment(&self.route_capacity);
-                increment(&self.not_sent);
             }
-            RequestError::ConnectionClosed(_) => {
-                increment(&self.transport);
-                increment(&self.possibly_sent);
-            }
-            RequestError::Rejected { failure, delivery } => {
-                self.classify_delivery(*delivery);
-                self.classify_call_failure(*failure);
-            }
-            RequestError::Decode(_) => increment(&self.possibly_sent),
-            RequestError::Encode(_)
+            RequestError::ConnectionClosed(_) => increment(&self.transport),
+            RequestError::Rejected { failure, .. } => self.classify_call_failure(*failure),
+            RequestError::Decode(_)
+            | RequestError::Encode(_)
             | RequestError::UnsupportedVersion { .. }
             | RequestError::ApiUnavailable { .. }
             | RequestError::VersionLimitUnavailable { .. }
             | RequestError::IdentityConflict
             | RequestError::DeadlineOverflow
-            | RequestError::RouteUnavailable => increment(&self.not_sent),
+            | RequestError::RouteUnavailable => {}
         }
     }
 
