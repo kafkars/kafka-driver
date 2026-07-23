@@ -37,6 +37,26 @@ impl CoordinatorMachine {
             target_epoch,
             evidence,
         );
+        let mut satisfied_revocation = false;
+        if let Some(revocation) = &self.revocation {
+            if revocation.accepts(&route) {
+                self.revocation = None;
+                satisfied_revocation = true;
+            } else {
+                let Some(next_epoch) = target_epoch.next() else {
+                    self.revocation = None;
+                    self.state = CoordinatorState::Unknown {
+                        next_epoch: target_epoch,
+                    };
+                    return exhausted();
+                };
+                return self.start(None, followup_operation_id, next_epoch);
+            }
+        }
+        if satisfied_revocation && followup == Some(CoordinatorFollowup::Revocation) {
+            self.state = CoordinatorState::Ready { route };
+            return applied();
+        }
         match followup {
             None => {
                 self.state = CoordinatorState::Ready { route };
@@ -78,6 +98,13 @@ impl CoordinatorMachine {
         };
         if operation_id != expected || epoch != target_epoch {
             return stale();
+        }
+        if self.revocation.is_some() && followup.is_none() {
+            self.revocation = None;
+            self.state = CoordinatorState::Unknown {
+                next_epoch: target_epoch,
+            };
+            return applied();
         }
         if let Some(reason) = followup {
             let current = match reason {

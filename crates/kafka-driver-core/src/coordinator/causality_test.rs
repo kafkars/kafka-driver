@@ -68,6 +68,70 @@ fn topology_withdrawal_does_not_masquerade_as_a_broker_failure_observation() {
     assert!(machine.current().is_none());
 }
 
+#[test]
+fn later_duplicate_failure_requires_post_latest_discovery() {
+    let mut machine = ready_machine(1);
+    let failed = route(&machine);
+    let first = machine.apply(CoordinatorInput::Invalidate {
+        route: failed.clone(),
+        observed_at: OutcomeStamp::from_raw(10),
+        operation_id: operation(2),
+    });
+    assert!(!first.effects().is_empty());
+
+    let later = machine.apply(CoordinatorInput::Invalidate {
+        route: failed.clone(),
+        observed_at: OutcomeStamp::from_raw(20),
+        operation_id: operation(3),
+    });
+    assert_eq!(later.disposition(), CoordinatorDisposition::RefreshQueued);
+
+    let q1 = machine.apply(success(2, 2, 11, 4));
+    assert!(matches!(
+        q1.effects(),
+        [CoordinatorEffect::Find {
+            operation_id,
+            epoch,
+            ..
+        }] if *operation_id == operation(4) && *epoch == CoordinatorEpoch::from_raw(3)
+    ));
+    assert!(machine.revocation_pending(&failed));
+
+    let q2 = machine.apply(success(4, 3, 21, 5));
+    assert!(q2.effects().is_empty());
+    assert!(!machine.revocation_pending(&failed));
+}
+
+#[test]
+fn restamped_same_target_raises_the_active_revocation() {
+    let mut machine = ready_machine(1);
+    let first_route = route(&machine);
+    refresh(&mut machine, 2, 2);
+    let restamped_route = route(&machine);
+    assert!(first_route.is_same_target(&restamped_route));
+    assert_ne!(first_route.epoch(), restamped_route.epoch());
+
+    let _ = machine.apply(CoordinatorInput::Invalidate {
+        route: first_route.clone(),
+        observed_at: OutcomeStamp::from_raw(10),
+        operation_id: operation(3),
+    });
+    let later = machine.apply(CoordinatorInput::Invalidate {
+        route: restamped_route,
+        observed_at: OutcomeStamp::from_raw(20),
+        operation_id: operation(4),
+    });
+    assert_eq!(later.disposition(), CoordinatorDisposition::RefreshQueued);
+
+    let q1 = machine.apply(success(3, 3, 11, 5));
+    assert!(!q1.effects().is_empty());
+    assert!(machine.revocation_pending(&first_route));
+
+    let q2 = machine.apply(success(5, 4, 21, 6));
+    assert!(q2.effects().is_empty());
+    assert!(!machine.revocation_pending(&first_route));
+}
+
 fn ready_machine(raw_evidence: u64) -> CoordinatorMachine {
     let mut machine = CoordinatorMachine::new(key());
     let _ = machine.apply(CoordinatorInput::Resolve {

@@ -46,7 +46,7 @@ impl MetadataMachine {
                 MetadataDisposition::RejectedLeaderEpochRegression,
             );
         }
-        self.revocations.apply(&mut snapshot, &query, operation_id);
+        self.revocations.apply(&mut snapshot, &query);
         let next_query = match &mut self.state {
             MetadataState::Refreshing { queued, .. } => queued.pop_front(),
             MetadataState::Empty { .. } | MetadataState::Ready { .. } => unreachable!(),

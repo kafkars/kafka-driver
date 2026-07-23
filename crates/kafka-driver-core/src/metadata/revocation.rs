@@ -1,9 +1,6 @@
 //! Causal route withdrawal until post-failure metadata evidence is accepted.
 
-use crate::{
-    BrokerRoute, MetadataQuery, MetadataRevision, OperationId, PartitionId, PartitionRoute,
-    TopicName,
-};
+use crate::{BrokerRoute, MetadataQuery, OutcomeStamp, PartitionRoute};
 
 use super::MetadataSnapshot;
 
@@ -21,31 +18,45 @@ impl MetadataRevocations {
         }
     }
 
-    pub(super) fn revoke_controller(&mut self, route: BrokerRoute, operation_id: OperationId) {
-        self.controller = Some(ControllerRevocation {
-            route,
-            required: revision(operation_id),
-        });
+    pub(super) fn revoke_controller(&mut self, route: BrokerRoute, required_after: OutcomeStamp) {
+        match &mut self.controller {
+            Some(revocation) if revocation.route.is_same_broker(route) => {
+                revocation.observe(required_after);
+            }
+            _ => {
+                self.controller = Some(ControllerRevocation {
+                    route,
+                    required_after,
+                });
+            }
+        }
     }
 
-    pub(super) fn revoke_partition(&mut self, route: &PartitionRoute, operation_id: OperationId) {
-        self.partitions.push(PartitionRevocation {
-            topic: route.topic().clone(),
-            partition: route.partition(),
-            failed_revision: route.revision(),
-            required: revision(operation_id),
-        });
-    }
-
-    pub(super) fn apply(
+    pub(super) fn revoke_partition(
         &mut self,
-        snapshot: &mut MetadataSnapshot,
-        query: &MetadataQuery,
-        operation_id: OperationId,
+        route: &PartitionRoute,
+        required_after: OutcomeStamp,
     ) {
-        let completed = revision(operation_id);
+        if let Some(revocation) = self
+            .partitions
+            .iter_mut()
+            .find(|revocation| revocation.route.is_same_assignment(route))
+        {
+            revocation.observe(required_after);
+            return;
+        }
+        self.partitions.push(PartitionRevocation {
+            route: route.clone(),
+            required_after,
+        });
+    }
+
+    pub(super) fn apply(&mut self, snapshot: &mut MetadataSnapshot, query: &MetadataQuery) {
+        let evidence = snapshot.brokers().evidence_stamp();
         if let Some(revocation) = self.controller {
-            if matches!(query, MetadataQuery::Cluster) && completed >= revocation.required {
+            if matches!(query, MetadataQuery::Cluster)
+                && evidence.is_after(revocation.required_after)
+            {
                 self.controller = None;
             } else {
                 snapshot.revoke_controller();
@@ -55,10 +66,11 @@ impl MetadataRevocations {
             let satisfied = matches!(
                 query,
                 MetadataQuery::Topic(topic)
-                    if topic == &revocation.topic && completed >= revocation.required
+                    if topic == revocation.route.topic()
+                        && evidence.is_after(revocation.required_after)
             );
             if !satisfied {
-                snapshot.revoke_partition(&revocation.topic, revocation.partition);
+                snapshot.revoke_partition(revocation.route.topic(), revocation.route.partition());
             }
             !satisfied
         });
@@ -67,32 +79,36 @@ impl MetadataRevocations {
     pub(super) fn controller_pending(&self, route: BrokerRoute) -> bool {
         self.controller
             .as_ref()
-            .is_some_and(|revocation| revocation.route == route)
+            .is_some_and(|revocation| revocation.route.is_same_broker(route))
     }
 
     pub(super) fn partition_pending(&self, route: &PartitionRoute) -> bool {
-        self.partitions.iter().any(|revocation| {
-            revocation.topic == *route.topic()
-                && revocation.partition == route.partition()
-                && revocation.failed_revision == route.revision()
-        })
+        self.partitions
+            .iter()
+            .any(|revocation| revocation.route.is_same_assignment(route))
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct ControllerRevocation {
     route: BrokerRoute,
-    required: MetadataRevision,
+    required_after: OutcomeStamp,
+}
+
+impl ControllerRevocation {
+    fn observe(&mut self, observed_at: OutcomeStamp) {
+        self.required_after = self.required_after.max(observed_at);
+    }
 }
 
 #[derive(Debug)]
 struct PartitionRevocation {
-    topic: TopicName,
-    partition: PartitionId,
-    failed_revision: MetadataRevision,
-    required: MetadataRevision,
+    route: PartitionRoute,
+    required_after: OutcomeStamp,
 }
 
-const fn revision(operation_id: OperationId) -> MetadataRevision {
-    MetadataRevision::from_raw(operation_id.get())
+impl PartitionRevocation {
+    fn observe(&mut self, observed_at: OutcomeStamp) {
+        self.required_after = self.required_after.max(observed_at);
+    }
 }

@@ -6,6 +6,7 @@ mod effect;
 mod input;
 mod machine;
 mod outcome;
+mod revocation;
 mod route;
 mod state;
 mod transition;

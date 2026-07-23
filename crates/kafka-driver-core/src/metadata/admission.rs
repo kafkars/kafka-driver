@@ -71,6 +71,9 @@ impl MetadataMachine {
         observed_at: OutcomeStamp,
         operation_id: OperationId,
     ) -> MetadataTransition {
+        if self.revocations.controller_pending(route) {
+            return self.continue_controller_revocation(route, observed_at, operation_id);
+        }
         let Some(current) = self.current() else {
             return stale();
         };
@@ -89,7 +92,7 @@ impl MetadataMachine {
         if let Some(current) = self.current_mut() {
             current.revoke_controller();
         }
-        self.revocations.revoke_controller(route, operation_id);
+        self.revocations.revoke_controller(route, observed_at);
         transition
     }
 
@@ -99,6 +102,9 @@ impl MetadataMachine {
         observed_at: OutcomeStamp,
         operation_id: OperationId,
     ) -> MetadataTransition {
+        if self.revocations.partition_pending(route) {
+            return self.continue_partition_revocation(route, observed_at, operation_id);
+        }
         let Some(current) = self.current() else {
             return stale();
         };
@@ -115,7 +121,39 @@ impl MetadataMachine {
         if let Some(current) = self.current_mut() {
             current.revoke_partition(route.topic(), route.partition());
         }
-        self.revocations.revoke_partition(route, operation_id);
+        self.revocations.revoke_partition(route, observed_at);
+        transition
+    }
+
+    fn continue_controller_revocation(
+        &mut self,
+        route: BrokerRoute,
+        observed_at: OutcomeStamp,
+        operation_id: OperationId,
+    ) -> MetadataTransition {
+        let transition = self.refresh(MetadataQuery::Cluster, operation_id);
+        if transition.disposition() != MetadataDisposition::QueryCapacityReached {
+            self.revocations.revoke_controller(route, observed_at);
+            if let Some(current) = self.current_mut() {
+                current.revoke_controller();
+            }
+        }
+        transition
+    }
+
+    fn continue_partition_revocation(
+        &mut self,
+        route: &PartitionRoute,
+        observed_at: OutcomeStamp,
+        operation_id: OperationId,
+    ) -> MetadataTransition {
+        let transition = self.refresh(MetadataQuery::Topic(route.topic().clone()), operation_id);
+        if transition.disposition() != MetadataDisposition::QueryCapacityReached {
+            self.revocations.revoke_partition(route, observed_at);
+            if let Some(current) = self.current_mut() {
+                current.revoke_partition(route.topic(), route.partition());
+            }
+        }
         transition
     }
 

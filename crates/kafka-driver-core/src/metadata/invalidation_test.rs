@@ -18,12 +18,12 @@ fn exact_partition_route_is_withdrawn_while_unrelated_facts_remain_usable() {
 
     let invalidated = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route: route.clone(),
-        observed_at: OutcomeStamp::ORIGIN,
+        observed_at: OutcomeStamp::from_raw(1),
         operation_id: operation(2),
     });
     let repeated = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route,
-        observed_at: OutcomeStamp::ORIGIN,
+        observed_at: OutcomeStamp::from_raw(2),
         operation_id: operation(3),
     });
 
@@ -35,7 +35,7 @@ fn exact_partition_route_is_withdrawn_while_unrelated_facts_remain_usable() {
             query: MetadataQuery::Topic(topic("orders")),
         }]
     );
-    assert_eq!(repeated.disposition(), MetadataDisposition::IgnoredStale);
+    assert_eq!(repeated.disposition(), MetadataDisposition::Queued);
     assert!(repeated.effects().is_empty());
     assert!(
         machine
@@ -63,7 +63,7 @@ fn invalidation_during_an_active_query_requires_a_post_failure_query() {
 
     let invalidated = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route: failed.clone(),
-        observed_at: OutcomeStamp::ORIGIN,
+        observed_at: OutcomeStamp::from_raw(2),
         operation_id: operation(3),
     });
     assert_eq!(invalidated.disposition(), MetadataDisposition::Queued);
@@ -111,7 +111,7 @@ fn failed_refresh_keeps_the_route_revoked_until_later_evidence_arrives() {
     let failed = route(&machine, "orders", 3);
     let invalidated = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route: failed.clone(),
-        observed_at: OutcomeStamp::ORIGIN,
+        observed_at: OutcomeStamp::from_raw(1),
         operation_id: operation(2),
     });
     assert!(!invalidated.effects().is_empty());
@@ -181,7 +181,7 @@ fn unrelated_topic_refresh_does_not_restamp_retained_leader_provenance() {
 
     let invalidated = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route: orders,
-        observed_at: OutcomeStamp::ORIGIN,
+        observed_at: OutcomeStamp::from_raw(2),
         operation_id: operation(3),
     });
     assert_eq!(invalidated.disposition(), MetadataDisposition::Applied);
@@ -241,16 +241,25 @@ fn snapshot_with_revisions(
         HostName::new("broker.test").unwrap_or_else(|error| panic!("valid host: {error}")),
         port(),
     );
-    let brokers = BrokerDirectory::try_from_iter(
+    let evidence = crate::EvidenceStamp::from_raw(raw_generation);
+    let brokers = BrokerDirectory::try_from_iter_with_evidence(
         generation(raw_generation),
+        evidence,
         [BrokerDirectoryEntry::new(broker_id, endpoint)],
         BrokerDirectoryLimits::new(nonzero(1)),
     )
     .unwrap_or_else(|error| panic!("valid broker directory: {error}"));
     let leaders = PartitionLeaderSet::try_from_iter(
         [
-            leader("orders", 3, broker_id, orders_epoch, orders_revision),
-            leader("payments", 4, broker_id, 9, payments_revision),
+            leader(
+                "orders",
+                3,
+                broker_id,
+                orders_epoch,
+                orders_revision,
+                evidence,
+            ),
+            leader("payments", 4, broker_id, 9, payments_revision, evidence),
         ],
         PartitionLeaderLimits::new(nonzero(2), nonzero(2)),
     )
@@ -265,8 +274,9 @@ fn leader(
     broker_id: BrokerId,
     raw_epoch: i32,
     raw_revision: u64,
+    evidence: crate::EvidenceStamp,
 ) -> PartitionLeader {
-    PartitionLeader::new(
+    PartitionLeader::new_with_evidence(
         topic(raw_topic),
         partition(raw_partition),
         broker_id,
@@ -275,6 +285,7 @@ fn leader(
                 .unwrap_or_else(|error| panic!("valid leader epoch: {error}")),
         ),
         crate::MetadataRevision::from_raw(raw_revision),
+        evidence,
     )
 }
 

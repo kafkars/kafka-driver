@@ -46,6 +46,17 @@ impl CoordinatorMachine {
         observed_at: OutcomeStamp,
         operation_id: OperationId,
     ) -> CoordinatorTransition {
+        if self
+            .revocation
+            .as_ref()
+            .is_some_and(|revocation| revocation.matches(route))
+        {
+            self.revocation
+                .as_mut()
+                .unwrap_or_else(|| unreachable!("revocation existence checked above"))
+                .observe(observed_at);
+            return self.refresh(operation_id);
+        }
         match &mut self.state {
             CoordinatorState::Unknown { .. } => stale(),
             CoordinatorState::Ready { route: current }
@@ -58,6 +69,10 @@ impl CoordinatorMachine {
                 let Some(epoch) = current.epoch().next() else {
                     return exhausted();
                 };
+                self.revocation = Some(super::revocation::CoordinatorRevocation::new(
+                    route.clone(),
+                    observed_at,
+                ));
                 self.start(None, operation_id, epoch)
             }
             CoordinatorState::Discovering { current, .. }
@@ -71,6 +86,10 @@ impl CoordinatorMachine {
                 current, followup, ..
             } => {
                 *current = None;
+                self.revocation = Some(super::revocation::CoordinatorRevocation::new(
+                    route.clone(),
+                    observed_at,
+                ));
                 if *followup == Some(CoordinatorFollowup::Revocation) {
                     coalesced()
                 } else {

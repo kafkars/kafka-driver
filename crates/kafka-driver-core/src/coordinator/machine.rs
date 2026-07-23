@@ -2,7 +2,9 @@
 
 use crate::{CoordinatorEpoch, CoordinatorInput, CoordinatorKey};
 
-use super::{CoordinatorRoute, CoordinatorState, CoordinatorTransition};
+use super::{
+    CoordinatorRoute, CoordinatorState, CoordinatorTransition, revocation::CoordinatorRevocation,
+};
 
 /// Deterministic discovery policy for one exact coordinator key.
 #[must_use]
@@ -10,6 +12,7 @@ use super::{CoordinatorRoute, CoordinatorState, CoordinatorTransition};
 pub struct CoordinatorMachine {
     pub(super) key: CoordinatorKey,
     pub(super) state: CoordinatorState,
+    pub(super) revocation: Option<CoordinatorRevocation>,
 }
 
 impl CoordinatorMachine {
@@ -23,6 +26,7 @@ impl CoordinatorMachine {
         Self {
             key,
             state: CoordinatorState::Unknown { next_epoch: epoch },
+            revocation: None,
         }
     }
 
@@ -80,5 +84,12 @@ impl CoordinatorMachine {
             CoordinatorState::Discovering { current, .. } => current.as_ref(),
             CoordinatorState::Ready { route } => Some(route),
         }
+    }
+
+    /// Returns whether this semantic target remains withdrawn pending newer evidence.
+    pub fn revocation_pending(&self, route: &CoordinatorRoute) -> bool {
+        self.revocation
+            .as_ref()
+            .is_some_and(|revocation| revocation.matches(route))
     }
 }

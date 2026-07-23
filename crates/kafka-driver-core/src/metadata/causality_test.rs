@@ -89,6 +89,86 @@ fn query_started_after_failure_is_already_sufficient_evidence() {
     );
 }
 
+#[test]
+fn later_controller_failure_raises_policy_watermark_and_requires_q2() {
+    let mut machine = ready_machine(1);
+    let failed = controller(&machine);
+    let first = machine.apply(MetadataInput::InvalidateBrokerRoute {
+        route: failed,
+        observed_at: OutcomeStamp::from_raw(10),
+        operation_id: operation(2),
+    });
+    assert!(!first.effects().is_empty());
+
+    let later = machine.apply(MetadataInput::InvalidateBrokerRoute {
+        route: failed,
+        observed_at: OutcomeStamp::from_raw(20),
+        operation_id: operation(3),
+    });
+    assert_eq!(later.disposition(), MetadataDisposition::Queued);
+
+    let q1 = machine.apply(MetadataInput::RefreshSucceeded {
+        operation_id: operation(2),
+        snapshot: snapshot(2, 11),
+        followup_operation_id: operation(4),
+    });
+    assert!(matches!(
+        q1.effects(),
+        [MetadataEffect::Fetch {
+            operation_id,
+            query: MetadataQuery::Cluster,
+            ..
+        }] if *operation_id == operation(4)
+    ));
+    assert!(machine.controller_revocation_pending(failed));
+
+    let q2 = machine.apply(MetadataInput::RefreshSucceeded {
+        operation_id: operation(4),
+        snapshot: snapshot(3, 21),
+        followup_operation_id: operation(5),
+    });
+    assert!(q2.effects().is_empty());
+    assert!(!machine.controller_revocation_pending(failed));
+}
+
+#[test]
+fn restamped_partition_assignment_raises_the_same_policy_watermark() {
+    let mut machine = ready_machine(1);
+    let first_route = partition_route(&machine);
+    refresh_cluster(&mut machine, 2, 2);
+    let restamped_route = partition_route(&machine);
+    assert!(first_route.is_same_assignment(&restamped_route));
+    assert_ne!(first_route.revision(), restamped_route.revision());
+
+    let _ = machine.apply(MetadataInput::InvalidatePartitionRoute {
+        route: first_route.clone(),
+        observed_at: OutcomeStamp::from_raw(10),
+        operation_id: operation(3),
+    });
+    let later = machine.apply(MetadataInput::InvalidatePartitionRoute {
+        route: restamped_route,
+        observed_at: OutcomeStamp::from_raw(20),
+        operation_id: operation(4),
+    });
+    assert_eq!(later.disposition(), MetadataDisposition::Queued);
+
+    let q1 = machine.apply(MetadataInput::RefreshSucceeded {
+        operation_id: operation(3),
+        snapshot: snapshot(3, 11),
+        followup_operation_id: operation(5),
+    });
+    assert!(!q1.effects().is_empty());
+    assert!(machine.partition_revocation_pending(&first_route));
+
+    let q2 = machine.apply(MetadataInput::RefreshSucceeded {
+        operation_id: operation(5),
+        snapshot: snapshot(4, 21),
+        followup_operation_id: operation(6),
+    });
+    assert!(q2.effects().is_empty());
+    assert!(!machine.partition_revocation_pending(&first_route));
+}
+
 fn ready_machine(raw_evidence: u64) -> MetadataMachine {
     let mut machine = MetadataMachine::new(generation(1));
     let _ = machine.apply(MetadataInput::Refresh {

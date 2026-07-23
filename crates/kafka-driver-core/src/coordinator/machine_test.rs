@@ -123,7 +123,7 @@ fn invalidation_during_active_discovery_withdraws_route_and_requires_followup() 
 
     let invalidated = machine.apply(CoordinatorInput::Invalidate {
         route: failed,
-        observed_at: OutcomeStamp::ORIGIN,
+        observed_at: OutcomeStamp::from_raw(10),
         operation_id: operation(3),
     });
 
@@ -140,7 +140,7 @@ fn invalidation_during_active_discovery_withdraws_route_and_requires_followup() 
         }
     ));
 
-    let active = machine.apply(success(2, 2, 8, 4));
+    let active = machine.apply(success_with_evidence(2, 2, 8, 8, 4));
     assert_eq!(
         active.effects(),
         [CoordinatorEffect::Find {
@@ -151,7 +151,7 @@ fn invalidation_during_active_discovery_withdraws_route_and_requires_followup() 
     );
     assert!(machine.current().is_none());
 
-    let followup = machine.apply(success(4, 3, 9, 5));
+    let followup = machine.apply(success_with_evidence(4, 3, 9, 11, 5));
     assert!(followup.effects().is_empty());
     assert_eq!(
         machine.current().map(CoordinatorRoute::epoch),
@@ -214,13 +214,23 @@ fn success(
     raw_broker: i32,
     raw_followup: u64,
 ) -> CoordinatorInput {
+    success_with_evidence(raw_operation, raw_epoch, raw_broker, 0, raw_followup)
+}
+
+fn success_with_evidence(
+    raw_operation: u64,
+    raw_epoch: u64,
+    raw_broker: i32,
+    raw_evidence: u64,
+    raw_followup: u64,
+) -> CoordinatorInput {
     CoordinatorInput::DiscoverySucceeded {
         operation_id: operation(raw_operation),
         epoch: CoordinatorEpoch::from_raw(raw_epoch),
         broker_id: BrokerId::new(raw_broker)
             .unwrap_or_else(|error| panic!("valid broker rejected: {error}")),
         endpoint: endpoint(raw_broker),
-        evidence: EvidenceStamp::ORIGIN,
+        evidence: EvidenceStamp::from_raw(raw_evidence),
         followup_operation_id: operation(raw_followup),
     }
 }
