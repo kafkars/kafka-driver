@@ -6,7 +6,7 @@ use std::{
 };
 
 use kafka_driver::{
-    CallFailure, Delivery, Driver, RequestError, RequestOptions, Route, TrafficClass,
+    ApiVersion, CallFailure, Delivery, Driver, RequestError, RequestOptions, Route, TrafficClass,
 };
 use kafka_wire::ApiVersionsRequest;
 
@@ -26,6 +26,7 @@ fn original_absolute_deadline_expires_before_routing_or_io() {
         .checked_sub(Duration::from_secs(1))
         .unwrap_or_else(|| panic!("test instant must have one second of history"));
     let options = RequestOptions::new(deadline).with_traffic_class(TrafficClass::Control);
+    let options = options.with_maximum_version(ApiVersion::new(12));
 
     // When: the driver admits the request with its original deadline.
     let call = driver
@@ -45,4 +46,5 @@ fn original_absolute_deadline_expires_before_routing_or_io() {
     );
     assert_eq!(options.deadline(), deadline);
     assert_eq!(options.traffic_class(), TrafficClass::Control);
+    assert_eq!(options.maximum_version(), Some(ApiVersion::new(12)));
 }

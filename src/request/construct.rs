@@ -1,6 +1,6 @@
 //! Typed request construction with optional public lifecycle observation.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use kafka_driver_core::CallId;
 use kafka_wire::RequestResponsePair;
@@ -11,7 +11,7 @@ use crate::{
 };
 
 use super::{
-    ErasedRequest, RequestCompletion, RequestDeadline,
+    ErasedRequest, RequestCompletion, RequestPolicy,
     typed::{RequestLifecycle, TypedRequest},
 };
 
@@ -46,7 +46,7 @@ where
         call_id,
         traffic_class,
         request,
-        RequestDeadline::new(timeout),
+        RequestPolicy::for_timeout(timeout),
         RequestCompletion::plain(completion),
         RequestLifecycle::unobserved(),
     );
@@ -88,7 +88,7 @@ where
         call_id,
         traffic_class,
         request,
-        RequestDeadline::new(timeout),
+        RequestPolicy::for_timeout(timeout),
         RequestCompletion::plain(completion),
         RequestLifecycle::observed(timeline),
     );
@@ -112,19 +112,18 @@ where
         call_id,
         traffic_class,
         request,
-        RequestDeadline::new(timeout),
+        RequestPolicy::for_timeout(timeout),
         RequestCompletion::routed(completion, driver),
         RequestLifecycle::observed(timeline),
     );
     (RoutedCall::new(Call::new(receiver)), Box::new(request))
 }
 
-pub(crate) fn observed_request_until_in<R>(
+pub(crate) fn observed_request_with_policy_in<R>(
     call_id: CallId,
     traffic_class: TrafficClass,
     request: R,
-    deadline: Instant,
-    submitted_at: Instant,
+    policy: RequestPolicy,
     timeline: CallTimeline,
 ) -> ErasedRequestPair<R::Response>
 where
@@ -136,19 +135,18 @@ where
         call_id,
         traffic_class,
         request,
-        RequestDeadline::until(deadline, submitted_at),
+        policy,
         RequestCompletion::plain(completion),
         RequestLifecycle::observed(timeline),
     );
     (Call::new(receiver), Box::new(request))
 }
 
-pub(crate) fn observed_routed_request_until_in<R>(
+pub(crate) fn observed_routed_request_with_policy_in<R>(
     call_id: CallId,
     traffic_class: TrafficClass,
     request: R,
-    deadline: Instant,
-    submitted_at: Instant,
+    policy: RequestPolicy,
     timeline: CallTimeline,
     driver: DriverIdentity,
 ) -> RoutedRequestPair<R::Response>
@@ -161,7 +159,7 @@ where
         call_id,
         traffic_class,
         request,
-        RequestDeadline::until(deadline, submitted_at),
+        policy,
         RequestCompletion::routed(completion, driver),
         RequestLifecycle::observed(timeline),
     );

@@ -11,7 +11,7 @@ use crate::{
     RequestError, TrafficClass,
     api::RouteFact,
     observation::{CallOutcome, CallTimeline},
-    request::{RequestCompletion, RequestDeadline},
+    request::{RequestCompletion, RequestPolicy},
     response::{ResponseAdmissionError, ResponseRegistry},
 };
 
@@ -24,7 +24,7 @@ where
     call_id: CallId,
     traffic_class: TrafficClass,
     request: R,
-    deadline: RequestDeadline,
+    policy: RequestPolicy,
     retained_bytes: usize,
     completion: RequestCompletion<R::Response>,
     lifecycle: RequestLifecycle,
@@ -54,7 +54,7 @@ where
         call_id: CallId,
         traffic_class: TrafficClass,
         request: R,
-        deadline: RequestDeadline,
+        policy: RequestPolicy,
         completion: RequestCompletion<R::Response>,
         lifecycle: RequestLifecycle,
     ) -> Self {
@@ -63,7 +63,7 @@ where
             call_id,
             traffic_class,
             request,
-            deadline,
+            policy,
             retained_bytes,
             completion,
             lifecycle,
@@ -88,11 +88,18 @@ where
         self.traffic_class
     }
 
+    fn select_version(
+        &self,
+        negotiated: kafka_driver_core::NegotiatedApi,
+    ) -> Result<ApiVersion, RequestError> {
+        self.policy.select_version(negotiated)
+    }
+
     fn establish_deadline(
         &mut self,
         start: kafka_driver_core::Moment,
     ) -> Result<kafka_driver_core::Moment, RequestError> {
-        self.deadline.establish(start)
+        self.policy.establish_deadline(start)
     }
 
     fn retained_bytes(&self) -> usize {

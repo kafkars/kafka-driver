@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use kafka_driver_core::{CallId, CorrelationId, Moment};
+use kafka_driver_core::{CallId, CorrelationId, Moment, NegotiatedApi};
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::{ApiKey, ApiVersion, Bytes};
 
@@ -18,6 +18,9 @@ pub(crate) trait ErasedRequest: Send {
 
     /// Returns the semantic connection lane that must own this call.
     fn traffic_class(&self) -> TrafficClass;
+
+    /// Selects this request's version within the active negotiated overlap.
+    fn select_version(&self, negotiated: NegotiatedApi) -> Result<ApiVersion, RequestError>;
 
     /// Establishes the absolute deadline once, or returns the existing deadline.
     fn establish_deadline(&mut self, start: Moment) -> Result<Moment, RequestError>;

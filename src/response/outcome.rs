@@ -24,6 +24,15 @@ pub enum RequestError {
         /// Generated Kafka API key requested by the call.
         api_key: ApiKey,
     },
+    /// This request's version ceiling excludes the negotiated overlap.
+    VersionLimitUnavailable {
+        /// Generated Kafka API key requested by the call.
+        api_key: ApiKey,
+        /// Greatest version the caller permits for this request.
+        maximum: ApiVersion,
+        /// Lowest version mutually supported by the broker and driver.
+        negotiated_minimum: ApiVersion,
+    },
     /// The typed FIFO response registry reached its explicit capacity.
     ResponseCapacityReached {
         /// Configured pending response maximum.
@@ -84,6 +93,14 @@ impl fmt::Display for RequestError {
             Self::ApiUnavailable { api_key } => {
                 write!(formatter, "Kafka API {api_key} has no negotiated version")
             }
+            Self::VersionLimitUnavailable {
+                api_key,
+                maximum,
+                negotiated_minimum,
+            } => write!(
+                formatter,
+                "Kafka API {api_key} requires version {negotiated_minimum} or newer, above request maximum {maximum}"
+            ),
             Self::ResponseCapacityReached { limit } => {
                 write!(formatter, "typed response capacity {limit} reached")
             }
@@ -136,6 +153,7 @@ impl Error for RequestError {
             Self::Decode(error) => Some(error),
             Self::UnsupportedVersion { .. }
             | Self::ApiUnavailable { .. }
+            | Self::VersionLimitUnavailable { .. }
             | Self::ResponseCapacityReached { .. }
             | Self::IdentityConflict
             | Self::DeadlineOverflow

@@ -22,8 +22,18 @@ impl SingleBroker {
     ) -> Result<(), BrokerError> {
         let call_id = request.call_id();
         let api_key = request.api_key();
-        let version = self.connection.negotiated_version(api_key);
-        if self.connection.state().phase() == ConnectionPhase::Ready && version.is_none() {
+        let negotiated = self.connection.negotiated_api(api_key);
+        let version = match negotiated {
+            Some(negotiated) => match request.select_version(negotiated) {
+                Ok(version) => Some(version),
+                Err(failure) => {
+                    request.fail(failure);
+                    return Ok(());
+                }
+            },
+            None => None,
+        };
+        if self.connection.state().phase() == ConnectionPhase::Ready && negotiated.is_none() {
             request.fail(RequestError::ApiUnavailable { api_key });
             return Ok(());
         }

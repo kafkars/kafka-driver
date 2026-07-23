@@ -39,6 +39,7 @@ impl Observation {
             RequestError::Encode(_)
             | RequestError::UnsupportedVersion { .. }
             | RequestError::ApiUnavailable { .. }
+            | RequestError::VersionLimitUnavailable { .. }
             | RequestError::IdentityConflict
             | RequestError::DeadlineOverflow
             | RequestError::RouteUnavailable => increment(&self.not_sent),

@@ -1,0 +1,46 @@
+//! Deadline and version constraints carried atomically with one typed request.
+
+use std::time::{Duration, Instant};
+
+use kafka_driver_core::{Moment, NegotiatedApi};
+use kafka_wire_core::ApiVersion;
+
+use crate::RequestError;
+
+use super::{RequestDeadline, VersionSelection};
+
+pub(crate) struct RequestPolicy {
+    deadline: RequestDeadline,
+    version: VersionSelection,
+}
+
+impl RequestPolicy {
+    pub(crate) const fn for_timeout(timeout: Duration) -> Self {
+        Self {
+            deadline: RequestDeadline::new(timeout),
+            version: VersionSelection::Highest,
+        }
+    }
+
+    pub(crate) const fn until(
+        deadline: Instant,
+        submitted_at: Instant,
+        maximum_version: Option<ApiVersion>,
+    ) -> Self {
+        Self {
+            deadline: RequestDeadline::until(deadline, submitted_at),
+            version: VersionSelection::from_maximum(maximum_version),
+        }
+    }
+
+    pub(crate) fn establish_deadline(&mut self, start: Moment) -> Result<Moment, RequestError> {
+        self.deadline.establish(start)
+    }
+
+    pub(crate) const fn select_version(
+        &self,
+        negotiated: NegotiatedApi,
+    ) -> Result<ApiVersion, RequestError> {
+        self.version.select(negotiated)
+    }
+}
