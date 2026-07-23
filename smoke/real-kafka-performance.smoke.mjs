@@ -1,5 +1,7 @@
 import { expect, smoke } from "smoque";
 
+import { assertPerformancePolicy } from "./performance-policy.mjs";
+
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 const SAMPLES = 1000;
 
@@ -66,6 +68,7 @@ smoke.suite(
       await expect.command(result).stdoutJsonPath("$.schema").toBe(1);
       await expect.command(result).stdoutJsonPath("$.samples").toBe(SAMPLES);
       await expect.command(result).stdoutJsonPath("$.pipeline_width").toBe(128);
+      assertPerformancePolicy(JSON.parse(result.stdout));
       await t.log(result.stdout.trim());
       await t.attach.text("real-kafka-performance.json", result.stdout.trim());
     });
