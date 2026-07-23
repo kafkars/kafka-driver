@@ -71,6 +71,12 @@ fn calls_for_one_unresolved_broker_share_one_dns_request_and_fail_together() {
             failure: DnsFailure::NameNotFound,
         }))
     );
+    let snapshots = brokers.lane_snapshots();
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(
+        snapshots[0].last_dns_failure(),
+        Some(DnsFailure::NameNotFound)
+    );
 }
 
 #[test]

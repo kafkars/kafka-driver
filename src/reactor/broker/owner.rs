@@ -38,6 +38,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) address_refresh: Option<kafka_driver_core::BrokerEndpoint>,
     pub(super) broker: BrokerMachine,
     pub(super) connection: ConnectionMachine,
+    pub(super) last_close_reason: Option<kafka_driver_core::CloseReason>,
     pub(super) connection_limits: kafka_driver_core::ConnectionLimits,
     pub(super) authentication_limits: AuthenticationLimits,
     pub(super) ids: BrokerIds,
@@ -64,6 +65,8 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) completed_writes: Vec<CompletedWrite>,
     pub(super) retry_read: bool,
     pub(super) retry_write: bool,
+    pub(super) write_frame_rejections: u64,
+    pub(super) write_byte_rejections: u64,
 }
 
 impl SingleBroker {

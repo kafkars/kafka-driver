@@ -6,7 +6,7 @@ use std::{
 };
 
 use kafka_driver_core::{
-    BrokerPhase, BrokerState, ConnectionEpoch, ConnectionState, IpAddress, Moment,
+    BrokerPhase, BrokerState, CloseReason, ConnectionEpoch, ConnectionState, IpAddress, Moment,
     ResolutionLimits, ResolvedAddress, ResolvedAddressSet,
 };
 
@@ -52,6 +52,10 @@ fn given_multiple_resolved_addresses_when_the_first_refuses_then_reconnect_uses_
     let BrokerState::Backoff { deadline, .. } = broker.broker_state() else {
         panic!("refused first address must enter reconnect backoff");
     };
+    assert!(matches!(
+        broker.last_close_reason(),
+        Some(CloseReason::OpenFailed(_))
+    ));
 
     // When
     broker
@@ -98,6 +102,10 @@ fn given_a_lost_ready_connection_when_backoff_elapses_then_a_fresh_epoch_negotia
     let BrokerState::Backoff { deadline, .. } = broker.broker_state() else {
         panic!("lost ready connection must enter bounded backoff");
     };
+    assert!(matches!(
+        broker.last_close_reason(),
+        Some(CloseReason::TransportLost(_))
+    ));
     broker
         .fire_due(&poller, deadline)
         .unwrap_or_else(|error| panic!("deliver reconnect deadline: {error}"));

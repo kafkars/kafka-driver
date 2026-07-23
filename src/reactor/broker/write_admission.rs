@@ -73,7 +73,8 @@ impl SingleBroker {
                     return Err(BrokerError::MissingEffect);
                 }
             }
-            Some(Err(_)) => {
+            Some(Err(error)) => {
+                self.observe_write_rejection(error.failure());
                 self.abort_unsent_call(call_id, effect_id, None)?;
                 return Ok(WriteRequestOutcome::Settled);
             }

@@ -100,12 +100,19 @@ impl TransportConnection {
         }
     }
 
-    #[cfg(test)]
     pub(in crate::reactor) fn queued_write_frames(&self) -> usize {
         match self {
             Self::Plaintext(connection) => connection.queued_write_frames(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(connection) => connection.queued_write_frames(),
+        }
+    }
+
+    pub(in crate::reactor) const fn queued_write_bytes(&self) -> usize {
+        match self {
+            Self::Plaintext(connection) => connection.queued_write_bytes(),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(connection) => connection.queued_write_bytes(),
         }
     }
 }

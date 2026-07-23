@@ -53,6 +53,7 @@ impl SingleBroker {
         now: Moment,
     ) -> Result<(), BrokerError> {
         while self.connection.state().phase() == ConnectionPhase::Closed {
+            self.observe_closed_state();
             let epoch = self.connection.epoch();
             let broker_phase = self.broker.state().phase();
             if matches!(

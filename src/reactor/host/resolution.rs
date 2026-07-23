@@ -28,6 +28,7 @@ pub(super) struct NameResolution {
     effect_ids: ResolverEffectIds,
     ownership: ResolverOwnership,
     outcomes: Vec<DnsOutcome>,
+    last_bootstrap_dns_failure: Option<kafka_driver_core::DnsFailure>,
 }
 
 impl NameResolution {
@@ -50,6 +51,7 @@ impl NameResolution {
             effect_ids,
             ownership,
             outcomes: Vec::with_capacity(limits.outcome_budget().get()),
+            last_bootstrap_dns_failure: None,
         };
         resolution
             .submit_owned(ResolutionOwner::Bootstrap, request)
@@ -105,6 +107,7 @@ impl NameResolution {
                     broker_outcomes.push(BrokerDnsOutcome { lane, outcome });
                 }
                 ResolutionOwner::Bootstrap => {
+                    self.last_bootstrap_dns_failure = outcome.result().as_ref().err().copied();
                     self.bootstrap_in_flight = false;
                     let retry_effect_id = self.reserve_effect()?;
                     match self.bootstrap.complete(
@@ -142,6 +145,10 @@ impl NameResolution {
 
     pub(super) const fn next_deadline(&self) -> Option<Moment> {
         self.bootstrap.retry_deadline()
+    }
+
+    pub(super) const fn last_bootstrap_dns_failure(&self) -> Option<kafka_driver_core::DnsFailure> {
+        self.last_bootstrap_dns_failure
     }
 
     fn restart_exhausted_bootstrap(&mut self, now: Moment) -> Result<bool, NameResolutionError> {

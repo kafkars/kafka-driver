@@ -31,6 +31,7 @@ pub(super) struct BrokerChild {
     pub(super) next_epoch: Option<u64>,
     pub(super) pending_install: Option<PendingBroker>,
     pub(super) refresh_in_flight: bool,
+    pub(super) last_dns_failure: Option<kafka_driver_core::DnsFailure>,
     pub(super) retired: bool,
     pub(super) retirement_started: bool,
 }
@@ -56,6 +57,7 @@ impl BrokerChild {
             next_epoch: Some(1),
             pending_install: None,
             refresh_in_flight: false,
+            last_dns_failure: None,
             retired: false,
             retirement_started: false,
         }

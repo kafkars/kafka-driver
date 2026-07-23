@@ -74,6 +74,7 @@ impl SingleBroker {
             address_refresh: None,
             broker: BrokerMachine::new(epoch, limits.backoff()),
             connection,
+            last_close_reason: None,
             connection_limits: limits.connection(),
             authentication_limits: limits.authentication(),
             ids: super::BrokerIds::new(),
@@ -99,6 +100,8 @@ impl SingleBroker {
             completed_writes: Vec::new(),
             retry_read: false,
             retry_write: false,
+            write_frame_rejections: 0,
+            write_byte_rejections: 0,
         }
     }
 }

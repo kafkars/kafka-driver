@@ -61,9 +61,12 @@ impl TlsConnection {
         self.writes.admit(call_id, effect_id, frame)
     }
 
-    #[cfg(test)]
     pub(in crate::reactor) fn queued_write_frames(&self) -> usize {
         self.writes.queued_frames()
+    }
+
+    pub(in crate::reactor) const fn queued_write_bytes(&self) -> usize {
+        self.writes.buffered_bytes()
     }
 }
 

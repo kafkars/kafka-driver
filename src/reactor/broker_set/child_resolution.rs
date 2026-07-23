@@ -79,6 +79,7 @@ impl BrokerChild {
                 },
             ] if self.refresh_in_flight => {
                 self.refresh_in_flight = false;
+                self.last_dns_failure = None;
                 let Some(connection) = &mut self.connection else {
                     return Err(BrokerSetError::UnexpectedResolutionEffect);
                 };
@@ -92,17 +93,22 @@ impl BrokerChild {
                     endpoint,
                     addresses,
                 },
-            ] => Ok(ChildResolution::Resolved(PendingBroker {
-                route: *route,
-                epoch: *epoch,
-                endpoint: endpoint.clone(),
-                addresses: addresses.clone(),
-            })),
-            [BrokerResolutionEffect::Failed { .. }] if self.refresh_in_flight => {
+            ] => {
+                self.last_dns_failure = None;
+                Ok(ChildResolution::Resolved(PendingBroker {
+                    route: *route,
+                    epoch: *epoch,
+                    endpoint: endpoint.clone(),
+                    addresses: addresses.clone(),
+                }))
+            }
+            [BrokerResolutionEffect::Failed { failure, .. }] if self.refresh_in_flight => {
                 self.refresh_in_flight = false;
+                self.last_dns_failure = Some(*failure);
                 Ok(ChildResolution::RefreshFailed)
             }
             [BrokerResolutionEffect::Failed { failure, .. }] => {
+                self.last_dns_failure = Some(*failure);
                 self.waiting
                     .fail_all(&RequestError::NameResolutionFailed { failure: *failure });
                 Ok(ChildResolution::Failed)

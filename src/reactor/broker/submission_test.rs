@@ -135,6 +135,11 @@ fn given_a_pending_call_when_a_later_write_is_rejected_then_the_epoch_stays_read
         ConnectionState::Ready { pending: 1, .. }
     ));
     assert_eq!(broker.admitted_counts(), (1, 1, 1));
+    let writes = broker.write_queue_snapshot();
+    assert_eq!(writes.queued_frames(), 1);
+    assert!(writes.retained_bytes() > 0);
+    assert_eq!(writes.frame_capacity_rejections(), 1);
+    assert_eq!(writes.byte_capacity_rejections(), 0);
     assert_eq!(
         second_call.wait(),
         Ok(Err(RequestError::Rejected {

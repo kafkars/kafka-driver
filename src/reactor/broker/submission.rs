@@ -137,10 +137,7 @@ impl SingleBroker {
 
     #[cfg(test)]
     pub(super) fn admitted_counts(&mut self) -> (usize, usize, usize) {
-        let queued = self
-            .resource_token
-            .and_then(|token| self.resources.get_mut(token))
-            .map_or(0, |(_, connection)| connection.queued_write_frames());
+        let queued = self.write_queue_snapshot().queued_frames();
         (self.responses.pending(), self.timers.len(), queued)
     }
 }

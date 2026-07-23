@@ -11,6 +11,7 @@ mod identity;
 mod limits;
 mod local_rejection;
 mod negotiation;
+mod observation;
 mod owner;
 mod readiness;
 mod reconnect;

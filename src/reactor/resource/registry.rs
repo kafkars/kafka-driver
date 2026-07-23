@@ -89,6 +89,19 @@ impl<R> ResourceRegistry<R> {
         (*current == generation).then_some((*identity, resource))
     }
 
+    pub(in crate::reactor) fn get(&self, token: ResourceToken) -> Option<(ResourceIdentity, &R)> {
+        let (slot_index, generation) = token.decode_in(self.slots.len(), self.namespace)?;
+        let ResourceSlot::Occupied {
+            generation: current,
+            identity,
+            resource,
+        } = self.slots.get(slot_index)?
+        else {
+            return None;
+        };
+        (*current == generation).then_some((*identity, resource))
+    }
+
     pub(in crate::reactor) fn token_for(
         &self,
         identity: ResourceIdentity,

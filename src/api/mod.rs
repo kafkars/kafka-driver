@@ -26,8 +26,9 @@ pub use driver::{Driver, SubmitError};
 pub use invalidation::InvalidationDisposition;
 pub use kafka_driver_core::Delivery;
 pub use observation::{
-    BrokerLanePhase, BrokerLaneSnapshot, CallCounters, CallLatencySnapshot, DriverSnapshot,
-    FailureCounters, LatencyMetric, MailboxSnapshot, SeedSnapshot, SnapshotError,
+    BootstrapSnapshot, BrokerLaneLoadSnapshot, BrokerLanePhase, BrokerLaneSnapshot, CallCounters,
+    CallLatencySnapshot, DriverSnapshot, FailureCounters, LatencyMetric, MailboxSnapshot,
+    SeedSnapshot, SnapshotError, WriteQueueSnapshot,
 };
 pub use protocol::RequestResponsePair;
 pub use route::Route;

@@ -17,11 +17,12 @@ mod request;
 mod response;
 
 pub use api::{
-    BrokerLanePhase, BrokerLaneSnapshot, Call, CallCounters, CallLatencySnapshot, CompletionError,
-    Delivery, Driver, DriverBuildError, DriverBuilder, DriverSnapshot, FailureCounters,
-    InvalidationDisposition, LatencyMetric, MailboxSnapshot, RequestError, RequestResponsePair,
-    ResponseCloseReason, Route, RouteReceipt, RoutedCall, RoutedOutcome, SeedSnapshot,
-    SnapshotError, SubmitError, TrafficClass,
+    BootstrapSnapshot, BrokerLaneLoadSnapshot, BrokerLanePhase, BrokerLaneSnapshot, Call,
+    CallCounters, CallLatencySnapshot, CompletionError, Delivery, Driver, DriverBuildError,
+    DriverBuilder, DriverSnapshot, FailureCounters, InvalidationDisposition, LatencyMetric,
+    MailboxSnapshot, RequestError, RequestResponsePair, ResponseCloseReason, Route, RouteReceipt,
+    RoutedCall, RoutedOutcome, SeedSnapshot, SnapshotError, SubmitError, TrafficClass,
+    WriteQueueSnapshot,
 };
 pub use config::{
     CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits, SaslConfig, SaslConfigError,

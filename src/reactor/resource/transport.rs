@@ -79,6 +79,13 @@ impl TransportResources {
         self.connections.get_mut(token)
     }
 
+    pub(in crate::reactor) fn get(
+        &self,
+        token: ResourceToken,
+    ) -> Option<(ResourceIdentity, &TransportConnection)> {
+        self.connections.get(token)
+    }
+
     pub(in crate::reactor) fn reregister(
         &mut self,
         poller: &Poller,
