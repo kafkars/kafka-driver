@@ -21,33 +21,26 @@ pub(super) fn listener() -> TcpListener {
     TcpListener::bind("127.0.0.1:0").unwrap_or_else(|error| panic!("bind broker: {error}"))
 }
 
-pub(super) fn accept(listener: &TcpListener, role: &str) -> TcpStream {
-    listener.accept().map_or_else(
-        |error| panic!("accept {role} connection: {error}"),
-        |(peer, _)| peer,
-    )
-}
-
 pub(super) fn accept_after_driving(
     listener: &TcpListener,
     reactor: &mut kafka_driver::Reactor,
 ) -> TcpStream {
     listener
         .set_nonblocking(true)
-        .unwrap_or_else(|error| panic!("make controller listener nonblocking: {error}"));
+        .unwrap_or_else(|error| panic!("make broker listener nonblocking: {error}"));
     for _ in 0..16 {
-        drive(reactor, Duration::from_millis(100), "open controller lane");
+        drive(reactor, Duration::from_millis(100), "open broker lane");
         match listener.accept() {
             Ok((peer, _)) => {
                 peer.set_nonblocking(false)
-                    .unwrap_or_else(|error| panic!("make controller peer blocking: {error}"));
+                    .unwrap_or_else(|error| panic!("make broker peer blocking: {error}"));
                 return peer;
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-            Err(error) => panic!("accept controller connection: {error}"),
+            Err(error) => panic!("accept broker connection: {error}"),
         }
     }
-    panic!("controller lane did not connect: {reactor:?}");
+    panic!("broker lane did not connect: {reactor:?}");
 }
 
 pub(super) fn wait_for_frame(peer: &TcpStream, reactor: &mut kafka_driver::Reactor) {

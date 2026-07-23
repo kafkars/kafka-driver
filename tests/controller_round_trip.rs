@@ -19,8 +19,8 @@ use kafka_wire::{
 };
 
 use broker::{
-    accept, accept_after_driving, api_versions_response, assert_progress, bootstrap, drive,
-    listener, local_port, metadata_response, read_request_header, wait_for_frame,
+    accept_after_driving, api_versions_response, assert_progress, bootstrap, drive, listener,
+    local_port, metadata_response, read_request_header, wait_for_frame,
 };
 use support::complete_negotiation;
 
@@ -96,8 +96,7 @@ fn ready_cluster() -> (Driver, Reactor, TcpListener) {
         .build_reactor()
         .unwrap_or_else(|error| panic!("build cluster reactor: {error}"));
 
-    assert_progress(&reactor.turn(Duration::from_secs(1)), 0);
-    let mut seed = accept(&seed_listener, "seed");
+    let mut seed = accept_after_driving(&seed_listener, &mut reactor);
     complete_negotiation(&mut seed, &mut reactor);
     assert_progress(&reactor.turn(Duration::from_secs(1)), 0);
     let metadata = read_request_header(&mut seed);
