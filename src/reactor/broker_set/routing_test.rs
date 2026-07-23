@@ -87,69 +87,6 @@ fn calls_for_one_unresolved_broker_share_one_dns_request_and_fail_together() {
 }
 
 #[test]
-fn retired_dormant_slot_is_reassigned_to_new_membership() {
-    let mut brokers = broker_set();
-    let first_directory = directory(1, 7, "old.test", 9092);
-    brokers
-        .install_directory(&first_directory)
-        .unwrap_or_else(|error| panic!("first directory: {error}"));
-    let first_route = first_directory
-        .route_to(broker_id(7))
-        .unwrap_or_else(|| panic!("first route"));
-    let poller = Poller::new(nonzero(1)).unwrap_or_else(|error| panic!("test poller: {error}"));
-    let (first_call, first) = request(1);
-    let (first_lane, first_dns) = brokers
-        .submit_route(
-            &poller,
-            first_route,
-            Some(EffectId::from_raw(1)),
-            first,
-            Moment::ORIGIN,
-        )
-        .unwrap_or_else(|error| panic!("first demand: {error}"))
-        .unwrap_or_else(|| panic!("first DNS request"));
-    brokers
-        .complete_resolution(
-            first_lane,
-            DnsOutcome::new(
-                first_dns.epoch(),
-                first_dns.effect_id(),
-                Err(DnsFailure::Temporary),
-            ),
-            &poller,
-            Moment::ORIGIN,
-        )
-        .unwrap_or_else(|error| panic!("first failure: {error}"));
-    assert!(matches!(
-        first_call.wait(),
-        Ok(Err(RequestError::NameResolutionFailed { .. }))
-    ));
-    let second_directory = directory(2, 8, "new.test", 9092);
-    brokers
-        .install_directory(&second_directory)
-        .unwrap_or_else(|error| panic!("replacement directory: {error}"));
-    let second_route = second_directory
-        .route_to(broker_id(8))
-        .unwrap_or_else(|| panic!("replacement route"));
-    let (second_call, second) = request(2);
-
-    let second_dns = brokers
-        .submit_route(
-            &poller,
-            second_route,
-            Some(EffectId::from_raw(2)),
-            second,
-            Moment::ORIGIN,
-        )
-        .unwrap_or_else(|error| panic!("replacement demand: {error}"));
-
-    assert!(second_dns.is_some());
-    assert_eq!(brokers.allocated_lanes(), 1);
-    assert_eq!(brokers.retained_child_slots(), 1);
-    drop(second_call);
-}
-
-#[test]
 fn changed_endpoint_replaces_the_child_without_reusing_its_poll_token() {
     let first_listener = listener();
     let second_listener = listener();

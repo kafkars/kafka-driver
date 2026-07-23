@@ -70,6 +70,7 @@ impl BrokerChild {
         self.retired = false;
         self.retirement_started = false;
         self.refresh_in_flight = false;
+        self.last_dns_failure = None;
     }
 
     pub(super) fn stage(&mut self, pending: PendingBroker) {
