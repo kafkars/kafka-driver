@@ -8,6 +8,8 @@ use std::{fmt, io};
 pub enum DriverBuildError {
     /// No direct broker or bootstrap set was configured.
     MissingTarget,
+    /// Every process-local driver authority identity has been allocated.
+    IdentityExhausted,
     /// The purpose-built reactor could not acquire its operating-system resources.
     Reactor(io::Error),
 }
@@ -24,6 +26,9 @@ impl fmt::Display for DriverBuildError {
             Self::MissingTarget => {
                 formatter.write_str("a direct broker or bootstrap target is required")
             }
+            Self::IdentityExhausted => {
+                formatter.write_str("the driver authority identity space is exhausted")
+            }
             Self::Reactor(_) => formatter.write_str("failed to create the driver I/O shard"),
         }
     }
@@ -33,7 +38,7 @@ impl std::error::Error for DriverBuildError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Reactor(source) => Some(source),
-            Self::MissingTarget => None,
+            Self::MissingTarget | Self::IdentityExhausted => None,
         }
     }
 }

@@ -4,9 +4,29 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use kafka_driver_core::CallId;
 
+static NEXT_DRIVER_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DriverIdentity(u64);
+
 #[derive(Debug)]
 pub(crate) struct CallIds {
     next: AtomicU64,
+}
+
+impl DriverIdentity {
+    pub(crate) fn allocate() -> Option<Self> {
+        NEXT_DRIVER_ID
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+                next.checked_add(1)
+            })
+            .ok()
+            .map(Self)
+    }
+
+    pub(crate) const fn is_same(self, other: Self) -> bool {
+        self.0 == other.0
+    }
 }
 
 impl CallIds {

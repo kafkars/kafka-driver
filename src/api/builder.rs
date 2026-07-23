@@ -11,7 +11,7 @@ use crate::{
     reactor::Reactor,
 };
 
-use super::{CallIds, Driver, DriverBuildError};
+use super::{CallIds, Driver, DriverBuildError, identity::DriverIdentity};
 
 /// Builder for one driver using either embedded or dedicated hosting.
 #[derive(Clone, Debug, Default)]
@@ -79,6 +79,7 @@ impl DriverBuilder {
         let Some(target) = self.target else {
             return Err(DriverBuildError::MissingTarget);
         };
+        let identity = DriverIdentity::allocate().ok_or(DriverBuildError::IdentityExhausted)?;
         let target = target.with_sasl(self.sasl);
         let call_ids = Arc::new(CallIds::new());
         let observation = Arc::new(Observation::default());
@@ -90,7 +91,7 @@ impl DriverBuilder {
         )
         .map_err(DriverBuildError::new)?;
         Ok((
-            Driver::new(commands, shutdown, call_ids, observation),
+            Driver::new(commands, shutdown, call_ids, observation, identity),
             reactor,
         ))
     }

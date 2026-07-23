@@ -10,32 +10,29 @@ use std::{
 use kafka_driver_core::{BrokerRoute, CoordinatorRoute, OutcomeStamp, PartitionRoute};
 
 use super::{Call, CompletionError, RequestError};
+use crate::api::identity::DriverIdentity;
 
-/// Exact generation- or epoch-fenced route used by one submitted request.
+/// Diagnostic category of one opaque route-failure capability.
 #[non_exhaustive]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RouteReceipt {
-    /// Controller broker selected from one metadata generation.
-    Controller {
-        /// Exact metadata-generation broker route used by the request.
-        route: BrokerRoute,
-        /// Reactor position at which the broker response became observable.
-        observed_at: OutcomeStamp,
-    },
-    /// Coordinator selected by one key's discovery epoch.
-    Coordinator {
-        /// Exact key and discovery-epoch route used by the request.
-        route: CoordinatorRoute,
-        /// Reactor position at which the broker response became observable.
-        observed_at: OutcomeStamp,
-    },
-    /// Partition leader selected with topic evidence revision and leader epoch.
-    PartitionLeader {
-        /// Exact topic revision, partition, broker, and leader-epoch route.
-        route: PartitionRoute,
-        /// Reactor position at which the broker response became observable.
-        observed_at: OutcomeStamp,
-    },
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RouteKind {
+    /// Cluster controller routing.
+    Controller,
+    /// Key-scoped coordinator routing.
+    Coordinator,
+    /// Topic-partition leader routing.
+    PartitionLeader,
+}
+
+/// Single-use authority to report one routed response as stale.
+///
+/// Route provenance, causal position, and issuing-driver authority are private.
+/// The token can be consumed only by [`super::Driver::invalidate`].
+#[must_use = "a route failure token must be consumed or deliberately discarded"]
+pub struct RouteFailureToken {
+    driver: DriverIdentity,
+    route: RouteFact,
+    observed_at: OutcomeStamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,19 +42,19 @@ pub(crate) enum RouteFact {
     PartitionLeader(PartitionRoute),
 }
 
-/// One request result and its route receipt when a routed response was observed.
+/// One request result and its invalidation capability when a routed response was observed.
 #[derive(Debug)]
 pub struct RoutedOutcome<T> {
     result: Result<T, RequestError>,
-    receipt: Option<RouteReceipt>,
+    token: Option<RouteFailureToken>,
 }
 
 impl<T> RoutedOutcome<T> {
     pub(crate) const fn new(
         result: Result<T, RequestError>,
-        receipt: Option<RouteReceipt>,
+        token: Option<RouteFailureToken>,
     ) -> Self {
-        Self { result, receipt }
+        Self { result, token }
     }
 
     /// Borrows the ordinary generated request result.
@@ -65,18 +62,18 @@ impl<T> RoutedOutcome<T> {
         &self.result
     }
 
-    /// Borrows the route fact and causal stamp for an observed broker response.
-    pub const fn receipt(&self) -> Option<&RouteReceipt> {
-        self.receipt.as_ref()
+    /// Borrows the opaque invalidation capability for an observed broker response.
+    pub const fn route_failure_token(&self) -> Option<&RouteFailureToken> {
+        self.token.as_ref()
     }
 
-    /// Transfers the ordinary result and optional observed-response receipt.
-    pub fn into_parts(self) -> (Result<T, RequestError>, Option<RouteReceipt>) {
-        (self.result, self.receipt)
+    /// Transfers the ordinary result and optional invalidation capability.
+    pub fn into_parts(self) -> (Result<T, RequestError>, Option<RouteFailureToken>) {
+        (self.result, self.token)
     }
 }
 
-/// Runtime-neutral completion handle retaining an observed-response receipt.
+/// Runtime-neutral completion handle retaining an observed-response token.
 #[must_use = "dropping a routed call abandons result and route observation"]
 pub struct RoutedCall<T> {
     call: Call<RoutedOutcome<T>>,
@@ -87,7 +84,7 @@ impl<T> RoutedCall<T> {
         Self { call }
     }
 
-    /// Blocks until settlement, retaining any observed-response route receipt.
+    /// Blocks until settlement, retaining any observed-response token.
     pub fn wait(self) -> Result<RoutedOutcome<T>, CompletionError> {
         self.call.wait()
     }
@@ -98,25 +95,39 @@ impl<T> RoutedCall<T> {
     }
 }
 
-impl RouteReceipt {
-    pub(crate) fn heap_bytes(&self) -> usize {
-        match self {
-            Self::Controller { .. } => 0,
-            Self::Coordinator { route, .. } => route
-                .key()
-                .heap_bytes()
-                .saturating_add(route.endpoint().heap_bytes()),
-            Self::PartitionLeader { route, .. } => route.topic().heap_bytes(),
+impl RouteFailureToken {
+    /// Returns the semantic routing category without exposing causal authority.
+    pub const fn kind(&self) -> RouteKind {
+        match self.route {
+            RouteFact::Controller(_) => RouteKind::Controller,
+            RouteFact::Coordinator(_) => RouteKind::Coordinator,
+            RouteFact::PartitionLeader(_) => RouteKind::PartitionLeader,
         }
+    }
+
+    pub(crate) const fn belongs_to(&self, driver: DriverIdentity) -> bool {
+        self.driver.is_same(driver)
+    }
+
+    pub(crate) fn into_parts(self) -> (RouteFact, OutcomeStamp) {
+        (self.route, self.observed_at)
+    }
+
+    pub(crate) fn heap_bytes(&self) -> usize {
+        self.route.heap_bytes()
     }
 }
 
 impl RouteFact {
-    pub(crate) fn observe(self, observed_at: OutcomeStamp) -> RouteReceipt {
-        match self {
-            Self::Controller(route) => RouteReceipt::Controller { route, observed_at },
-            Self::Coordinator(route) => RouteReceipt::Coordinator { route, observed_at },
-            Self::PartitionLeader(route) => RouteReceipt::PartitionLeader { route, observed_at },
+    pub(crate) const fn observe(
+        self,
+        driver: DriverIdentity,
+        observed_at: OutcomeStamp,
+    ) -> RouteFailureToken {
+        RouteFailureToken {
+            driver,
+            route: self,
+            observed_at,
         }
     }
 
@@ -129,6 +140,15 @@ impl RouteFact {
                 .saturating_add(route.endpoint().heap_bytes()),
             Self::PartitionLeader(route) => route.topic().heap_bytes(),
         }
+    }
+}
+
+impl fmt::Debug for RouteFailureToken {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RouteFailureToken")
+            .field("kind", &self.kind())
+            .finish_non_exhaustive()
     }
 }
 

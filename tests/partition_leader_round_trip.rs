@@ -7,7 +7,8 @@ mod support;
 use std::{io::Write, net::TcpStream, time::Duration};
 
 use kafka_driver::{
-    Driver, InvalidationDisposition, PartitionId, Reactor, Route, RouteReceipt, TopicName,
+    Driver, InvalidationDisposition, PartitionId, Reactor, Route, RouteFailureToken, RouteKind,
+    TopicName,
 };
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
@@ -108,10 +109,8 @@ fn partition_route_fetches_and_invalidates_only_its_exact_topic() {
         .wait()
         .unwrap_or_else(|error| panic!("observe tracked partition call: {error}"));
     assert_eq!(outcome.result(), &Ok(response));
-    let receipt = outcome
-        .receipt()
-        .cloned()
-        .unwrap_or_else(|| panic!("partition call must publish its route"));
+    let (_, token) = outcome.into_parts();
+    let token = token.unwrap_or_else(|| panic!("partition call must publish its route token"));
     assert_exact_topic_invalidation(
         &driver,
         &mut reactor,
@@ -119,7 +118,7 @@ fn partition_route_fetches_and_invalidates_only_its_exact_topic() {
         &mut leader,
         (seed_port, leader_port),
         (&topic, partition),
-        receipt,
+        token,
     );
 }
 
@@ -130,24 +129,14 @@ fn assert_exact_topic_invalidation(
     leader: &mut TcpStream,
     ports: (u16, u16),
     target: (&TopicName, PartitionId),
-    receipt: RouteReceipt,
+    token: RouteFailureToken,
 ) {
     let (topic, partition) = target;
     let (seed_port, leader_port) = ports;
-    let old_revision = match &receipt {
-        RouteReceipt::PartitionLeader { route, .. }
-            if route.topic() == topic && route.partition() == partition =>
-        {
-            route.revision()
-        }
-        _ => panic!("partition scenario requires a partition receipt"),
-    };
+    assert_eq!(token.kind(), RouteKind::PartitionLeader);
     let invalidation = driver
-        .invalidate(receipt.clone())
+        .invalidate(token)
         .unwrap_or_else(|error| panic!("admit partition invalidation: {error}"));
-    let duplicate = driver
-        .invalidate(receipt)
-        .unwrap_or_else(|error| panic!("admit duplicate partition invalidation: {error}"));
     drive(reactor, Duration::ZERO, "interpret partition invalidation");
     let retry = driver
         .request_tracked(
@@ -194,7 +183,6 @@ fn assert_exact_topic_invalidation(
         "install post-invalidation Metadata",
     );
     assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
-    assert_eq!(duplicate.wait(), Ok(InvalidationDisposition::Applied));
     wait_for_frame(leader, reactor);
     let request = read_request(leader);
     leader
@@ -211,10 +199,12 @@ fn assert_exact_topic_invalidation(
     let outcome = retry
         .wait()
         .unwrap_or_else(|error| panic!("observe post-invalidation request: {error}"));
-    assert!(matches!(
-        outcome.receipt(),
-        Some(RouteReceipt::PartitionLeader { route, .. }) if route.revision() > old_revision
-    ));
+    assert_eq!(
+        outcome
+            .route_failure_token()
+            .map(kafka_driver::RouteFailureToken::kind),
+        Some(RouteKind::PartitionLeader)
+    );
 }
 
 fn assert_no_frame(peer: &TcpStream) {

@@ -16,7 +16,7 @@ use crate::{
 
 use super::{
     Call, DriverBuilder, RequestError, Route, RoutedCall, SubmitError, TrafficClass,
-    identity::CallIds,
+    identity::{CallIds, DriverIdentity},
 };
 
 /// Cloneable command-admission handle for one driver reactor.
@@ -26,6 +26,7 @@ pub struct Driver {
     shutdown: ShutdownRequester,
     call_ids: Arc<CallIds>,
     observation: Arc<Observation>,
+    pub(super) identity: DriverIdentity,
 }
 
 impl Driver {
@@ -34,12 +35,14 @@ impl Driver {
         shutdown: ShutdownRequester,
         call_ids: Arc<CallIds>,
         observation: Arc<Observation>,
+        identity: DriverIdentity,
     ) -> Self {
         Self {
             commands,
             shutdown,
             call_ids,
             observation,
+            identity,
         }
     }
 
@@ -144,7 +147,7 @@ impl Driver {
     ///
     /// A machine-approved broker response pairs the route fact with its causal
     /// observation stamp. Failures that settle without an observed broker
-    /// response have no receipt. Its timeout has the same end-to-end semantics
+    /// response have no token. Its timeout has the same end-to-end semantics
     /// as [`Self::request`].
     pub fn request_tracked<R>(
         &self,
@@ -176,8 +179,14 @@ impl Driver {
         };
         let submitted_at = Instant::now();
         let timeline = CallTimeline::new(Arc::clone(&self.observation), submitted_at, timeout);
-        let (call, request) =
-            observed_routed_request_in(call_id, traffic_class, request, timeout, timeline);
+        let (call, request) = observed_routed_request_in(
+            call_id,
+            traffic_class,
+            request,
+            timeout,
+            timeline,
+            self.identity,
+        );
         self.commands
             .try_send(Command::Submit {
                 route,

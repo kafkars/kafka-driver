@@ -20,9 +20,9 @@ pub use api::{
     BootstrapSnapshot, BrokerLaneLoadSnapshot, BrokerLanePhase, BrokerLaneSnapshot, Call,
     CallCounters, CallLatencySnapshot, CompletionError, Delivery, Driver, DriverBuildError,
     DriverBuilder, DriverSnapshot, FailureCounters, InvalidationDisposition, LatencyMetric,
-    MailboxSnapshot, RequestError, RequestResponsePair, ResponseCloseReason, Route, RouteReceipt,
-    RoutedCall, RoutedOutcome, SeedSnapshot, SnapshotError, SubmitError, TrafficClass,
-    WriteQueueSnapshot,
+    MailboxSnapshot, RequestError, RequestResponsePair, ResponseCloseReason, Route,
+    RouteFailureToken, RouteKind, RoutedCall, RoutedOutcome, SeedSnapshot, SnapshotError,
+    SubmitError, TrafficClass, WriteQueueSnapshot,
 };
 pub use config::{
     CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits, SaslConfig, SaslConfigError,
@@ -35,8 +35,8 @@ pub use kafka_driver_core::{
     AuthenticationFailure, AuthenticationFailureDisposition, BootstrapError, BootstrapLimits,
     BootstrapSet, BrokerDirectoryLimits, BrokerEndpoint, BrokerRoute, BrokerState, CallFailure,
     CallId, CloseReason as ConnectionCloseReason, ConnectionPhase, CoordinatorKey,
-    CoordinatorKeyError, CoordinatorKind, CoordinatorRoute, EvidenceStamp, HostName, HostNameError,
-    MetadataGeneration, MetadataRevision, Moment, NegotiationFailure, OutcomeStamp, PartitionId,
+    CoordinatorKeyError, CoordinatorKind, CoordinatorRoute, HostName, HostNameError,
+    MetadataGeneration, MetadataRevision, Moment, NegotiationFailure, PartitionId,
     PartitionIdError, PartitionRoute, TopicName, TopicNameError, TransportFailure,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};

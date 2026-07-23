@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use kafka_driver::{Driver, Reactor, Route, RouteReceipt, TrafficClass};
+use kafka_driver::{Driver, Reactor, Route, RouteKind, TrafficClass};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
 };
@@ -42,10 +42,12 @@ fn controller_call_opens_the_advertised_broker_and_completes_there() {
     let outcome = await_call(call, &mut reactor, "settle tracked controller call")
         .unwrap_or_else(|error| panic!("observe tracked controller call: {error}"));
     assert_eq!(outcome.result(), &Ok(response));
-    let Some(RouteReceipt::Controller { route, observed_at }) = outcome.receipt() else {
-        panic!("tracked controller response must retain its causal route receipt");
-    };
-    assert!(route.evidence_stamp().get() < observed_at.get());
+    assert_eq!(
+        outcome
+            .route_failure_token()
+            .map(kafka_driver::RouteFailureToken::kind),
+        Some(RouteKind::Controller)
+    );
 }
 
 #[test]

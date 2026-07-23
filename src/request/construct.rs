@@ -6,7 +6,7 @@ use kafka_driver_core::CallId;
 use kafka_wire::RequestResponsePair;
 
 use crate::{
-    Call, RequestError, RoutedCall, TrafficClass, completion::completion_pair,
+    Call, RequestError, RoutedCall, TrafficClass, api::DriverIdentity, completion::completion_pair,
     observation::CallTimeline,
 };
 
@@ -101,6 +101,7 @@ pub(crate) fn observed_routed_request_in<R>(
     request: R,
     timeout: Duration,
     timeline: CallTimeline,
+    driver: DriverIdentity,
 ) -> RoutedRequestPair<R::Response>
 where
     R: RequestResponsePair + Send + 'static,
@@ -112,7 +113,7 @@ where
         traffic_class,
         request,
         RequestDeadline::new(timeout),
-        RequestCompletion::routed(completion),
+        RequestCompletion::routed(completion, driver),
         RequestLifecycle::observed(timeline),
     );
     (RoutedCall::new(Call::new(receiver)), Box::new(request))

@@ -34,8 +34,8 @@ pub use observation::{
 pub use protocol::RequestResponsePair;
 pub use route::Route;
 pub use submission::SubmitError;
-pub use tracked::{RouteReceipt, RoutedCall, RoutedOutcome};
+pub use tracked::{RouteFailureToken, RouteKind, RoutedCall, RoutedOutcome};
 pub use traffic::TrafficClass;
 
-pub(crate) use identity::CallIds;
+pub(crate) use identity::{CallIds, DriverIdentity};
 pub(crate) use tracked::RouteFact;

@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use kafka_driver::{Driver, InvalidationDisposition, Reactor, Route, RouteReceipt};
+use kafka_driver::{Driver, InvalidationDisposition, Reactor, Route, RouteFailureToken, RouteKind};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
 };
@@ -25,7 +25,7 @@ use broker::{
 use support::complete_negotiation;
 
 #[test]
-fn exact_receipt_moves_the_controller_and_then_becomes_stale() {
+fn exact_token_moves_the_controller() {
     let seed_listener = listener();
     let first_listener = listener();
     let second_listener = listener();
@@ -41,30 +41,18 @@ fn exact_receipt_moves_the_controller_and_then_becomes_stale() {
     complete_negotiation(&mut seed, &mut reactor);
     install_metadata(&mut seed, &mut reactor, first_port);
 
-    let (old_receipt, _first_peer) =
-        tracked_controller_call(&driver, &mut reactor, &first_listener);
+    let (token, _first_peer) = tracked_controller_call(&driver, &mut reactor, &first_listener);
     let mut invalidation = driver
-        .invalidate(old_receipt.clone())
+        .invalidate(token)
         .unwrap_or_else(|error| panic!("admit controller invalidation: {error}"));
-    let mut duplicate = driver
-        .invalidate(old_receipt.clone())
-        .unwrap_or_else(|error| panic!("admit duplicate controller invalidation: {error}"));
-    assert_progress(&reactor.turn(Duration::ZERO), 2);
+    assert_progress(&reactor.turn(Duration::ZERO), 1);
     assert_pending(&mut invalidation);
-    assert_pending(&mut duplicate);
     install_metadata(&mut seed, &mut reactor, second_port);
     assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
-    assert_eq!(duplicate.wait(), Ok(InvalidationDisposition::Applied));
 
-    let (new_receipt, _second_peer) =
+    let (new_token, _second_peer) =
         tracked_controller_call(&driver, &mut reactor, &second_listener);
-    assert_ne!(new_receipt, old_receipt);
-
-    let stale = driver
-        .invalidate(old_receipt)
-        .unwrap_or_else(|error| panic!("admit stale controller invalidation: {error}"));
-    assert_progress(&reactor.turn(Duration::ZERO), 1);
-    assert_eq!(stale.wait(), Ok(InvalidationDisposition::IgnoredStale));
+    assert_eq!(new_token.kind(), RouteKind::Controller);
     assert_no_frame(&seed);
 }
 
@@ -77,7 +65,7 @@ fn tracked_controller_call(
     driver: &Driver,
     reactor: &mut Reactor,
     listener: &std::net::TcpListener,
-) -> (RouteReceipt, TcpStream) {
+) -> (RouteFailureToken, TcpStream) {
     let mut call = driver
         .request_tracked(
             Route::Controller,
@@ -94,11 +82,9 @@ fn tracked_controller_call(
         .wait()
         .unwrap_or_else(|error| panic!("observe tracked controller call: {error}"));
     assert_eq!(outcome.result(), &Ok(response));
-    let receipt = outcome
-        .receipt()
-        .cloned()
-        .unwrap_or_else(|| panic!("controller call must retain its exact route"));
-    (receipt, controller)
+    let (_, token) = outcome.into_parts();
+    let token = token.unwrap_or_else(|| panic!("controller call must retain its route token"));
+    (token, controller)
 }
 
 fn wait_for_tracked_frame(

@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use crate::{
-    DriverSnapshot, InvalidationDisposition, Route, RouteReceipt, SnapshotError,
+    DriverSnapshot, InvalidationDisposition, Route, RouteFailureToken, SnapshotError,
     completion::CompletionSender, request::ErasedRequest,
 };
 
@@ -14,7 +14,7 @@ pub(crate) enum Command {
         submitted_at: Instant,
     },
     Invalidate {
-        receipt: RouteReceipt,
+        token: RouteFailureToken,
         completion: CompletionSender<InvalidationDisposition>,
     },
     Snapshot {
@@ -29,7 +29,7 @@ impl Command {
             Self::Submit { route, request, .. } => {
                 route.heap_bytes().saturating_add(request.retained_bytes())
             }
-            Self::Invalidate { receipt, .. } => receipt.heap_bytes().saturating_add(
+            Self::Invalidate { token, .. } => token.heap_bytes().saturating_add(
                 CompletionSender::<InvalidationDisposition>::retained_state_bytes(),
             ),
             Self::Snapshot { .. } => {

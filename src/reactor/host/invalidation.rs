@@ -1,6 +1,8 @@
 //! Public route invalidation dispatch into causal metadata and coordinator barriers.
 
-use crate::{InvalidationDisposition, RouteReceipt, completion::CompletionSender};
+use crate::{
+    InvalidationDisposition, RouteFailureToken, api::RouteFact, completion::CompletionSender,
+};
 
 use crate::reactor::RouteInvalidation;
 
@@ -9,26 +11,26 @@ use super::{Reactor, ReactorError};
 impl Reactor {
     pub(super) fn process_invalidation(
         &mut self,
-        receipt: RouteReceipt,
+        token: RouteFailureToken,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
-        self.invalidate_route(receipt, completion)
+        self.invalidate_route(token, completion)
     }
 
     fn invalidate_route(
         &mut self,
-        receipt: RouteReceipt,
+        token: RouteFailureToken,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
         let now = self.clock.now().map_err(ReactorError::clock)?;
-        match receipt {
-            RouteReceipt::Controller { route, observed_at } => {
+        match token.into_parts() {
+            (RouteFact::Controller(route), observed_at) => {
                 self.invalidate_broker_route(route, observed_at, now, completion)
             }
-            RouteReceipt::Coordinator { route, observed_at } => {
+            (RouteFact::Coordinator(route), observed_at) => {
                 self.invalidate_coordinator(route, observed_at, now, completion)
             }
-            RouteReceipt::PartitionLeader { route, observed_at } => {
+            (RouteFact::PartitionLeader(route), observed_at) => {
                 self.invalidate_partition(route, observed_at, now, completion)
             }
         }

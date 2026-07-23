@@ -28,11 +28,10 @@ impl Reactor {
                             request.fail(draining());
                         }
                     }
-                    Command::Invalidate {
-                        receipt,
-                        completion,
-                    } if self.state == HostState::Running => {
-                        self.process_invalidation(receipt, completion)?;
+                    Command::Invalidate { token, completion }
+                        if self.state == HostState::Running =>
+                    {
+                        self.process_invalidation(token, completion)?;
                     }
                     Command::Invalidate { completion, .. } => {
                         let _ = completion.complete(InvalidationDisposition::Unavailable);

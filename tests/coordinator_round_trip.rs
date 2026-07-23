@@ -7,7 +7,7 @@ mod support;
 use std::{io::Write, net::TcpStream, time::Duration};
 
 use kafka_driver::{
-    CoordinatorKey, CoordinatorKind, Driver, InvalidationDisposition, Route, RouteReceipt,
+    CoordinatorKey, CoordinatorKind, Driver, InvalidationDisposition, Route, RouteKind,
 };
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
@@ -96,14 +96,16 @@ fn exact_group_key_discovers_then_routes_to_the_advertised_coordinator() {
         .wait()
         .unwrap_or_else(|error| panic!("observe tracked coordinator call: {error}"));
     assert_eq!(outcome.result(), &Ok(response));
-    assert!(matches!(
-        outcome.receipt(),
-        Some(RouteReceipt::Coordinator { route, .. }) if route.key() == &key
-    ));
+    assert_eq!(
+        outcome
+            .route_failure_token()
+            .map(kafka_driver::RouteFailureToken::kind),
+        Some(RouteKind::Coordinator)
+    );
 }
 
 #[test]
-fn exact_coordinator_receipt_refreshes_once_and_then_becomes_stale() {
+fn exact_coordinator_token_refreshes_once() {
     let seed_listener = listener();
     let coordinator_listener = listener();
     let seed_port = local_port(&seed_listener);
@@ -160,17 +162,12 @@ fn exact_coordinator_receipt_refreshes_once_and_then_becomes_stale() {
     let outcome = call
         .wait()
         .unwrap_or_else(|error| panic!("observe tracked coordinator call: {error}"));
-    let receipt = outcome
-        .receipt()
-        .cloned()
-        .unwrap_or_else(|| panic!("coordinator call must retain its exact route"));
+    let (_, token) = outcome.into_parts();
+    let token = token.unwrap_or_else(|| panic!("coordinator call must retain its route token"));
 
     let invalidation = driver
-        .invalidate(receipt.clone())
+        .invalidate(token)
         .unwrap_or_else(|error| panic!("admit coordinator invalidation: {error}"));
-    let duplicate = driver
-        .invalidate(receipt.clone())
-        .unwrap_or_else(|error| panic!("admit duplicate coordinator invalidation: {error}"));
     drive(
         &mut reactor,
         Duration::ZERO,
@@ -183,18 +180,8 @@ fn exact_coordinator_receipt_refreshes_once_and_then_becomes_stale() {
         &mut coordinator,
         &key,
         coordinator_port,
-        [invalidation, duplicate],
+        invalidation,
     );
-
-    let stale = driver
-        .invalidate(receipt)
-        .unwrap_or_else(|error| panic!("admit stale coordinator invalidation: {error}"));
-    drive(
-        &mut reactor,
-        Duration::ZERO,
-        "interpret stale coordinator invalidation",
-    );
-    assert_eq!(stale.wait(), Ok(InvalidationDisposition::IgnoredStale));
     assert_no_frame(&seed);
 }
 
@@ -205,7 +192,7 @@ fn await_fresh_coordinator(
     coordinator: &mut TcpStream,
     key: &CoordinatorKey,
     coordinator_port: u16,
-    invalidations: [kafka_driver::Call<InvalidationDisposition>; 2],
+    invalidation: kafka_driver::Call<InvalidationDisposition>,
 ) {
     let retry = driver
         .request_tracked(
@@ -221,9 +208,7 @@ fn await_fresh_coordinator(
     );
     assert_no_frame(coordinator);
     answer_discovery(seed, reactor, "orders-readers", coordinator_port);
-    for invalidation in invalidations {
-        assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
-    }
+    assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
     wait_for_frame(coordinator, reactor);
     let request = read_request(coordinator);
     coordinator
@@ -240,10 +225,12 @@ fn await_fresh_coordinator(
     let retried = retry
         .wait()
         .unwrap_or_else(|error| panic!("observe post-invalidation request: {error}"));
-    assert!(matches!(
-        retried.receipt(),
-        Some(RouteReceipt::Coordinator { route, .. }) if route.epoch().get() > 1
-    ));
+    assert_eq!(
+        retried
+            .route_failure_token()
+            .map(kafka_driver::RouteFailureToken::kind),
+        Some(RouteKind::Coordinator)
+    );
 }
 
 fn answer_discovery(

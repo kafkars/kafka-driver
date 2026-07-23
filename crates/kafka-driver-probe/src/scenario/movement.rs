@@ -1,8 +1,8 @@
-//! Same-session advertised partition-broker movement through an exact route receipt.
+//! Same-session advertised partition-broker movement through opaque route tokens.
 
 use std::{io, io::Write, path::Path, thread, time::Duration};
 
-use kafka_driver::{InvalidationDisposition, PartitionId, Route, TopicName};
+use kafka_driver::{InvalidationDisposition, PartitionId, Route, RouteKind, TopicName};
 
 use crate::{error::ProbeError, session::ProbeSession};
 
@@ -20,19 +20,22 @@ pub(super) fn run(
     let partition = PartitionId::new(0)
         .map_err(|source| ProbeError::stage("validate movement partition", source))?;
     let route = Route::PartitionLeader { topic, partition };
-    let old = session.await_tracked_route(&route, "initial advertised partition route")?;
+    let old_for_refresh =
+        session.await_tracked_route(&route, "initial advertised partition route")?;
+    let old_for_stale =
+        session.await_tracked_route(&route, "second initial advertised partition route")?;
     announce("READY initial advertised broker route")?;
 
     await_gate(coordination)?;
-    session.invalidate_route(old.clone(), InvalidationDisposition::Applied)?;
+    session.invalidate_route(old_for_refresh, InvalidationDisposition::Applied)?;
     let current = session.await_tracked_route(&route, "moved advertised partition route")?;
-    if current == old {
+    if current.kind() != RouteKind::PartitionLeader {
         return Err(ProbeError::stage(
-            "observe moved route generation",
-            io::Error::other("moved endpoint reused the pre-movement route receipt"),
+            "observe moved route kind",
+            io::Error::other("moved endpoint issued a non-partition route token"),
         ));
     }
-    session.invalidate_route(old, InvalidationDisposition::IgnoredStale)?;
+    session.invalidate_route(old_for_stale, InvalidationDisposition::IgnoredStale)?;
     println!("PASS advertised broker movement");
     Ok(())
 }

@@ -2,13 +2,18 @@
 
 use kafka_driver_core::OutcomeStamp;
 
-use crate::{RequestError, RoutedOutcome, api::RouteFact, completion::CompletionSender};
+use crate::{
+    RequestError, RoutedOutcome,
+    api::{DriverIdentity, RouteFact},
+    completion::CompletionSender,
+};
 
 pub(crate) enum RequestCompletion<T> {
     Plain(CompletionSender<Result<T, RequestError>>),
     Routed {
         completion: CompletionSender<RoutedOutcome<T>>,
         route: Option<RouteFact>,
+        driver: DriverIdentity,
     },
 }
 
@@ -17,10 +22,14 @@ impl<T> RequestCompletion<T> {
         Self::Plain(completion)
     }
 
-    pub(crate) const fn routed(completion: CompletionSender<RoutedOutcome<T>>) -> Self {
+    pub(crate) const fn routed(
+        completion: CompletionSender<RoutedOutcome<T>>,
+        driver: DriverIdentity,
+    ) -> Self {
         Self::Routed {
             completion,
             route: None,
+            driver,
         }
     }
 
@@ -66,10 +75,16 @@ impl<T> RequestCompletion<T> {
     fn complete(self, result: Result<T, RequestError>, observed_at: Option<OutcomeStamp>) -> bool {
         match self {
             Self::Plain(completion) => completion.complete(result).is_ok(),
-            Self::Routed { completion, route } => completion
+            Self::Routed {
+                completion,
+                route,
+                driver,
+            } => completion
                 .complete(RoutedOutcome::new(
                     result,
-                    route.zip(observed_at).map(|(route, at)| route.observe(at)),
+                    route
+                        .zip(observed_at)
+                        .map(|(route, at)| route.observe(driver, at)),
                 ))
                 .is_ok(),
         }

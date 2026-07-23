@@ -2,7 +2,7 @@
 
 use std::{thread, time::Duration};
 
-use kafka_driver::{CallFailure, InvalidationDisposition, RequestError, Route, RouteReceipt};
+use kafka_driver::{CallFailure, InvalidationDisposition, RequestError, Route, RouteFailureToken};
 
 use crate::error::ProbeError;
 
@@ -20,7 +20,7 @@ impl ProbeSession {
         &self,
         route: &Route,
         label: &'static str,
-    ) -> Result<RouteReceipt, ProbeError> {
+    ) -> Result<RouteFailureToken, ProbeError> {
         for _ in 0..ATTEMPTS {
             let call = self
                 .driver
@@ -30,14 +30,14 @@ impl ProbeSession {
                 ProbeError::stage("wait for tracked generated response", source)
             })?;
             match outcome.into_parts() {
-                (Ok(response), Some(receipt)) => {
+                (Ok(response), Some(token)) => {
                     validate(&response, label)?;
-                    return Ok(receipt);
+                    return Ok(token);
                 }
                 (Ok(_), None) => {
                     return Err(ProbeError::stage(
-                        "observe tracked route receipt",
-                        std::io::Error::other("successful semantic route omitted its receipt"),
+                        "observe tracked route token",
+                        std::io::Error::other("successful semantic route omitted its token"),
                     ));
                 }
                 (Err(error), _) if movement_transient(&error) => {
@@ -59,12 +59,12 @@ impl ProbeSession {
 
     pub(crate) fn invalidate_route(
         &self,
-        receipt: RouteReceipt,
+        token: RouteFailureToken,
         expected: InvalidationDisposition,
     ) -> Result<(), ProbeError> {
         let observed = self
             .driver
-            .invalidate(receipt)
+            .invalidate(token)
             .map_err(|source| ProbeError::stage("admit route invalidation", source))?
             .wait()
             .map_err(|source| ProbeError::stage("wait for route invalidation", source))?;

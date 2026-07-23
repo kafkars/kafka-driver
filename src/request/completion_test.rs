@@ -9,26 +9,29 @@ use kafka_driver_core::{
 };
 
 use crate::completion::completion_pair;
-use crate::{RequestError, api::RouteFact};
+use crate::{
+    RequestError,
+    api::{DriverIdentity, RouteFact},
+};
 
 use super::completion::RequestCompletion;
 
 #[test]
-fn one_request_completion_cannot_replace_its_first_route_receipt() {
+fn one_request_completion_cannot_replace_its_first_route_fact() {
     let first = controller_fact(7);
     let second = controller_fact(8);
     let (_receiver, sender) = completion_pair();
-    let mut completion = RequestCompletion::<()>::routed(sender);
+    let mut completion = RequestCompletion::<()>::routed(sender, driver());
 
     assert!(completion.record_route(first).is_ok());
     assert_eq!(completion.record_route(second.clone()), Err(second));
 }
 
 #[test]
-fn unobserved_failure_issues_no_causal_route_receipt() {
+fn unobserved_failure_issues_no_route_failure_token() {
     let route = controller_fact(7);
     let (receiver, sender) = completion_pair();
-    let mut completion = RequestCompletion::<()>::routed(sender);
+    let mut completion = RequestCompletion::<()>::routed(sender, driver());
     assert!(completion.record_route(route).is_ok());
 
     assert!(completion.complete_unobserved(Err(RequestError::RouteUnavailable)));
@@ -37,15 +40,15 @@ fn unobserved_failure_issues_no_causal_route_receipt() {
         .wait()
         .unwrap_or_else(|error| panic!("completion must remain observable: {error}"));
     assert_eq!(outcome.result(), &Err(RequestError::RouteUnavailable));
-    assert_eq!(outcome.receipt(), None);
+    assert!(outcome.route_failure_token().is_none());
 }
 
 #[test]
 fn observed_response_pairs_the_route_fact_with_its_outcome_stamp() {
     let route = controller_fact(7);
-    let expected = route.clone().observe(OutcomeStamp::from_raw(11));
+    let driver = driver();
     let (receiver, sender) = completion_pair();
-    let mut completion = RequestCompletion::<()>::routed(sender);
+    let mut completion = RequestCompletion::<()>::routed(sender, driver);
     assert!(completion.record_route(route).is_ok());
 
     assert!(completion.complete_observed(Ok(()), OutcomeStamp::from_raw(11)));
@@ -53,19 +56,23 @@ fn observed_response_pairs_the_route_fact_with_its_outcome_stamp() {
     let outcome = receiver
         .wait()
         .unwrap_or_else(|error| panic!("completion must remain observable: {error}"));
-    assert_eq!(outcome.receipt(), Some(&expected));
+    let token = outcome
+        .route_failure_token()
+        .unwrap_or_else(|| panic!("observed route must issue a token"));
+    assert!(token.belongs_to(driver));
+    assert_eq!(token.kind(), crate::RouteKind::Controller);
 }
 
 #[test]
-fn routed_completion_weight_follows_owned_receipt_buffers() {
-    let (route, receipt_bytes) = partition_fact(7);
+fn routed_completion_weight_follows_owned_token_buffers() {
+    let (route, token_bytes) = partition_fact(7);
     let (_receiver, sender) = completion_pair();
-    let mut completion = RequestCompletion::<()>::routed(sender);
+    let mut completion = RequestCompletion::<()>::routed(sender, driver());
     assert_eq!(completion.route_heap_bytes(), 0);
 
     assert!(completion.record_route(route).is_ok());
 
-    assert_eq!(completion.route_heap_bytes(), receipt_bytes);
+    assert_eq!(completion.route_heap_bytes(), token_bytes);
 }
 
 fn controller_fact(raw_generation: u64) -> RouteFact {
@@ -100,9 +107,9 @@ fn partition_fact(raw_generation: u64) -> (RouteFact, usize) {
     let route = snapshot
         .partition_route(&topic, partition)
         .unwrap_or_else(|| panic!("snapshot must issue partition route"));
-    let receipt_bytes = route.topic().heap_bytes();
-    assert!(receipt_bytes >= topic.as_str().len());
-    (RouteFact::PartitionLeader(route), receipt_bytes)
+    let token_bytes = route.topic().heap_bytes();
+    assert!(token_bytes >= topic.as_str().len());
+    (RouteFact::PartitionLeader(route), token_bytes)
 }
 
 fn broker_directory(raw_generation: u64) -> BrokerDirectory {
@@ -123,4 +130,8 @@ fn broker_directory(raw_generation: u64) -> BrokerDirectory {
 
 fn broker_id() -> BrokerId {
     BrokerId::new(1).unwrap_or_else(|error| panic!("valid broker ID: {error}"))
+}
+
+fn driver() -> DriverIdentity {
+    DriverIdentity::allocate().unwrap_or_else(|| panic!("driver identity"))
 }

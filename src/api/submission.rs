@@ -18,6 +18,8 @@ pub enum SubmitError {
     Wake(io::Error),
     /// Every public call identity has been allocated for this driver instance.
     IdentityExhausted,
+    /// An invalidation token was issued by another driver instance.
+    ForeignDriver,
 }
 
 impl fmt::Display for SubmitError {
@@ -29,6 +31,9 @@ impl fmt::Display for SubmitError {
             Self::IdentityExhausted => {
                 formatter.write_str("the driver call identity space is exhausted")
             }
+            Self::ForeignDriver => {
+                formatter.write_str("the route failure token belongs to another driver")
+            }
         }
     }
 }
@@ -37,7 +42,7 @@ impl std::error::Error for SubmitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Wake(source) => Some(source),
-            Self::Full | Self::Closed | Self::IdentityExhausted => None,
+            Self::Full | Self::Closed | Self::IdentityExhausted | Self::ForeignDriver => None,
         }
     }
 }
