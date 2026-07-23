@@ -4,6 +4,9 @@ mod authentication;
 mod authentication_rejection;
 #[cfg(test)]
 mod authentication_rejection_test;
+mod dns_rotation;
+#[cfg(test)]
+mod dns_rotation_test;
 mod encryption;
 mod measurement;
 mod movement;

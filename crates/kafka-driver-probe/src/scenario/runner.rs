@@ -9,13 +9,16 @@ use crate::{
 };
 
 use super::{
-    authentication, authentication_rejection, encryption, measurement, movement, readiness,
-    reconnect, routes, secure_authentication,
+    authentication, authentication_rejection, dns_rotation, encryption, measurement, movement,
+    readiness, reconnect, routes, secure_authentication,
 };
 
 pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
     let (session, scenario) = match arguments {
         Arguments::Readiness { bootstrap } => (spawn_plaintext(&bootstrap)?, Scenario::Readiness),
+        Arguments::DnsRotation { bootstrap } => {
+            (spawn_plaintext(&bootstrap)?, Scenario::DnsRotation)
+        }
         Arguments::Routes {
             bootstrap,
             topic,
@@ -89,6 +92,7 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
     };
     let outcome = match scenario {
         Scenario::Readiness => readiness::run(&session),
+        Scenario::DnsRotation => dns_rotation::run(&session),
         Scenario::Routes { topic, group } => routes::run(&session, topic, group),
         Scenario::Reconnect => reconnect::run(&session),
         Scenario::Rolling { coordination } => reconnect::run_rolling(&session, &coordination),
@@ -124,6 +128,7 @@ fn spawn_sasl(bootstrap: &str, mechanism: SaslSelection) -> Result<ProbeSession,
 
 enum Scenario {
     Readiness,
+    DnsRotation,
     Routes { topic: String, group: String },
     Reconnect,
     Rolling { coordination: String },

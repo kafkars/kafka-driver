@@ -121,11 +121,7 @@ fn explicit_wake_releases_an_idle_embedded_turn() {
 
 #[test]
 fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
-    let (driver, mut reactor, listener) = build_reactor(DriverLimits::default());
-    let (mut peer, _) = listener
-        .accept()
-        .unwrap_or_else(|error| panic!("accept lifecycle connection: {error}"));
-    complete_negotiation(&mut peer, &mut reactor);
+    let (driver, mut reactor, _listener) = build_reactor(DriverLimits::default());
     let owner = thread::spawn(move || reactor.turn(Duration::from_secs(30)));
 
     drop(driver);

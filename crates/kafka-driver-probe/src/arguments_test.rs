@@ -17,6 +17,18 @@ fn readiness_accepts_exactly_one_bootstrap_endpoint() {
 }
 
 #[test]
+fn dns_rotation_retains_one_logical_bootstrap_endpoint() {
+    let parsed = Arguments::parse(strings(["dns-rotation", "localhost:9092"]));
+
+    assert_eq!(
+        parsed,
+        Ok(Arguments::DnsRotation {
+            bootstrap: "localhost:9092".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn routes_retain_the_exact_endpoint_topic_and_group() {
     let parsed = Arguments::parse(strings([
         "routes",
@@ -177,6 +189,10 @@ fn partial_or_expanded_commands_are_rejected() {
     );
     assert_eq!(
         Arguments::parse(strings(["readiness", "one:1", "two:2"])),
+        Err(ArgumentError::Shape)
+    );
+    assert_eq!(
+        Arguments::parse(strings(["dns-rotation"])),
         Err(ArgumentError::Shape)
     );
     assert_eq!(

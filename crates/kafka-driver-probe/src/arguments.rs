@@ -10,6 +10,9 @@ pub(crate) enum Arguments {
     /// Proves that the configured broker negotiates and answers a generated RPC.
     Readiness { bootstrap: String },
 
+    /// Proves one logical endpoint advances past a refused DNS candidate.
+    DnsRotation { bootstrap: String },
+
     /// Proves each semantic cluster route through a real broker.
     Routes {
         bootstrap: String,
@@ -72,6 +75,9 @@ impl Arguments {
         let values = values.into_iter().collect::<Vec<_>>();
         match values.as_slice() {
             [command, bootstrap] if command == "readiness" => Ok(Self::Readiness {
+                bootstrap: bootstrap.clone(),
+            }),
+            [command, bootstrap] if command == "dns-rotation" => Ok(Self::DnsRotation {
                 bootstrap: bootstrap.clone(),
             }),
             [command, bootstrap, topic, group] if command == "routes" => Ok(Self::Routes {
@@ -149,7 +155,7 @@ impl fmt::Display for ArgumentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Shape => formatter.write_str(
-                "usage: kafka-driver-probe readiness <bootstrap-set> | routes <bootstrap-set> <topic> <group> | reconnect <bootstrap-set> | rolling <bootstrap-set> <coordination-directory> | movement <bootstrap-set> <topic> <coordination-directory> | authenticate <mechanism> <bootstrap-set> | reject-authentication <mechanism> <bootstrap-set> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <bootstrap-set> <samples>",
+                "usage: kafka-driver-probe readiness <bootstrap-set> | dns-rotation <bootstrap-set> | routes <bootstrap-set> <topic> <group> | reconnect <bootstrap-set> | rolling <bootstrap-set> <coordination-directory> | movement <bootstrap-set> <topic> <coordination-directory> | authenticate <mechanism> <bootstrap-set> | reject-authentication <mechanism> <bootstrap-set> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <bootstrap-set> <samples>",
             ),
             Self::Samples => write!(
                 formatter,

@@ -28,6 +28,9 @@ pub(crate) enum ProbeError {
         name: &'static str,
     },
     AuthenticationAccepted,
+    AddressRotation {
+        observed: Option<kafka_driver::ConnectionCloseReason>,
+    },
     ReleaseRequired,
 }
 
@@ -74,6 +77,10 @@ impl fmt::Display for ProbeError {
             Self::AuthenticationAccepted => {
                 formatter.write_str("invalid credentials were unexpectedly accepted")
             }
+            Self::AddressRotation { observed } => write!(
+                formatter,
+                "dead-first DNS candidate did not leave a refused-open observation: {observed:?}"
+            ),
             Self::ReleaseRequired => {
                 formatter.write_str("performance measurement requires a release build")
             }
@@ -91,6 +98,7 @@ impl Error for ProbeError {
             | Self::Invalidation { .. }
             | Self::Credential { .. }
             | Self::AuthenticationAccepted
+            | Self::AddressRotation { .. }
             | Self::ReleaseRequired => None,
         }
     }
