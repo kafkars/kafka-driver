@@ -2,7 +2,7 @@
 
 use kafka_driver_core::{BrokerRoute, DnsOutcome, DnsRequest, EffectId, Moment};
 
-use crate::{RequestError, reactor::Poller, request::ErasedRequest};
+use crate::{RequestError, TrafficClass, reactor::Poller, request::ErasedRequest};
 
 use super::{BrokerLane, BrokerSet, BrokerSetError, child_resolution::ChildResolution};
 
@@ -11,7 +11,7 @@ impl BrokerSet {
         &mut self,
         poller: &Poller,
         route: BrokerRoute,
-        effect_id: EffectId,
+        effect_id: Option<EffectId>,
         request: Box<dyn ErasedRequest>,
         now: Moment,
     ) -> Result<Option<(BrokerLane, DnsRequest)>, BrokerSetError> {
@@ -37,11 +37,31 @@ impl BrokerSet {
             }
             Err(error) => return Err(error),
         };
+        if child.needs_resolution(route, &endpoint) && effect_id.is_none() {
+            return Err(BrokerSetError::ResolutionPermitMissing);
+        }
         let result = child
             .submit(poller, route, &endpoint, effect_id, request, now)
             .map(|request| request.map(|request| (lane, request)));
         self.sync_lane(lane)?;
         result
+    }
+
+    pub(in crate::reactor) fn resolution_lane(
+        &self,
+        route: BrokerRoute,
+        traffic: TrafficClass,
+    ) -> Option<BrokerLane> {
+        let endpoint = self
+            .directory
+            .as_ref()
+            .and_then(|directory| directory.resolve(route).ok())
+            .map(kafka_driver_core::BrokerDirectoryEntry::endpoint)?;
+        let lane = BrokerLane::new(route.broker_id(), traffic);
+        let needs_resolution = self
+            .child_for_lane(lane)
+            .is_none_or(|child| child.needs_resolution(route, endpoint));
+        (self.broker_template.is_some() && needs_resolution).then_some(lane)
     }
 
     pub(in crate::reactor) fn complete_resolution(
@@ -84,6 +104,13 @@ impl BrokerSet {
             }
         }
         None
+    }
+
+    pub(in crate::reactor) fn restore_address_refresh(
+        &mut self,
+        lane: BrokerLane,
+    ) -> Result<(), BrokerSetError> {
+        self.sync_lane(lane)
     }
 
     pub(in crate::reactor) fn start_address_refresh(

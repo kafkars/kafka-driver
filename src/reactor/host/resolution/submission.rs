@@ -2,21 +2,19 @@
 
 use std::collections::VecDeque;
 
-use kafka_driver_core::{DnsRequest, EffectId, Moment};
+use kafka_driver_core::{DnsRequest, Moment};
 
 use crate::{
     ResolverLimits,
-    reactor::{
-        broker_set::BrokerLane,
-        resolver::{ResolutionOwner, Resolver, ResolverOwnershipError, ResolverSubmitError},
-    },
+    reactor::resolver::{ResolutionOwner, Resolver, ResolverSubmitError},
 };
 
-use super::{NameResolution, NameResolutionError};
+use super::{NameResolution, NameResolutionError, ResolutionPermit};
 
 pub(super) struct PendingResolutions {
     requests: VecDeque<OwnedResolution>,
     capacity: usize,
+    reserved: usize,
     retry_budget: usize,
 }
 
@@ -24,23 +22,33 @@ impl PendingResolutions {
     pub(super) fn new(limits: ResolverLimits) -> Self {
         Self {
             requests: VecDeque::new(),
-            capacity: limits.request_capacity().get(),
+            capacity: limits.pending_capacity().get(),
+            reserved: 0,
             retry_budget: limits.request_capacity().get(),
         }
     }
 
-    pub(super) fn retain(
-        &mut self,
-        owner: ResolutionOwner,
-        request: DnsRequest,
-    ) -> Result<(), ResolverOwnershipError> {
-        if self.requests.len() == self.capacity {
-            return Err(ResolverOwnershipError::CapacityReached {
-                limit: self.capacity,
-            });
+    pub(super) fn try_reserve(&mut self) -> bool {
+        if self.requests.len().saturating_add(self.reserved) >= self.capacity {
+            return false;
         }
+        self.reserved += 1;
+        true
+    }
+
+    pub(super) const fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub(super) fn retain_reserved(&mut self, owner: ResolutionOwner, request: DnsRequest) {
+        debug_assert!(self.reserved != 0);
+        self.reserved -= 1;
         self.requests.push_back(OwnedResolution { owner, request });
-        Ok(())
+    }
+
+    pub(super) fn release_reservation(&mut self) {
+        debug_assert!(self.reserved != 0);
+        self.reserved -= 1;
     }
 
     pub(super) fn retry(
@@ -107,31 +115,23 @@ impl SubmissionProgress {
 }
 
 impl NameResolution {
-    pub(in crate::reactor::host) fn reserve_effect(
-        &mut self,
-    ) -> Result<EffectId, NameResolutionError> {
-        self.effect_ids
-            .reserve()
-            .ok_or(NameResolutionError::IdentityExhausted)
-    }
-
-    pub(in crate::reactor::host) fn submit_broker(
-        &mut self,
-        lane: BrokerLane,
-        request: DnsRequest,
-    ) -> Result<(), NameResolutionError> {
-        self.submit_owned(ResolutionOwner::Broker(lane), request)
-    }
-
     pub(in crate::reactor::host) fn restart_bootstrap(
         &mut self,
     ) -> Result<bool, NameResolutionError> {
         if self.bootstrap_in_flight {
             return Ok(false);
         }
-        let effect_id = self.reserve_effect()?;
-        let request = self.bootstrap.restart(effect_id)?;
-        self.submit_owned(ResolutionOwner::Bootstrap, request)?;
+        let Some(permit) = self.try_reserve(ResolutionOwner::Bootstrap)? else {
+            return Ok(false);
+        };
+        let request = match self.bootstrap.restart(permit.effect_id()) {
+            Ok(request) => request,
+            Err(error) => {
+                self.cancel(permit);
+                return Err(error.into());
+            }
+        };
+        self.submit(permit, request)?;
         self.bootstrap_in_flight = true;
         Ok(true)
     }
@@ -148,11 +148,21 @@ impl NameResolution {
         {
             return Ok(false);
         }
-        let effect_id = self.reserve_effect()?;
-        let Some(request) = self.bootstrap.retry_elapsed(now, effect_id)? else {
+        let Some(permit) = self.try_reserve(ResolutionOwner::Bootstrap)? else {
             return Ok(false);
         };
-        self.submit_owned(ResolutionOwner::Bootstrap, request)?;
+        let request = match self.bootstrap.retry_elapsed(now, permit.effect_id()) {
+            Ok(Some(request)) => request,
+            Ok(None) => {
+                self.cancel(permit);
+                return Ok(false);
+            }
+            Err(error) => {
+                self.cancel(permit);
+                return Err(error.into());
+            }
+        };
+        self.submit(permit, request)?;
         self.bootstrap_in_flight = true;
         Ok(true)
     }
@@ -161,24 +171,27 @@ impl NameResolution {
         self.pending.retry(&self.resolver).map_err(Into::into)
     }
 
-    pub(super) fn submit_owned(
+    pub(in crate::reactor::host) fn submit(
         &mut self,
-        owner: ResolutionOwner,
+        permit: ResolutionPermit,
         request: DnsRequest,
     ) -> Result<(), NameResolutionError> {
-        let effect_id = request.effect_id();
-        self.ownership.register(effect_id, owner)?;
+        if permit.effect_id() != request.effect_id() {
+            self.cancel(permit);
+            return Err(NameResolutionError::PermitMismatch);
+        }
         match self.resolver.submit(request) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.pending.release_reservation();
+                Ok(())
+            }
             Err(ResolverSubmitError::Full(request)) => {
-                if let Err(error) = self.pending.retain(owner, request) {
-                    self.ownership.remove(effect_id);
-                    return Err(error.into());
-                }
+                self.pending.retain_reserved(permit.owner(), request);
                 Ok(())
             }
             Err(error @ ResolverSubmitError::Closed(_)) => {
-                self.ownership.remove(effect_id);
+                self.pending.release_reservation();
+                self.ownership.remove(permit.effect_id());
                 Err(error.into())
             }
         }

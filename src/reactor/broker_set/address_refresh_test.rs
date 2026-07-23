@@ -50,7 +50,7 @@ fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
         .submit_route(
             &poller,
             route,
-            EffectId::from_raw(1),
+            Some(EffectId::from_raw(1)),
             request,
             Moment::ORIGIN,
         )

@@ -162,33 +162,6 @@ impl Reactor {
         let entry = directory.resolve(route).ok()?;
         (entry.endpoint() == coordinator.endpoint()).then_some(route)
     }
-
-    pub(super) fn submit_broker_route(
-        &mut self,
-        route: BrokerRoute,
-        request: Box<dyn ErasedRequest>,
-        now: Moment,
-    ) -> Result<(), ReactorError> {
-        let Some(resolution) = &mut self.resolution else {
-            request.fail(RequestError::RouteUnavailable);
-            return Ok(());
-        };
-        let Ok(effect_id) = resolution.reserve_effect() else {
-            request.fail(RequestError::IdentityConflict);
-            return Ok(());
-        };
-        let dns = self
-            .brokers
-            .submit_route(&self.poller, route, effect_id, request, now)
-            .map_err(ReactorError::broker_set)?;
-        let Some((lane, dns)) = dns else {
-            return Ok(());
-        };
-        resolution
-            .submit_broker(lane, dns)
-            .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
-        Ok(())
-    }
 }
 
 fn not_ready() -> RequestError {

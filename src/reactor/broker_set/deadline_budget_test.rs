@@ -47,7 +47,7 @@ fn one_turn_processes_only_the_global_due_lane_budget_and_reports_remainder() {
             .submit_route(
                 &poller,
                 route,
-                EffectId::from_raw(raw),
+                Some(EffectId::from_raw(raw)),
                 request,
                 Moment::ORIGIN,
             )

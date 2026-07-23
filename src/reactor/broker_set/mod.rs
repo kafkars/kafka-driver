@@ -34,6 +34,8 @@ mod lane_test;
 #[cfg(test)]
 mod owner_test;
 #[cfg(test)]
+mod resolution_permit_test;
+#[cfg(test)]
 mod routing_test;
 #[cfg(test)]
 mod slots_test;

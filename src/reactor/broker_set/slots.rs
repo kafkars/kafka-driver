@@ -9,7 +9,6 @@ impl BrokerSet {
         self.lane_slots.get(&lane).copied()
     }
 
-    #[cfg(test)]
     pub(super) fn child_for_lane(&self, lane: BrokerLane) -> Option<&BrokerChild> {
         self.child_index(lane)
             .and_then(|index| self.children.get(index))

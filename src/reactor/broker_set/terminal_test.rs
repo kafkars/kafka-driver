@@ -47,7 +47,13 @@ fn terminal_authentication_rejection_settles_every_waiting_call_as_not_sent() {
     let mut poller = Poller::new(nonzero(4)).unwrap_or_else(|error| panic!("test poller: {error}"));
     let (first_call, first) = request(1);
     let (lane, dns) = brokers
-        .submit_route(&poller, route, EffectId::from_raw(1), first, Moment::ORIGIN)
+        .submit_route(
+            &poller,
+            route,
+            Some(EffectId::from_raw(1)),
+            first,
+            Moment::ORIGIN,
+        )
         .unwrap_or_else(|error| panic!("first route request: {error}"))
         .unwrap_or_else(|| panic!("first route demand must resolve"));
     let (second_call, second) = request(2);
@@ -56,7 +62,7 @@ fn terminal_authentication_rejection_settles_every_waiting_call_as_not_sent() {
             .submit_route(
                 &poller,
                 route,
-                EffectId::from_raw(2),
+                Some(EffectId::from_raw(2)),
                 second,
                 Moment::ORIGIN,
             )

@@ -16,7 +16,7 @@ impl BrokerChild {
         poller: &Poller,
         route: BrokerRoute,
         endpoint: &BrokerEndpoint,
-        effect_id: EffectId,
+        effect_id: Option<EffectId>,
         request: Box<dyn ErasedRequest>,
         now: Moment,
     ) -> Result<Option<DnsRequest>, BrokerSetError> {
@@ -49,6 +49,7 @@ impl BrokerChild {
                 .begin_drain(poller, now)
                 .map_err(BrokerSetError::Broker)?;
         }
+        let effect_id = effect_id.ok_or(BrokerSetError::ResolutionPermitMissing)?;
         let epoch = self.reserve_epoch()?;
         let transition = self.resolution.apply(BrokerResolutionInput::Start {
             route,
@@ -60,6 +61,19 @@ impl BrokerChild {
             [BrokerResolutionEffect::Resolve { request }] => Ok(Some(request.clone())),
             _ => Err(BrokerSetError::UnexpectedResolutionEffect),
         }
+    }
+
+    pub(super) fn needs_resolution(&self, route: BrokerRoute, endpoint: &BrokerEndpoint) -> bool {
+        if self.endpoint.as_ref() == Some(endpoint)
+            && self.connection.as_ref().is_some_and(|connection| {
+                connection.state().phase() == ConnectionPhase::Ready
+                    || (!connection.is_terminal()
+                        && connection.broker_state().phase() != BrokerPhase::Draining)
+            })
+        {
+            return false;
+        }
+        !self.is_resolving(route, endpoint)
     }
 
     pub(super) fn complete(

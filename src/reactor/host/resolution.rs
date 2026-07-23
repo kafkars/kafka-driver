@@ -1,5 +1,6 @@
 //! Shard-owned DNS identity, worker, bootstrap routing, and broker installation.
 
+mod permit;
 mod submission;
 
 #[cfg(test)]
@@ -29,6 +30,7 @@ use super::{
     resolution_progress::{BrokerDnsOutcome, ResolutionProgress, ResolutionTurn},
 };
 
+pub(in crate::reactor::host) use permit::ResolutionPermit;
 use submission::PendingResolutions;
 
 pub(super) struct NameResolution {
@@ -59,23 +61,30 @@ impl NameResolution {
         resolver: Resolver,
     ) -> Result<Self, NameResolutionError> {
         let mut effect_ids = ResolverEffectIds::new();
+        let mut ownership = ResolverOwnership::new(limits.pending_capacity());
+        let mut pending = PendingResolutions::new(limits);
+        if !pending.try_reserve() {
+            return Err(NameResolutionError::ReservationUnavailable);
+        }
         let effect_id = effect_ids
             .reserve()
             .ok_or(NameResolutionError::IdentityExhausted)?;
+        ownership.register(effect_id, ResolutionOwner::Bootstrap)?;
+        let permit = ResolutionPermit::new(effect_id, ResolutionOwner::Bootstrap);
         let (bootstrap, request) = BootstrapOwner::start(config, effect_id)?;
-        let ownership = ResolverOwnership::new(limits.pending_capacity());
         let mut resolution = Self {
             resolver,
             bootstrap,
-            bootstrap_in_flight: true,
+            bootstrap_in_flight: false,
             entropy: JitterEntropy::for_value(&"bootstrap"),
             effect_ids,
             ownership,
-            pending: PendingResolutions::new(limits),
+            pending,
             outcomes: Vec::with_capacity(limits.outcome_budget().get()),
             last_bootstrap_dns_failure: None,
         };
-        resolution.submit_owned(ResolutionOwner::Bootstrap, request)?;
+        resolution.submit(permit, request)?;
+        resolution.bootstrap_in_flight = true;
         Ok(resolution)
     }
 
@@ -119,27 +128,39 @@ impl NameResolution {
                 ResolutionOwner::Bootstrap => {
                     self.last_bootstrap_dns_failure = outcome.result().as_ref().err().copied();
                     self.bootstrap_in_flight = false;
-                    let retry_effect_id = self.reserve_effect()?;
-                    match self.bootstrap.complete(
+                    let permit = self
+                        .try_reserve(ResolutionOwner::Bootstrap)?
+                        .ok_or(NameResolutionError::ReservationUnavailable)?;
+                    let action = self.bootstrap.complete(
                         outcome,
-                        retry_effect_id,
+                        permit.effect_id(),
                         now,
                         self.entropy.next_sample(),
-                    )? {
+                    );
+                    let action = match action {
+                        Ok(action) => action,
+                        Err(error) => {
+                            self.cancel(permit);
+                            return Err(error.into());
+                        }
+                    };
+                    match action {
                         BootstrapAction::Resolve(request) => {
-                            self.submit_owned(ResolutionOwner::Bootstrap, request)?;
+                            self.submit(permit, request)?;
                             self.bootstrap_in_flight = true;
                         }
                         BootstrapAction::Install(config) if broker.is_none() => {
+                            self.cancel(permit);
                             broker = Some(config);
                         }
                         BootstrapAction::Install(_) => {
+                            self.cancel(permit);
                             return Err(
                                 crate::reactor::bootstrap::BootstrapOwnerError::UnexpectedEffect
                                     .into(),
                             );
                         }
-                        BootstrapAction::RetryScheduled => {}
+                        BootstrapAction::RetryScheduled => self.cancel(permit),
                     }
                 }
             }

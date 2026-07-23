@@ -10,6 +10,8 @@ use crate::reactor::{
 #[derive(Debug)]
 pub(super) enum NameResolutionError {
     IdentityExhausted,
+    ReservationUnavailable,
+    PermitMismatch,
     Ownership(ResolverOwnershipError),
     Resolver(ResolverSubmitError),
     Bootstrap(BootstrapOwnerError),
@@ -20,6 +22,12 @@ impl fmt::Display for NameResolutionError {
         match self {
             Self::IdentityExhausted => {
                 formatter.write_str("resolver effect identity space is exhausted")
+            }
+            Self::ReservationUnavailable => {
+                formatter.write_str("initial resolver reservation is unavailable")
+            }
+            Self::PermitMismatch => {
+                formatter.write_str("resolver request does not match its reserved effect identity")
             }
             Self::Ownership(error) => error.fmt(formatter),
             Self::Resolver(error) => error.fmt(formatter),
@@ -34,7 +42,7 @@ impl std::error::Error for NameResolutionError {
             Self::Ownership(error) => Some(error),
             Self::Resolver(error) => Some(error),
             Self::Bootstrap(error) => Some(error),
-            Self::IdentityExhausted => None,
+            Self::IdentityExhausted | Self::ReservationUnavailable | Self::PermitMismatch => None,
         }
     }
 }

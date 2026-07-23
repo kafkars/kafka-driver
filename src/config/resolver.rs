@@ -44,7 +44,7 @@ impl ResolverLimits {
         }
     }
 
-    /// Replaces the maximum identity-to-owner entries retained for outstanding work.
+    /// Replaces the maximum outstanding effects and pre-transition fallback slots.
     pub const fn with_pending_capacity(mut self, pending_capacity: NonZeroUsize) -> Self {
         self.pending_capacity = pending_capacity;
         self
@@ -70,7 +70,7 @@ impl ResolverLimits {
         self.max_addresses
     }
 
-    /// Returns the maximum outstanding DNS effects tracked by the reactor.
+    /// Returns the maximum outstanding DNS effects and retained fallback requests.
     pub const fn pending_capacity(self) -> NonZeroUsize {
         self.pending_capacity
     }

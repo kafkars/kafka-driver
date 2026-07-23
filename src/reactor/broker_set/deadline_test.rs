@@ -43,7 +43,7 @@ fn dns_success_without_socket_readiness_still_expires_the_waiting_call() {
         .submit_route(
             &poller,
             route,
-            EffectId::from_raw(1),
+            Some(EffectId::from_raw(1)),
             request,
             Moment::ORIGIN,
         )
@@ -103,7 +103,7 @@ fn reconnect_backoff_cannot_outlive_a_waiting_call_deadline() {
         .submit_route(
             &poller,
             route,
-            EffectId::from_raw(1),
+            Some(EffectId::from_raw(1)),
             request,
             Moment::ORIGIN,
         )

@@ -16,17 +16,33 @@ use crate::{
 use super::{NameResolution, resolution_error::NameResolutionError};
 
 #[test]
+fn ownership_saturation_rejects_a_permit_before_dns_policy_can_advance() {
+    let limits = resolver_limits().with_pending_capacity(NonZeroUsize::MIN);
+    let (mut resolution, requests, _outcomes) = NameResolution::isolated(bootstrap(), limits);
+
+    let permit = resolution
+        .try_reserve_broker(lane())
+        .unwrap_or_else(|error| panic!("capacity is ordinary backpressure: {error}"));
+
+    assert!(permit.is_none());
+    assert_eq!(resolution.capacity(), 1);
+    assert!(requests.try_recv().is_ok());
+    assert!(requests.try_recv().is_err());
+}
+
+#[test]
 fn full_worker_queue_preserves_broker_resolution_until_capacity_returns() {
     let limits = resolver_limits();
     let (mut resolution, requests, outcomes) = NameResolution::isolated(bootstrap(), limits);
     let broker_request = request(2);
     let lane = lane();
 
-    assert!(
-        resolution
-            .submit_broker(lane, broker_request.clone())
-            .is_ok()
-    );
+    let permit = resolution
+        .try_reserve_broker(lane)
+        .unwrap_or_else(|error| panic!("reserve broker DNS ownership: {error}"))
+        .unwrap_or_else(|| panic!("broker DNS ownership must fit"));
+    assert_eq!(permit.effect_id(), broker_request.effect_id());
+    assert!(resolution.submit(permit, broker_request.clone()).is_ok());
     let bootstrap_request = requests
         .try_recv()
         .unwrap_or_else(|error| panic!("initial bootstrap request: {error}"));
@@ -59,11 +75,12 @@ fn closed_worker_is_host_failure_without_discarding_the_pending_request() {
     let limits = resolver_limits();
     let (mut resolution, requests, _outcomes) = NameResolution::isolated(bootstrap(), limits);
     let broker_request = request(2);
-    assert!(
-        resolution
-            .submit_broker(lane(), broker_request.clone())
-            .is_ok()
-    );
+    let permit = resolution
+        .try_reserve_broker(lane())
+        .unwrap_or_else(|error| panic!("reserve broker DNS ownership: {error}"))
+        .unwrap_or_else(|| panic!("broker DNS ownership must fit"));
+    assert_eq!(permit.effect_id(), broker_request.effect_id());
+    assert!(resolution.submit(permit, broker_request.clone()).is_ok());
     drop(requests);
     let mut broker_outcomes = Vec::new();
 

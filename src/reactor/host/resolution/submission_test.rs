@@ -10,7 +10,7 @@ use crate::{
     ResolverLimits, TrafficClass,
     reactor::{
         broker_set::BrokerLane,
-        resolver::{ResolutionOwner, Resolver, ResolverOwnershipError, ResolverSubmitError},
+        resolver::{ResolutionOwner, Resolver, ResolverSubmitError},
     },
 };
 
@@ -18,18 +18,16 @@ use super::submission::PendingResolutions;
 
 #[test]
 fn full_worker_queue_retains_the_exact_owner_and_request_until_admission() {
-    let limits = limits();
+    let limits = limits().with_pending_capacity(NonZeroUsize::MIN);
     let (resolver, requests, _outcomes) = Resolver::isolated(limits);
     let occupied = request(1);
     let retained = request(2);
     let owner = ResolutionOwner::Broker(lane());
     assert!(resolver.submit(occupied.clone()).is_ok());
     let mut pending = PendingResolutions::new(limits);
-    assert!(pending.retain(owner, retained.clone()).is_ok());
-    assert_eq!(
-        pending.retain(owner, request(3)),
-        Err(ResolverOwnershipError::CapacityReached { limit: 1 })
-    );
+    assert!(pending.try_reserve());
+    pending.retain_reserved(owner, retained.clone());
+    assert!(!pending.try_reserve());
 
     let full = pending
         .retry(&resolver)
@@ -54,7 +52,8 @@ fn closed_worker_returns_the_exact_request_without_discarding_retained_ownership
     let retained = request(2);
     let owner = ResolutionOwner::Broker(lane());
     let mut pending = PendingResolutions::new(limits);
-    assert!(pending.retain(owner, retained.clone()).is_ok());
+    assert!(pending.try_reserve());
+    pending.retain_reserved(owner, retained.clone());
 
     assert_eq!(
         pending.retry(&resolver),

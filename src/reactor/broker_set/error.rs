@@ -14,6 +14,7 @@ pub(in crate::reactor) enum BrokerSetError {
     UnknownBrokerChild,
     BrokerTemplateMissing,
     ConnectionEpochExhausted,
+    ResolutionPermitMissing,
     UnexpectedResolutionEffect,
     SeedMissing,
     SeedAlreadyInstalled,
@@ -48,6 +49,9 @@ impl fmt::Display for BrokerSetError {
             Self::ConnectionEpochExhausted => {
                 formatter.write_str("broker connection epoch space is exhausted")
             }
+            Self::ResolutionPermitMissing => {
+                formatter.write_str("broker resolution started without reserved DNS ownership")
+            }
             Self::UnexpectedResolutionEffect => {
                 formatter.write_str("broker resolution emitted an invalid effect sequence")
             }
@@ -72,6 +76,7 @@ impl Error for BrokerSetError {
             | Self::UnknownBrokerChild
             | Self::BrokerTemplateMissing
             | Self::ConnectionEpochExhausted
+            | Self::ResolutionPermitMissing
             | Self::UnexpectedResolutionEffect
             | Self::SeedMissing
             | Self::SeedAlreadyInstalled => None,

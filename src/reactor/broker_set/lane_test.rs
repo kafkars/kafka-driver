@@ -51,7 +51,7 @@ fn each_semantic_class_lazily_opens_a_disjoint_lane_for_one_broker() {
         );
         let effect_id = EffectId::from_raw(raw_id);
         let (lane, dns) = brokers
-            .submit_route(&poller, route, effect_id, request, Moment::ORIGIN)
+            .submit_route(&poller, route, Some(effect_id), request, Moment::ORIGIN)
             .unwrap_or_else(|error| panic!("submit lane: {error}"))
             .unwrap_or_else(|| panic!("new lane must request DNS"));
         let expected = BrokerLane::new(broker_id(), traffic_class);

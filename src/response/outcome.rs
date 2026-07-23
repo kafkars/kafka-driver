@@ -52,6 +52,11 @@ pub enum RequestError {
         /// Maximum coordinator machines retained by this shard.
         limit: usize,
     },
+    /// The bounded DNS ownership pool cannot start another route resolution.
+    NameResolutionCapacityReached {
+        /// Maximum outstanding DNS effects owned by this shard.
+        limit: usize,
+    },
     /// Advertised broker name resolution failed without endpoint details.
     NameResolutionFailed {
         /// Sanitized resolver failure category.
@@ -102,6 +107,12 @@ impl fmt::Display for RequestError {
             Self::CoordinatorCapacityReached { limit } => {
                 write!(formatter, "coordinator key capacity {limit} reached")
             }
+            Self::NameResolutionCapacityReached { limit } => {
+                write!(
+                    formatter,
+                    "name-resolution ownership capacity {limit} reached"
+                )
+            }
             Self::NameResolutionFailed { failure } => {
                 write!(formatter, "broker name resolution failed: {failure:?}")
             }
@@ -132,6 +143,7 @@ impl Error for RequestError {
             | Self::RouteCapacityReached { .. }
             | Self::MetadataQueryCapacityReached { .. }
             | Self::CoordinatorCapacityReached { .. }
+            | Self::NameResolutionCapacityReached { .. }
             | Self::NameResolutionFailed { .. }
             | Self::Rejected { .. }
             | Self::ConnectionClosed(_) => None,

@@ -20,19 +20,32 @@ impl Reactor {
                     return Err(ReactorError::host(std::io::Error::other(error)));
                 }
             }
+            if !scheduled {
+                self.brokers.restore_seed_address_refresh(endpoint);
+            }
         }
         let Some(lane) = self.brokers.take_address_refresh() else {
             return Ok(scheduled);
         };
-        let effect_id = resolution
-            .reserve_effect()
-            .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
-        let request = self
-            .brokers
-            .start_address_refresh(lane, effect_id)
-            .map_err(ReactorError::broker_set)?;
+        let Some(permit) = resolution
+            .try_reserve_broker(lane)
+            .map_err(|error| ReactorError::host(std::io::Error::other(error)))?
+        else {
+            self.brokers
+                .restore_address_refresh(lane)
+                .map_err(ReactorError::broker_set)?;
+            return Ok(scheduled);
+        };
+        let request = self.brokers.start_address_refresh(lane, permit.effect_id());
+        let request = match request {
+            Ok(request) => request,
+            Err(error) => {
+                resolution.cancel(permit);
+                return Err(ReactorError::broker_set(error));
+            }
+        };
         resolution
-            .submit_broker(lane, request)
+            .submit(permit, request)
             .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
         Ok(true)
     }

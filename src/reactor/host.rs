@@ -2,6 +2,7 @@
 
 mod address_refresh;
 mod broker;
+mod broker_route;
 mod commands;
 mod coordinator;
 mod debug;

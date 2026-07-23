@@ -17,6 +17,10 @@ impl Observation {
                 increment(&self.response_capacity);
                 increment(&self.not_sent);
             }
+            RequestError::NameResolutionCapacityReached { .. } => {
+                increment(&self.local_rejection);
+                increment(&self.not_sent);
+            }
             RequestError::RouteCapacityReached { .. }
             | RequestError::MetadataQueryCapacityReached { .. }
             | RequestError::CoordinatorCapacityReached { .. } => {

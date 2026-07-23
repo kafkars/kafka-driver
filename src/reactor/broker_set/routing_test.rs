@@ -32,7 +32,13 @@ fn calls_for_one_unresolved_broker_share_one_dns_request_and_fail_together() {
     let (first_call, first) = request(1);
 
     let (lane, dns) = brokers
-        .submit_route(&poller, route, EffectId::from_raw(1), first, Moment::ORIGIN)
+        .submit_route(
+            &poller,
+            route,
+            Some(EffectId::from_raw(1)),
+            first,
+            Moment::ORIGIN,
+        )
         .unwrap_or_else(|error| panic!("first route demand: {error}"))
         .unwrap_or_else(|| panic!("first demand must resolve"));
     let (second_call, second) = request(2);
@@ -40,7 +46,7 @@ fn calls_for_one_unresolved_broker_share_one_dns_request_and_fail_together() {
         .submit_route(
             &poller,
             route,
-            EffectId::from_raw(2),
+            Some(EffectId::from_raw(2)),
             second,
             Moment::ORIGIN,
         )
@@ -96,7 +102,7 @@ fn retired_dormant_slot_is_reassigned_to_new_membership() {
         .submit_route(
             &poller,
             first_route,
-            EffectId::from_raw(1),
+            Some(EffectId::from_raw(1)),
             first,
             Moment::ORIGIN,
         )
@@ -131,7 +137,7 @@ fn retired_dormant_slot_is_reassigned_to_new_membership() {
         .submit_route(
             &poller,
             second_route,
-            EffectId::from_raw(2),
+            Some(EffectId::from_raw(2)),
             second,
             Moment::ORIGIN,
         )
@@ -163,7 +169,7 @@ fn changed_endpoint_replaces_the_child_without_reusing_its_poll_token() {
         .submit_route(
             &poller,
             first_route,
-            EffectId::from_raw(1),
+            Some(EffectId::from_raw(1)),
             first,
             Moment::ORIGIN,
         )
@@ -197,7 +203,7 @@ fn changed_endpoint_replaces_the_child_without_reusing_its_poll_token() {
         .submit_route(
             &poller,
             second_route,
-            EffectId::from_raw(2),
+            Some(EffectId::from_raw(2)),
             second,
             Moment::ORIGIN,
         )

@@ -34,6 +34,7 @@ fn failure_classes_and_delivery_certainty_are_counted_independently() {
     observation.classify_failure(&RequestError::NameResolutionFailed {
         failure: DnsFailure::Temporary,
     });
+    observation.classify_failure(&RequestError::NameResolutionCapacityReached { limit: 1 });
     observation.classify_failure(&RequestError::ConnectionClosed(
         ResponseCloseReason::TransportClosed,
     ));
@@ -43,10 +44,10 @@ fn failure_classes_and_delivery_certainty_are_counted_independently() {
     assert_eq!(snapshot.failures.connect(), 1);
     assert_eq!(snapshot.failures.negotiation(), 1);
     assert_eq!(snapshot.failures.authentication(), 1);
-    assert_eq!(snapshot.failures.local_rejection(), 1);
+    assert_eq!(snapshot.failures.local_rejection(), 2);
     assert_eq!(snapshot.failures.dns(), 1);
     assert_eq!(snapshot.failures.transport(), 1);
-    assert_eq!(snapshot.calls.not_sent(), 5);
+    assert_eq!(snapshot.calls.not_sent(), 6);
     assert_eq!(snapshot.calls.possibly_sent(), 1);
 }
 
