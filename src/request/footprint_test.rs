@@ -2,7 +2,7 @@
 
 use kafka_wire::{
     ApiDescriptor, KafkaMessage, KafkaRequest, KafkaResponse, MessageDescriptor, MessageDirection,
-    RequestResponsePair,
+    RequestResponsePair, RetainedFootprint, RetainedSize,
 };
 use kafka_wire_core::{
     ApiKey, ApiVersion, DecodeError, Decoder, EncodeError, EncodeTarget, Encoder, KafkaDecode,
@@ -33,6 +33,18 @@ fn request_weight_includes_typed_and_completion_ownership() {
 
 struct VariableRequest;
 struct VariableResponse;
+
+impl RetainedSize for VariableRequest {
+    fn retained_size(&self) -> RetainedFootprint {
+        RetainedFootprint::EMPTY
+    }
+}
+
+impl RetainedSize for VariableResponse {
+    fn retained_size(&self) -> RetainedFootprint {
+        RetainedFootprint::EMPTY
+    }
+}
 
 const VERSIONS: VersionRange = VersionRange::new(0, 2);
 const REQUEST_DESCRIPTOR: MessageDescriptor = MessageDescriptor::new(
