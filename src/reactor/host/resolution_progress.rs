@@ -11,6 +11,7 @@ pub(super) struct BrokerDnsOutcome {
 
 pub(super) struct ResolutionProgress {
     pub(super) outcomes: usize,
+    pub(super) submissions: usize,
     pub(super) more_work: bool,
     pub(super) broker: Option<BrokerConfig>,
     pub(super) restarted: bool,
@@ -18,7 +19,7 @@ pub(super) struct ResolutionProgress {
 
 impl ResolutionProgress {
     pub(super) const fn made_progress(&self) -> bool {
-        self.outcomes != 0 || self.broker.is_some() || self.restarted
+        self.outcomes != 0 || self.submissions != 0 || self.broker.is_some() || self.restarted
     }
 }
 

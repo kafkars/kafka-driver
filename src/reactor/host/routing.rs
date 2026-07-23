@@ -3,8 +3,8 @@
 use std::time::Instant;
 
 use kafka_driver_core::{
-    BrokerRoute, CallFailure, CoordinatorKey, CoordinatorRoute, Delivery, DnsFailure, DnsOutcome,
-    Moment, PartitionId, TopicName,
+    BrokerRoute, CallFailure, CoordinatorKey, CoordinatorRoute, Delivery, Moment, PartitionId,
+    TopicName,
 };
 
 use crate::{
@@ -184,12 +184,9 @@ impl Reactor {
         let Some((lane, dns)) = dns else {
             return Ok(());
         };
-        let rejected = DnsOutcome::new(dns.epoch(), dns.effect_id(), Err(DnsFailure::Temporary));
-        if resolution.submit_broker(lane, dns).is_err() {
-            self.brokers
-                .complete_resolution(lane, rejected, &self.poller, now)
-                .map_err(ReactorError::broker_set)?;
-        }
+        resolution
+            .submit_broker(lane, dns)
+            .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
         Ok(())
     }
 }

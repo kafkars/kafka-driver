@@ -79,6 +79,7 @@ impl ResolverLimits {
 const fn derived_pending_capacity(requests: NonZeroUsize, outcomes: NonZeroUsize) -> NonZeroUsize {
     let capacity = requests
         .get()
+        .saturating_mul(2)
         .saturating_add(outcomes.get())
         .saturating_add(1);
     let Some(capacity) = NonZeroUsize::new(capacity) else {

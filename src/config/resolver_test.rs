@@ -17,10 +17,10 @@ fn resolver_limits_retain_each_independent_resource_bound() {
 }
 
 #[test]
-fn derived_pending_capacity_covers_queued_executing_and_completed_work() {
+fn derived_pending_capacity_covers_retained_queued_executing_and_completed_work() {
     let limits = ResolverLimits::new(nonzero(2), nonzero(3), nonzero(1), nonzero(1));
 
-    assert_eq!(limits.pending_capacity().get(), 6);
+    assert_eq!(limits.pending_capacity().get(), 8);
 }
 
 fn nonzero(value: usize) -> NonZeroUsize {

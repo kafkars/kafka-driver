@@ -22,7 +22,7 @@ pub(in crate::reactor) struct Resolver {
 
 impl Resolver {
     #[cfg(test)]
-    pub(super) fn isolated(
+    pub(in crate::reactor) fn isolated(
         limits: ResolverLimits,
     ) -> (Self, Receiver<DnsRequest>, SyncSender<DnsOutcome>) {
         let (requests, request_receiver) = sync_channel(limits.request_capacity().get());

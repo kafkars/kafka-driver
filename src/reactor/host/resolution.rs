@@ -1,6 +1,14 @@
 //! Shard-owned DNS identity, worker, bootstrap routing, and broker installation.
 
-use kafka_driver_core::{DnsOutcome, DnsRequest, EffectId, Moment};
+mod submission;
+
+#[cfg(test)]
+mod submission_test;
+
+use kafka_driver_core::{DnsOutcome, Moment};
+
+#[cfg(test)]
+use kafka_driver_core::DnsRequest;
 
 use crate::{
     ResolverLimits,
@@ -8,7 +16,6 @@ use crate::{
     reactor::{
         ReactorError, WakeHandle,
         bootstrap::{BootstrapAction, BootstrapOwner},
-        broker_set::BrokerLane,
         entropy::JitterEntropy,
         resolver::{ResolutionOwner, Resolver, ResolverEffectIds, ResolverOwnership},
     },
@@ -20,6 +27,8 @@ use super::{
     resolution_progress::{BrokerDnsOutcome, ResolutionProgress, ResolutionTurn},
 };
 
+use submission::PendingResolutions;
+
 pub(super) struct NameResolution {
     resolver: Resolver,
     bootstrap: BootstrapOwner,
@@ -27,6 +36,7 @@ pub(super) struct NameResolution {
     entropy: JitterEntropy,
     effect_ids: ResolverEffectIds,
     ownership: ResolverOwnership,
+    pending: PendingResolutions,
     outcomes: Vec<DnsOutcome>,
     last_bootstrap_dns_failure: Option<kafka_driver_core::DnsFailure>,
 }
@@ -38,10 +48,19 @@ impl NameResolution {
         wake: WakeHandle,
     ) -> std::io::Result<Self> {
         let resolver = Resolver::spawn(limits, wake)?;
+        Self::with_resolver(config, limits, resolver).map_err(std::io::Error::other)
+    }
+
+    fn with_resolver(
+        config: BootstrapConfig,
+        limits: ResolverLimits,
+        resolver: Resolver,
+    ) -> Result<Self, NameResolutionError> {
         let mut effect_ids = ResolverEffectIds::new();
-        let effect_id = effect_ids.reserve().ok_or_else(identity_exhausted)?;
-        let (bootstrap, request) =
-            BootstrapOwner::start(config, effect_id).map_err(std::io::Error::other)?;
+        let effect_id = effect_ids
+            .reserve()
+            .ok_or(NameResolutionError::IdentityExhausted)?;
+        let (bootstrap, request) = BootstrapOwner::start(config, effect_id)?;
         let ownership = ResolverOwnership::new(limits.pending_capacity());
         let mut resolution = Self {
             resolver,
@@ -50,42 +69,31 @@ impl NameResolution {
             entropy: JitterEntropy::for_value(&"bootstrap"),
             effect_ids,
             ownership,
+            pending: PendingResolutions::new(limits),
             outcomes: Vec::with_capacity(limits.outcome_budget().get()),
             last_bootstrap_dns_failure: None,
         };
-        resolution
-            .submit_owned(ResolutionOwner::Bootstrap, request)
-            .map_err(std::io::Error::other)?;
+        resolution.submit_owned(ResolutionOwner::Bootstrap, request)?;
         Ok(resolution)
+    }
+
+    #[cfg(test)]
+    pub(super) fn isolated(
+        config: BootstrapConfig,
+        limits: ResolverLimits,
+    ) -> (
+        Self,
+        std::sync::mpsc::Receiver<DnsRequest>,
+        std::sync::mpsc::SyncSender<DnsOutcome>,
+    ) {
+        let (resolver, requests, outcomes) = Resolver::isolated(limits);
+        let resolution = Self::with_resolver(config, limits, resolver)
+            .unwrap_or_else(|error| panic!("construct isolated resolution owner: {error}"));
+        (resolution, requests, outcomes)
     }
 
     pub(super) fn shutdown(self) -> std::io::Result<()> {
         self.resolver.shutdown()
-    }
-
-    pub(super) fn reserve_effect(&mut self) -> Result<EffectId, NameResolutionError> {
-        self.effect_ids
-            .reserve()
-            .ok_or(NameResolutionError::IdentityExhausted)
-    }
-
-    pub(super) fn submit_broker(
-        &mut self,
-        lane: BrokerLane,
-        request: DnsRequest,
-    ) -> Result<(), NameResolutionError> {
-        self.submit_owned(ResolutionOwner::Broker(lane), request)
-    }
-
-    pub(super) fn restart_bootstrap(&mut self) -> Result<bool, NameResolutionError> {
-        if self.bootstrap_in_flight {
-            return Ok(false);
-        }
-        let effect_id = self.reserve_effect()?;
-        let request = self.bootstrap.restart(effect_id)?;
-        self.submit_owned(ResolutionOwner::Bootstrap, request)?;
-        self.bootstrap_in_flight = true;
-        Ok(true)
     }
 
     fn drive(
@@ -135,12 +143,23 @@ impl NameResolution {
             }
         }
         self.outcomes = outcomes;
+        let submissions = self.retry_pending()?;
         Ok(ResolutionProgress {
             outcomes: drained.outcomes(),
-            more_work: drained.more_work(),
+            submissions: submissions.admitted(),
+            more_work: drained.more_work() || submissions.more_work(),
             broker,
             restarted,
         })
+    }
+
+    #[cfg(test)]
+    pub(super) fn drive_for_test(
+        &mut self,
+        broker_outcomes: &mut Vec<BrokerDnsOutcome>,
+        now: Moment,
+    ) -> Result<ResolutionProgress, NameResolutionError> {
+        self.drive(broker_outcomes, now)
     }
 
     pub(super) const fn next_deadline(&self) -> Option<Moment> {
@@ -149,38 +168,6 @@ impl NameResolution {
 
     pub(super) const fn last_bootstrap_dns_failure(&self) -> Option<kafka_driver_core::DnsFailure> {
         self.last_bootstrap_dns_failure
-    }
-
-    fn restart_exhausted_bootstrap(&mut self, now: Moment) -> Result<bool, NameResolutionError> {
-        if self.bootstrap_in_flight
-            || self
-                .bootstrap
-                .retry_deadline()
-                .is_none_or(|deadline| deadline > now)
-        {
-            return Ok(false);
-        }
-        let effect_id = self.reserve_effect()?;
-        let Some(request) = self.bootstrap.retry_elapsed(now, effect_id)? else {
-            return Ok(false);
-        };
-        self.submit_owned(ResolutionOwner::Bootstrap, request)?;
-        self.bootstrap_in_flight = true;
-        Ok(true)
-    }
-
-    fn submit_owned(
-        &mut self,
-        owner: ResolutionOwner,
-        request: DnsRequest,
-    ) -> Result<(), NameResolutionError> {
-        let effect_id = request.effect_id();
-        self.ownership.register(effect_id, owner)?;
-        if let Err(source) = self.resolver.submit(request) {
-            self.ownership.remove(effect_id);
-            return Err(source.into());
-        }
-        Ok(())
     }
 }
 
@@ -221,8 +208,4 @@ impl Reactor {
             .install_seed(config, &self.poller, now)
             .map_err(ReactorError::broker_set)
     }
-}
-
-fn identity_exhausted() -> std::io::Error {
-    std::io::Error::other(NameResolutionError::IdentityExhausted)
 }

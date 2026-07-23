@@ -17,6 +17,8 @@ mod state;
 mod submission;
 
 #[cfg(test)]
+mod resolution_test;
+#[cfg(test)]
 mod submission_test;
 
 use std::{sync::Arc, time::Duration};
