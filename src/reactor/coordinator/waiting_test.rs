@@ -43,7 +43,8 @@ fn ready_waiter_preserves_its_original_absolute_deadline() {
     ));
 
     waiters.begin_scan();
-    let WaitingCoordinatorOutcome::Ready(mut waiting) = waiters.pop(Moment::from_nanos(104)) else {
+    let WaitingCoordinatorOutcome::Ready { mut waiting, .. } = waiters.pop(Moment::from_nanos(104))
+    else {
         panic!("admitted waiter was not ready for route inspection");
     };
 
@@ -66,11 +67,7 @@ fn deadline_expiry_settles_without_delivery() {
         Moment::from_nanos(100),
     ));
 
-    waiters.prepare_due_scan(Moment::from_nanos(110));
-    assert!(matches!(
-        waiters.pop(Moment::from_nanos(110)),
-        WaitingCoordinatorOutcome::Settled
-    ));
+    assert_eq!(waiters.expire_due(Moment::from_nanos(110), 1), 1);
 
     assert_eq!(
         call.wait(),
@@ -79,6 +76,33 @@ fn deadline_expiry_settles_without_delivery() {
             delivery: Delivery::NotSent,
         }))
     );
+}
+
+#[test]
+fn deadline_expiry_obeys_the_turn_budget_and_retains_due_work() {
+    let (first_call, first) = request(1, Duration::from_nanos(10));
+    let bytes = first.retained_bytes();
+    let mut waiters = CoordinatorWaiters::new(nonzero(2), nonzero(bytes * 2));
+    assert!(waiters.admit(CoordinatorWait::new(key("orders"), first), Moment::ORIGIN,));
+    let (second_call, second) = request(2, Duration::from_nanos(10));
+    assert!(waiters.admit(
+        CoordinatorWait::new(key("payments"), second),
+        Moment::ORIGIN,
+    ));
+
+    assert_eq!(waiters.expire_due(Moment::from_nanos(10), 1), 1);
+
+    assert!(waiters.has_pending_scan());
+    assert!(matches!(
+        first_call.wait(),
+        Ok(Err(RequestError::Rejected { .. }))
+    ));
+    assert_eq!(waiters.expire_due(Moment::from_nanos(10), 1), 1);
+    assert!(!waiters.has_pending_scan());
+    assert!(matches!(
+        second_call.wait(),
+        Ok(Err(RequestError::Rejected { .. }))
+    ));
 }
 
 fn request(

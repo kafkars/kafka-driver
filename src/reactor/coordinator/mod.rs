@@ -10,6 +10,7 @@ mod invalidation;
 mod owner;
 mod routing;
 mod waiting;
+mod waiting_progress;
 
 #[cfg(test)]
 mod waiting_test;

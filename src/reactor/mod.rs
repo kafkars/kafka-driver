@@ -21,6 +21,7 @@ mod timer;
 #[cfg(feature = "tls-rustls")]
 mod tls;
 mod transport;
+mod wait_queue;
 mod wake;
 
 #[cfg(test)]
@@ -29,6 +30,8 @@ mod clock_test;
 mod entropy_test;
 #[cfg(test)]
 mod mailbox_test;
+#[cfg(test)]
+mod wait_queue_test;
 
 pub(crate) use command::Command;
 pub use error::ReactorError;

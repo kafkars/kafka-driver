@@ -6,21 +6,25 @@ use crate::RequestError;
 
 use super::{
     CoordinatorOwner,
-    waiting::{CoordinatorWaitProgress, RoutedCoordinatorCall, WaitingCoordinatorOutcome},
+    waiting::WaitingCoordinatorOutcome,
+    waiting_progress::{CoordinatorWaitProgress, RoutedCoordinatorCall},
 };
 
 impl CoordinatorOwner {
     pub(in crate::reactor) fn drain_waiters(&mut self, now: Moment) -> CoordinatorWaitProgress {
-        self.waiters.prepare_due_scan(now);
         let mut progress = CoordinatorWaitProgress::default();
-        for _ in 0..self.limits.turn_budget().get() {
+        let budget = self.limits.turn_budget().get();
+        let expired = self.waiters.expire_due(now, budget);
+        progress.examined = expired;
+        progress.settled = expired;
+        for _ in expired..budget {
             match self.waiters.pop(now) {
                 WaitingCoordinatorOutcome::Empty => break,
                 WaitingCoordinatorOutcome::Settled => {
                     progress.examined += 1;
                     progress.settled += 1;
                 }
-                WaitingCoordinatorOutcome::Ready(waiting) => {
+                WaitingCoordinatorOutcome::Ready { waiting, deadline } => {
                     progress.examined += 1;
                     if let Some(route) = self.current(&waiting.key).cloned() {
                         progress.routed.push(RoutedCoordinatorCall {
@@ -28,7 +32,9 @@ impl CoordinatorOwner {
                             request: waiting.request,
                         });
                     } else if self.discovery_pending(&waiting.key) {
-                        self.waiters.retain(waiting);
+                        if !self.waiters.retain(waiting, deadline) {
+                            progress.settled += 1;
+                        }
                     } else {
                         waiting.request.fail(RequestError::RouteUnavailable);
                         progress.settled += 1;
@@ -36,6 +42,7 @@ impl CoordinatorOwner {
                 }
             }
         }
+        self.waiters.refresh_due(now);
         progress.more_work = self.waiters.has_pending_scan();
         progress
     }

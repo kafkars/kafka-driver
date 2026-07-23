@@ -7,6 +7,7 @@ mod owner;
 mod request;
 mod routing;
 mod waiting;
+mod waiting_progress;
 
 #[cfg(test)]
 mod identity_test;
@@ -18,4 +19,4 @@ mod waiting_test;
 pub(in crate::reactor) use error::MetadataOwnerError;
 pub(in crate::reactor) use owner::MetadataOwner;
 pub(in crate::reactor) use routing::PartitionWait;
-pub(in crate::reactor) use waiting::PartitionWaitProgress;
+pub(in crate::reactor) use waiting_progress::PartitionWaitProgress;

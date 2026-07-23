@@ -49,7 +49,6 @@ impl MetadataOwner {
         &mut self,
         now: Moment,
     ) -> PartitionWaitProgress {
-        self.waiters.prepare_due_scan(now);
         self.waiters
             .scan(&self.machine, now, self.limits.partition_admission_budget())
     }

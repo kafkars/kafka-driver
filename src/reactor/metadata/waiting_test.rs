@@ -107,7 +107,6 @@ fn deadline_expiry_wins_even_while_the_topic_query_remains_pending() {
         Moment::from_nanos(100),
     ));
 
-    waiting.prepare_due_scan(Moment::from_nanos(110));
     let _ = waiting.scan(&machine, Moment::from_nanos(110), nonzero(1));
 
     assert_eq!(
@@ -117,6 +116,33 @@ fn deadline_expiry_wins_even_while_the_topic_query_remains_pending() {
             delivery: Delivery::NotSent,
         }))
     );
+}
+
+#[test]
+fn deadline_expiry_obeys_the_turn_budget_and_reports_due_remainder() {
+    let machine = MetadataMachine::new(generation(1));
+    let (first_call, first) = request(1, Duration::from_nanos(10));
+    let bytes = first.retained_bytes();
+    let mut waiting = PartitionWaiters::new(nonzero(2), nonzero(bytes * 2));
+    assert!(waiting.admit(topic("orders"), partition(0), first, Moment::ORIGIN));
+    let (second_call, second) = request(2, Duration::from_nanos(10));
+    assert!(waiting.admit(topic("orders"), partition(1), second, Moment::ORIGIN));
+
+    let first_turn = waiting.scan(&machine, Moment::from_nanos(10), nonzero(1));
+
+    assert!(first_turn.more_work());
+    assert!(waiting.has_pending_scan());
+    assert!(matches!(
+        first_call.wait(),
+        Ok(Err(RequestError::Rejected { .. }))
+    ));
+    let second_turn = waiting.scan(&machine, Moment::from_nanos(10), nonzero(1));
+    assert!(!second_turn.more_work());
+    assert!(!waiting.has_pending_scan());
+    assert!(matches!(
+        second_call.wait(),
+        Ok(Err(RequestError::Rejected { .. }))
+    ));
 }
 
 fn snapshot(raw_generation: u64, raw_topic: &str, raw_partition: i32) -> MetadataSnapshot {

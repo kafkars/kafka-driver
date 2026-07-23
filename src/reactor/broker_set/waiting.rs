@@ -1,13 +1,13 @@
 //! FIFO ownership for calls waiting on one lazily opened broker connection.
 
-use std::{collections::VecDeque, num::NonZeroUsize};
+use std::num::NonZeroUsize;
 
 use kafka_driver_core::{CallFailure, Delivery, Moment};
 
-use crate::{RequestError, request::ErasedRequest};
+use crate::{RequestError, reactor::wait_queue::WaitQueue, request::ErasedRequest};
 
 pub(super) struct WaitingCalls {
-    calls: VecDeque<WaitingCall>,
+    calls: WaitQueue<WaitingCall>,
     retained_bytes: usize,
     call_limit: NonZeroUsize,
     byte_limit: NonZeroUsize,
@@ -21,7 +21,7 @@ impl WaitingCalls {
         turn_budget: NonZeroUsize,
     ) -> Self {
         Self {
-            calls: VecDeque::with_capacity(call_limit.get().min(16)),
+            calls: WaitQueue::new(call_limit),
             retained_bytes: 0,
             call_limit,
             byte_limit,
@@ -50,21 +50,21 @@ impl WaitingCalls {
             self.reject_capacity(request);
             return false;
         }
-        self.calls.push_back(WaitingCall {
-            request,
-            deadline,
-            bytes,
-        });
+        let waiting = WaitingCall { request, bytes };
+        if let Err(waiting) = self.calls.push(waiting, deadline) {
+            self.reject_capacity(waiting.request);
+            return false;
+        }
         self.retained_bytes = retained_bytes;
         true
     }
 
     pub(super) fn pop(&mut self, now: Moment) -> WaitingCallOutcome {
-        let Some(waiting) = self.calls.pop_front() else {
+        let Some((waiting, deadline)) = self.calls.pop_front() else {
             return WaitingCallOutcome::Empty;
         };
         self.retained_bytes -= waiting.bytes;
-        let Some(remaining) = waiting.deadline.duration_since(now) else {
+        let Some(remaining) = deadline.duration_since(now) else {
             waiting.request.fail(deadline_exceeded());
             return WaitingCallOutcome::Settled;
         };
@@ -76,29 +76,28 @@ impl WaitingCalls {
     }
 
     pub(super) fn expire_due(&mut self, now: Moment) -> WaitingExpiration {
-        let mut survivors = VecDeque::with_capacity(self.calls.len());
         let mut settled = 0;
-        let mut more_due = false;
-        while let Some(waiting) = self.calls.pop_front() {
-            if is_due(waiting.deadline, now) && settled < self.turn_budget.get() {
-                self.retained_bytes -= waiting.bytes;
-                waiting.request.fail(deadline_exceeded());
-                settled += 1;
-            } else {
-                more_due |= is_due(waiting.deadline, now);
-                survivors.push_back(waiting);
-            }
+        while settled < self.turn_budget.get() {
+            let Some((waiting, _)) = self.calls.take_due(now) else {
+                break;
+            };
+            self.retained_bytes -= waiting.bytes;
+            waiting.request.fail(deadline_exceeded());
+            settled += 1;
         }
-        self.calls = survivors;
+        let more_due = self
+            .calls
+            .next_deadline()
+            .is_some_and(|deadline| deadline <= now);
         WaitingExpiration { settled, more_due }
     }
 
     pub(super) fn next_deadline(&self) -> Option<Moment> {
-        self.calls.iter().map(|waiting| waiting.deadline).min()
+        self.calls.next_deadline()
     }
 
     pub(super) fn fail_all(&mut self, failure: &RequestError) {
-        for waiting in self.calls.drain(..) {
+        for waiting in self.calls.drain() {
             waiting.request.fail(failure.clone());
         }
         self.retained_bytes = 0;
@@ -147,7 +146,6 @@ impl WaitingExpiration {
 
 struct WaitingCall {
     request: Box<dyn ErasedRequest>,
-    deadline: Moment,
     bytes: usize,
 }
 
@@ -156,10 +154,4 @@ fn deadline_exceeded() -> RequestError {
         failure: CallFailure::DeadlineExceeded,
         delivery: Delivery::NotSent,
     }
-}
-
-fn is_due(deadline: Moment, now: Moment) -> bool {
-    deadline
-        .duration_since(now)
-        .is_none_or(|remaining| remaining.is_zero())
 }
