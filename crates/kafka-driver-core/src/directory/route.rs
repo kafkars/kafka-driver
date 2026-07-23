@@ -37,4 +37,9 @@ impl BrokerRoute {
     pub const fn evidence_stamp(self) -> EvidenceStamp {
         self.evidence
     }
+
+    /// Returns whether both routes select the same Kafka broker identity.
+    pub fn is_same_broker(self, other: Self) -> bool {
+        self.broker_id == other.broker_id
+    }
 }

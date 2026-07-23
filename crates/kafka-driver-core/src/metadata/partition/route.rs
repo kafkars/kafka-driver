@@ -70,4 +70,12 @@ impl PartitionRoute {
             && self.leader_epoch == other.leader_epoch
             && self.revision == other.revision
     }
+
+    /// Returns whether both routes select the same semantic leader assignment.
+    pub fn is_same_assignment(&self, other: &Self) -> bool {
+        self.topic == other.topic
+            && self.partition == other.partition
+            && self.broker.broker_id() == other.broker.broker_id()
+            && self.leader_epoch == other.leader_epoch
+    }
 }

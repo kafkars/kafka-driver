@@ -104,7 +104,12 @@ fn generated_call_survives_partial_writes_and_fragmented_response_reads() {
     );
     assert!(
         registry
-            .complete_verified(CALL, correlation, envelope)
+            .complete_verified(
+                CALL,
+                correlation,
+                envelope,
+                kafka_driver_core::OutcomeStamp::from_raw(9),
+            )
             .is_ok()
     );
 

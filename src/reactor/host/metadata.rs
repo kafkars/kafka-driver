@@ -1,6 +1,6 @@
 //! Host-phase integration for generated Metadata progress on the bootstrap broker.
 
-use crate::RouteReceipt;
+use crate::api::RouteFact;
 
 use super::{HostState, Reactor, ReactorError, routing::bind_route};
 
@@ -10,6 +10,7 @@ impl Reactor {
             return Ok(false);
         }
         let now = self.clock.now().map_err(ReactorError::clock)?;
+        let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         let (progress, directory, waiting, invalidations) = {
             let Some(metadata) = &mut self.metadata else {
                 return Ok(false);
@@ -18,7 +19,7 @@ impl Reactor {
                 return Ok(false);
             };
             let progress = metadata
-                .drive(seed, &self.poller, now, &self.call_ids)
+                .drive(seed, &self.poller, now, &self.call_ids, evidence)
                 .map_err(ReactorError::metadata)?;
             let directory = metadata
                 .current()
@@ -36,10 +37,8 @@ impl Reactor {
         let waiting_more = waiting.more_work();
         for routed in waiting.into_routed() {
             let route = routed.route().broker_route();
-            let receipt = RouteReceipt::PartitionLeader {
-                route: routed.route().clone(),
-            };
-            let Ok(request) = bind_route(routed.into_request(), receipt) else {
+            let fact = RouteFact::PartitionLeader(routed.route().clone());
+            let Ok(request) = bind_route(routed.into_request(), fact) else {
                 continue;
             };
             self.submit_broker_route(route, request, now)?;

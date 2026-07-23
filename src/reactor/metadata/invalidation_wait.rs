@@ -2,7 +2,9 @@
 
 use std::{collections::VecDeque, num::NonZeroUsize};
 
-use kafka_driver_core::{BrokerRoute, MetadataMachine, MetadataQuery, PartitionRoute};
+use kafka_driver_core::{
+    BrokerRoute, MetadataMachine, MetadataQuery, OutcomeStamp, PartitionRoute,
+};
 
 use crate::{InvalidationDisposition, completion::CompletionSender};
 
@@ -30,7 +32,7 @@ impl MetadataInvalidations {
         self.pending
             .iter()
             .find_map(|pending| match &pending.target {
-                InvalidationTarget::Controller { route: current } if *current == route => {
+                InvalidationTarget::Controller { route: current, .. } if *current == route => {
                     Some(InvalidationDisposition::Coalesced)
                 }
                 _ => None,
@@ -44,7 +46,9 @@ impl MetadataInvalidations {
         self.pending
             .iter()
             .find_map(|pending| match &pending.target {
-                InvalidationTarget::Partition { route: current } if current.is_same_fact(route) => {
+                InvalidationTarget::Partition { route: current, .. }
+                    if current.is_same_fact(route) =>
+                {
                     Some(InvalidationDisposition::Coalesced)
                 }
                 _ => None,
@@ -58,10 +62,11 @@ impl MetadataInvalidations {
     pub(super) fn push_controller(
         &mut self,
         route: BrokerRoute,
+        observed_at: OutcomeStamp,
         completion: CompletionSender<InvalidationDisposition>,
     ) {
         self.pending.push_back(PendingInvalidation {
-            target: InvalidationTarget::Controller { route },
+            target: InvalidationTarget::Controller { route, observed_at },
             completion,
         });
     }
@@ -69,10 +74,11 @@ impl MetadataInvalidations {
     pub(super) fn push_partition(
         &mut self,
         route: PartitionRoute,
+        observed_at: OutcomeStamp,
         completion: CompletionSender<InvalidationDisposition>,
     ) {
         self.pending.push_back(PendingInvalidation {
-            target: InvalidationTarget::Partition { route },
+            target: InvalidationTarget::Partition { route, observed_at },
             completion,
         });
     }
@@ -127,16 +133,26 @@ fn settled_disposition(
     target: &InvalidationTarget,
 ) -> Option<InvalidationDisposition> {
     let (revoked, query) = match target {
-        InvalidationTarget::Controller { route } => (
+        InvalidationTarget::Controller { route, .. } => (
             machine.controller_revocation_pending(*route),
             MetadataQuery::Cluster,
         ),
-        InvalidationTarget::Partition { route } => (
+        InvalidationTarget::Partition { route, .. } => (
             machine.partition_revocation_pending(route),
             MetadataQuery::Topic(route.topic().clone()),
         ),
     };
-    if !revoked {
+    let newer = match target {
+        InvalidationTarget::Controller { observed_at, .. } => machine
+            .current()
+            .and_then(kafka_driver_core::MetadataSnapshot::controller_route)
+            .is_some_and(|route| route.evidence_stamp().is_after(*observed_at)),
+        InvalidationTarget::Partition { route, observed_at } => machine
+            .current()
+            .and_then(|snapshot| snapshot.partition_route(route.topic(), route.partition()))
+            .is_some_and(|route| route.evidence_stamp().is_after(*observed_at)),
+    };
+    if !revoked && newer {
         return Some(InvalidationDisposition::Applied);
     }
     (!machine.query_pending(&query)).then_some(InvalidationDisposition::Unavailable)
@@ -148,8 +164,14 @@ struct PendingInvalidation {
 }
 
 enum InvalidationTarget {
-    Controller { route: BrokerRoute },
-    Partition { route: PartitionRoute },
+    Controller {
+        route: BrokerRoute,
+        observed_at: OutcomeStamp,
+    },
+    Partition {
+        route: PartitionRoute,
+        observed_at: OutcomeStamp,
+    },
 }
 
 pub(super) struct InvalidationProgress {

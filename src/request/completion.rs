@@ -1,12 +1,14 @@
 //! Plain and route-tracked completion ownership for one typed request.
 
-use crate::{RequestError, RouteReceipt, RoutedOutcome, completion::CompletionSender};
+use kafka_driver_core::OutcomeStamp;
+
+use crate::{RequestError, RoutedOutcome, api::RouteFact, completion::CompletionSender};
 
 pub(crate) enum RequestCompletion<T> {
     Plain(CompletionSender<Result<T, RequestError>>),
     Routed {
         completion: CompletionSender<RoutedOutcome<T>>,
-        receipt: Option<RouteReceipt>,
+        route: Option<RouteFact>,
     },
 }
 
@@ -18,21 +20,18 @@ impl<T> RequestCompletion<T> {
     pub(crate) const fn routed(completion: CompletionSender<RoutedOutcome<T>>) -> Self {
         Self::Routed {
             completion,
-            receipt: None,
+            route: None,
         }
     }
 
-    pub(crate) fn record_route(&mut self, receipt: RouteReceipt) -> Result<(), RouteReceipt> {
-        let Self::Routed {
-            receipt: current, ..
-        } = self
-        else {
+    pub(crate) fn record_route(&mut self, route: RouteFact) -> Result<(), RouteFact> {
+        let Self::Routed { route: current, .. } = self else {
             return Ok(());
         };
         if current.is_some() {
-            return Err(receipt);
+            return Err(route);
         }
-        *current = Some(receipt);
+        *current = Some(route);
         Ok(())
     }
 
@@ -45,22 +44,33 @@ impl<T> RequestCompletion<T> {
 
     pub(crate) fn route_heap_bytes(&self) -> usize {
         match self {
-            Self::Plain(_) | Self::Routed { receipt: None, .. } => 0,
+            Self::Plain(_) | Self::Routed { route: None, .. } => 0,
             Self::Routed {
-                receipt: Some(receipt),
-                ..
-            } => receipt.heap_bytes(),
+                route: Some(route), ..
+            } => route.heap_bytes(),
         }
     }
 
-    pub(crate) fn complete(self, result: Result<T, RequestError>) -> bool {
+    pub(crate) fn complete_unobserved(self, result: Result<T, RequestError>) -> bool {
+        self.complete(result, None)
+    }
+
+    pub(crate) fn complete_observed(
+        self,
+        result: Result<T, RequestError>,
+        observed_at: OutcomeStamp,
+    ) -> bool {
+        self.complete(result, Some(observed_at))
+    }
+
+    fn complete(self, result: Result<T, RequestError>, observed_at: Option<OutcomeStamp>) -> bool {
         match self {
             Self::Plain(completion) => completion.complete(result).is_ok(),
-            Self::Routed {
-                completion,
-                receipt,
-            } => completion
-                .complete(RoutedOutcome::new(result, receipt))
+            Self::Routed { completion, route } => completion
+                .complete(RoutedOutcome::new(
+                    result,
+                    route.zip(observed_at).map(|(route, at)| route.observe(at)),
+                ))
                 .is_ok(),
         }
     }

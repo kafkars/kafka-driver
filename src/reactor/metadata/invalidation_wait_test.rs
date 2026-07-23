@@ -4,7 +4,7 @@ use std::num::{NonZeroU16, NonZeroUsize};
 
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
-    HostName, MetadataGeneration, MetadataMachine,
+    HostName, MetadataGeneration, MetadataMachine, OutcomeStamp,
 };
 
 use crate::{InvalidationDisposition, completion::completion_pair};
@@ -12,13 +12,13 @@ use crate::{InvalidationDisposition, completion::completion_pair};
 use super::invalidation_wait::MetadataInvalidations;
 
 #[test]
-fn exact_capacity_is_reserved_and_settled_without_an_extra_queue_node() {
+fn exact_capacity_is_reserved_and_unavailable_without_newer_evidence() {
     let route = broker_route();
     let (receiver, sender) = completion_pair();
     let mut invalidations = MetadataInvalidations::new(nonzero(1));
 
     assert!(invalidations.has_capacity());
-    invalidations.push_controller(route, sender);
+    invalidations.push_controller(route, OutcomeStamp::from_raw(1), sender);
 
     assert!(!invalidations.has_capacity());
     assert_eq!(
@@ -35,7 +35,7 @@ fn exact_capacity_is_reserved_and_settled_without_an_extra_queue_node() {
     assert!(progress.made_progress());
     assert!(!progress.more_work());
     assert!(invalidations.has_capacity());
-    assert_eq!(receiver.wait(), Ok(InvalidationDisposition::Applied));
+    assert_eq!(receiver.wait(), Ok(InvalidationDisposition::Unavailable));
 }
 
 fn broker_route() -> kafka_driver_core::BrokerRoute {

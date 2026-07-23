@@ -5,7 +5,7 @@ use std::num::{NonZeroU16, NonZeroUsize};
 use crate::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
     HostName, MetadataGeneration, MetadataQuery, MetadataQueryLimits, MetadataSnapshot,
-    OperationId, TopicName,
+    OperationId, OutcomeStamp, TopicName,
 };
 
 use super::{MetadataDisposition, MetadataEffect, MetadataInput, MetadataMachine, MetadataState};
@@ -127,30 +127,22 @@ fn refresh_failure_retains_current_snapshot_and_does_not_consume_a_generation() 
 }
 
 #[test]
-fn route_from_older_generation_cannot_invalidate_current_metadata() {
+fn older_generation_alone_does_not_make_route_evidence_causally_stale() {
     let mut machine = ready_machine();
-    let current_route = machine
-        .current()
-        .and_then(MetadataSnapshot::controller_route)
-        .unwrap_or_else(|| panic!("current controller route must exist"));
     let old_route = snapshot(0)
         .controller_route()
         .unwrap_or_else(|| panic!("old controller route must exist"));
 
-    let stale = machine.apply(MetadataInput::InvalidateBrokerRoute {
+    let invalidated = machine.apply(MetadataInput::InvalidateBrokerRoute {
         route: old_route,
+        observed_at: OutcomeStamp::from_raw(1),
         operation_id: operation(2),
     });
-    let current = machine.apply(MetadataInput::InvalidateBrokerRoute {
-        route: current_route,
-        operation_id: operation(3),
-    });
 
-    assert_eq!(stale.disposition(), MetadataDisposition::IgnoredStale);
     assert_eq!(
-        current.effects(),
+        invalidated.effects(),
         [MetadataEffect::Fetch {
-            operation_id: operation(3),
+            operation_id: operation(2),
             generation: generation(2),
             query: MetadataQuery::Cluster,
         }]

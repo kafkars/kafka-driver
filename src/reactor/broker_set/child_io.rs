@@ -1,7 +1,7 @@
 //! I/O, timer, and shutdown delegation for one lazy broker child.
 
 use kafka_driver_core::{
-    BrokerCloseReason, BrokerState, CallFailure, CloseReason, Delivery, Moment,
+    BrokerCloseReason, BrokerState, CallFailure, CloseReason, Delivery, Moment, OutcomeStamp,
 };
 
 use crate::{
@@ -20,10 +20,11 @@ impl BrokerChild {
         poller: &Poller,
         event: PollEvent,
         now: Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerSetError> {
         let progress = self.connection.as_mut().map_or(Ok(false), |connection| {
             connection
-                .observe(poller, event, now)
+                .observe(poller, event, now, observed_at)
                 .map_err(BrokerSetError::Broker)
         })?;
         Ok(progress | self.settle_terminal_waiting())
@@ -33,6 +34,7 @@ impl BrokerChild {
         &mut self,
         poller: &Poller,
         now: Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerSetError> {
         let mut progress = false;
         if self.retired && !self.retirement_started {
@@ -48,7 +50,7 @@ impl BrokerChild {
         }
         progress |= self.connection.as_mut().map_or(Ok(false), |connection| {
             connection
-                .continue_io(poller, now)
+                .continue_io(poller, now, observed_at)
                 .map_err(BrokerSetError::Broker)
         })?;
         Ok(progress | self.settle_terminal_waiting())

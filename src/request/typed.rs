@@ -8,7 +8,8 @@ use kafka_wire::{OutboundFrameLimits, RequestResponsePair, encode_request};
 use kafka_wire_core::{ApiVersion, Bytes};
 
 use crate::{
-    RequestError, RouteReceipt, TrafficClass,
+    RequestError, TrafficClass,
+    api::RouteFact,
     observation::{CallOutcome, CallTimeline},
     request::{RequestCompletion, RequestDeadline},
     response::{ResponseAdmissionError, ResponseRegistry},
@@ -111,9 +112,9 @@ where
         }
     }
 
-    fn record_route(&mut self, receipt: RouteReceipt) -> Result<(), RouteReceipt> {
+    fn record_route(&mut self, route: RouteFact) -> Result<(), RouteFact> {
         self.mark_routed(Instant::now());
-        self.completion.record_route(receipt)
+        self.completion.record_route(route)
     }
 
     fn prepare(
@@ -164,7 +165,7 @@ where
     }
 
     fn fail(self: Box<Self>, failure: RequestError) {
-        let delivered = self.completion.complete(Err(failure.clone()));
+        let delivered = self.completion.complete_unobserved(Err(failure.clone()));
         if let Some(timeline) = self.lifecycle.timeline {
             timeline.finish(CallOutcome::Failed(&failure), delivered);
         }
@@ -176,7 +177,7 @@ fn fail<T>(
     timeline: Option<CallTimeline>,
     failure: RequestError,
 ) -> Result<Bytes, RequestError> {
-    let delivered = completion.complete(Err(failure.clone()));
+    let delivered = completion.complete_unobserved(Err(failure.clone()));
     if let Some(timeline) = timeline {
         timeline.finish(CallOutcome::Failed(&failure), delivered);
     }

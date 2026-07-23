@@ -45,7 +45,12 @@ pub(super) fn observe_once(poller: &mut Poller, broker: &mut SingleBroker) {
     );
     for event in events {
         broker
-            .observe(poller, event, Moment::ORIGIN)
+            .observe(
+                poller,
+                event,
+                Moment::ORIGIN,
+                kafka_driver_core::OutcomeStamp::ORIGIN,
+            )
             .unwrap_or_else(|error| panic!("observe broker readiness: {error}"));
     }
 }

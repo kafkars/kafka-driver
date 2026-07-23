@@ -1,6 +1,6 @@
 //! Resolution coalescing, explicit refresh, and stale-route invalidation.
 
-use crate::{CoordinatorEpoch, CoordinatorRoute, OperationId};
+use crate::{CoordinatorEpoch, CoordinatorRoute, OperationId, OutcomeStamp};
 
 use super::{
     CoordinatorFollowup, CoordinatorMachine, CoordinatorState, CoordinatorTransition,
@@ -41,6 +41,47 @@ impl CoordinatorMachine {
     }
 
     pub(super) fn invalidate(
+        &mut self,
+        route: &CoordinatorRoute,
+        observed_at: OutcomeStamp,
+        operation_id: OperationId,
+    ) -> CoordinatorTransition {
+        match &mut self.state {
+            CoordinatorState::Unknown { .. } => stale(),
+            CoordinatorState::Ready { route: current }
+                if !current.is_same_target(route)
+                    || current.evidence_stamp().is_after(observed_at) =>
+            {
+                stale()
+            }
+            CoordinatorState::Ready { route: current } => {
+                let Some(epoch) = current.epoch().next() else {
+                    return exhausted();
+                };
+                self.start(None, operation_id, epoch)
+            }
+            CoordinatorState::Discovering { current, .. }
+                if current.as_ref().is_none_or(|current| {
+                    !current.is_same_target(route) || current.evidence_stamp().is_after(observed_at)
+                }) =>
+            {
+                stale()
+            }
+            CoordinatorState::Discovering {
+                current, followup, ..
+            } => {
+                *current = None;
+                if *followup == Some(CoordinatorFollowup::Revocation) {
+                    coalesced()
+                } else {
+                    *followup = Some(CoordinatorFollowup::Revocation);
+                    queued()
+                }
+            }
+        }
+    }
+
+    pub(super) fn withdraw(
         &mut self,
         route: &CoordinatorRoute,
         operation_id: OperationId,

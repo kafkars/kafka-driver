@@ -11,9 +11,10 @@ impl Reactor {
         let now = self.clock.now().map_err(ReactorError::clock)?;
         let mut progress = false;
         for event in self.poll_events.drain(..) {
+            let observed_at = self.causality.outcome().map_err(ReactorError::causality)?;
             progress |= self
                 .brokers
-                .observe(&self.poller, event, now)
+                .observe(&self.poller, event, now, observed_at)
                 .map_err(ReactorError::broker_set)?;
         }
         Ok(progress)
@@ -21,8 +22,9 @@ impl Reactor {
 
     pub(super) fn continue_broker_io(&mut self) -> Result<bool, ReactorError> {
         let now = self.clock.now().map_err(ReactorError::clock)?;
+        let observed_at = self.causality.outcome().map_err(ReactorError::causality)?;
         self.brokers
-            .continue_io(&self.poller, now)
+            .continue_io(&self.poller, now, observed_at)
             .map_err(ReactorError::broker_set)
     }
 

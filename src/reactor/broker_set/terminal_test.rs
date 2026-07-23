@@ -119,7 +119,12 @@ fn observe_once(poller: &mut Poller, brokers: &mut BrokerSet) {
     );
     for event in events {
         brokers
-            .observe(poller, event, Moment::ORIGIN)
+            .observe(
+                poller,
+                event,
+                Moment::ORIGIN,
+                kafka_driver_core::OutcomeStamp::ORIGIN,
+            )
             .unwrap_or_else(|error| panic!("observe broker readiness: {error}"));
     }
 }

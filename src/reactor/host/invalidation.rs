@@ -2,6 +2,8 @@
 
 use crate::{InvalidationDisposition, RouteReceipt, completion::CompletionSender};
 
+use crate::reactor::RouteInvalidation;
+
 use super::{Reactor, ReactorError};
 
 impl Reactor {
@@ -20,14 +22,14 @@ impl Reactor {
     ) -> Result<(), ReactorError> {
         let now = self.clock.now().map_err(ReactorError::clock)?;
         match receipt {
-            RouteReceipt::Controller { route } => {
-                self.invalidate_broker_route(route, now, completion)
+            RouteReceipt::Controller { route, observed_at } => {
+                self.invalidate_broker_route(route, observed_at, now, completion)
             }
-            RouteReceipt::Coordinator { route } => {
-                self.invalidate_coordinator(route, now, completion)
+            RouteReceipt::Coordinator { route, observed_at } => {
+                self.invalidate_coordinator(route, observed_at, now, completion)
             }
-            RouteReceipt::PartitionLeader { route } => {
-                self.invalidate_partition(route, now, completion)
+            RouteReceipt::PartitionLeader { route, observed_at } => {
+                self.invalidate_partition(route, observed_at, now, completion)
             }
         }
     }
@@ -35,6 +37,7 @@ impl Reactor {
     fn invalidate_broker_route(
         &mut self,
         route: kafka_driver_core::BrokerRoute,
+        observed_at: kafka_driver_core::OutcomeStamp,
         now: kafka_driver_core::Moment,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
@@ -42,14 +45,23 @@ impl Reactor {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
+        let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         metadata
-            .invalidate_broker_route(route, seed, &self.poller, now, &self.call_ids, completion)
+            .invalidate_broker_route(
+                RouteInvalidation::new(route, observed_at, completion),
+                seed,
+                &self.poller,
+                now,
+                &self.call_ids,
+                evidence,
+            )
             .map_err(ReactorError::metadata)
     }
 
     fn invalidate_partition(
         &mut self,
         route: kafka_driver_core::PartitionRoute,
+        observed_at: kafka_driver_core::OutcomeStamp,
         now: kafka_driver_core::Moment,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
@@ -57,14 +69,23 @@ impl Reactor {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
+        let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         metadata
-            .invalidate_partition_route(route, seed, &self.poller, now, &self.call_ids, completion)
+            .invalidate_partition_route(
+                RouteInvalidation::new(route, observed_at, completion),
+                seed,
+                &self.poller,
+                now,
+                &self.call_ids,
+                evidence,
+            )
             .map_err(ReactorError::metadata)
     }
 
     fn invalidate_coordinator(
         &mut self,
         route: kafka_driver_core::CoordinatorRoute,
+        observed_at: kafka_driver_core::OutcomeStamp,
         now: kafka_driver_core::Moment,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
@@ -73,8 +94,16 @@ impl Reactor {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
+        let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         coordinator
-            .invalidate(route, seed, &self.poller, now, &self.call_ids, completion)
+            .invalidate(
+                RouteInvalidation::new(route, observed_at, completion),
+                seed,
+                &self.poller,
+                now,
+                &self.call_ids,
+                evidence,
+            )
             .map_err(ReactorError::coordinator)
     }
 }

@@ -2,7 +2,7 @@
 
 use std::{collections::VecDeque, num::NonZeroUsize};
 
-use kafka_driver_core::{CallId, CorrelationId};
+use kafka_driver_core::{CallId, CorrelationId, OutcomeStamp};
 use kafka_driver_transport::FrameBody;
 use kafka_wire::{KafkaMessage, RequestResponsePair, ResponseHeader, response_header_version_for};
 use kafka_wire_core::{ApiVersion, DecodeLimits, Decoder, KafkaDecode};
@@ -113,6 +113,7 @@ impl ResponseRegistry {
         call_id: CallId,
         correlation_id: CorrelationId,
         envelope: ResponseEnvelope,
+        observed_at: OutcomeStamp,
     ) -> Result<ResponseDispatch, ResponseDispatchError> {
         let Some(front) = self.slots.front() else {
             return Err(ResponseDispatchError::NoPendingResponse { envelope });
@@ -133,7 +134,7 @@ impl ResponseRegistry {
         let Some(slot) = self.slots.pop_front() else {
             return Err(ResponseDispatchError::NoPendingResponse { envelope });
         };
-        match slot.decode(envelope.into_body(), self.decode_limits) {
+        match slot.decode(envelope.into_body(), self.decode_limits, observed_at) {
             Ok(completion) => Ok(ResponseDispatch {
                 call_id,
                 correlation_id,

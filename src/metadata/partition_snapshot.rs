@@ -1,8 +1,8 @@
 //! Bounded conversion of generated topic partitions into known leader facts.
 
 use kafka_driver_core::{
-    BrokerId, LeaderEpoch, MetadataRevision, PartitionId, PartitionLeader, PartitionLeaderLimits,
-    PartitionLeaderSet, TopicName,
+    BrokerId, EvidenceStamp, LeaderEpoch, MetadataRevision, PartitionId, PartitionLeader,
+    PartitionLeaderLimits, PartitionLeaderSet, TopicName,
 };
 use kafka_wire::{
     MetadataResponse,
@@ -15,6 +15,7 @@ pub(super) fn partition_leaders_for_topic(
     response: &MetadataResponse,
     expected: &TopicName,
     revision: MetadataRevision,
+    evidence: EvidenceStamp,
     limits: PartitionLeaderLimits,
 ) -> Result<PartitionLeaderSet, MetadataBuildError> {
     enforce_input_bounds(response, limits)?;
@@ -32,7 +33,7 @@ pub(super) fn partition_leaders_for_topic(
         return Err(MetadataBuildError::RequestedTopicMismatch);
     }
     let leaders = if topic.error_code == 0 {
-        topic_leaders(topic, &name, revision)?
+        topic_leaders(topic, &name, revision, evidence)?
     } else {
         Vec::new()
     };
@@ -71,6 +72,7 @@ fn topic_leaders(
     topic: &MetadataResponseTopic,
     name: &TopicName,
     revision: MetadataRevision,
+    evidence: EvidenceStamp,
 ) -> Result<Vec<PartitionLeader>, MetadataBuildError> {
     let mut leaders = Vec::with_capacity(topic.partitions.len().min(16));
     for partition in topic
@@ -78,7 +80,7 @@ fn topic_leaders(
         .iter()
         .filter(|partition| partition.error_code == 0)
     {
-        if let Some(leader) = partition_leader(name.clone(), partition, revision)? {
+        if let Some(leader) = partition_leader(name.clone(), partition, revision, evidence)? {
             leaders.push(leader);
         }
     }
@@ -89,6 +91,7 @@ fn partition_leader(
     topic: TopicName,
     partition: &MetadataResponsePartition,
     revision: MetadataRevision,
+    evidence: EvidenceStamp,
 ) -> Result<Option<PartitionLeader>, MetadataBuildError> {
     let partition_id =
         PartitionId::new(partition.partition_index).map_err(MetadataBuildError::PartitionId)?;
@@ -110,11 +113,12 @@ fn partition_leader(
             partition: partition_id,
             source,
         })?;
-    Ok(Some(PartitionLeader::new(
+    Ok(Some(PartitionLeader::new_with_evidence(
         topic,
         partition_id,
         broker_id,
         leader_epoch,
         revision,
+        evidence,
     )))
 }

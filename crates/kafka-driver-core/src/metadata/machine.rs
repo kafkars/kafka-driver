@@ -46,12 +46,14 @@ impl MetadataMachine {
             } => self.refresh(query, operation_id),
             MetadataInput::InvalidateBrokerRoute {
                 route,
+                observed_at,
                 operation_id,
-            } => self.invalidate(route, operation_id),
+            } => self.invalidate(route, observed_at, operation_id),
             MetadataInput::InvalidatePartitionRoute {
                 route,
+                observed_at,
                 operation_id,
-            } => self.invalidate_partition(&route, operation_id),
+            } => self.invalidate_partition(&route, observed_at, operation_id),
             MetadataInput::RefreshSucceeded {
                 operation_id,
                 snapshot,

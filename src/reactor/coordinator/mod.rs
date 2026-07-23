@@ -16,6 +16,7 @@ mod waiting_progress;
 #[cfg(test)]
 mod waiting_test;
 
+pub(super) use effect::CoordinatorStep;
 pub(in crate::reactor) use error::CoordinatorOwnerError;
 pub(in crate::reactor) use owner::CoordinatorOwner;
 pub(in crate::reactor) use waiting::CoordinatorWait;

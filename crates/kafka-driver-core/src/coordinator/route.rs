@@ -13,15 +13,6 @@ pub struct CoordinatorRoute {
 }
 
 impl CoordinatorRoute {
-    pub(super) const fn new(
-        key: CoordinatorKey,
-        broker_id: BrokerId,
-        endpoint: BrokerEndpoint,
-        epoch: CoordinatorEpoch,
-    ) -> Self {
-        Self::new_with_evidence(key, broker_id, endpoint, epoch, EvidenceStamp::ORIGIN)
-    }
-
     pub(super) const fn new_with_evidence(
         key: CoordinatorKey,
         broker_id: BrokerId,
@@ -61,5 +52,12 @@ impl CoordinatorRoute {
     /// Returns when the external discovery that installed this route began.
     pub const fn evidence_stamp(&self) -> EvidenceStamp {
         self.evidence
+    }
+
+    /// Returns whether both discoveries select the same coordinator target.
+    pub fn is_same_target(&self, other: &Self) -> bool {
+        self.key == other.key
+            && self.broker_id == other.broker_id
+            && self.endpoint == other.endpoint
     }
 }

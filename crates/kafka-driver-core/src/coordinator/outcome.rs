@@ -1,6 +1,6 @@
 //! Identity-fenced discovery success, failure, and queued-refresh continuation.
 
-use crate::{BrokerEndpoint, BrokerId, CoordinatorEpoch, OperationId};
+use crate::{BrokerEndpoint, BrokerId, CoordinatorEpoch, EvidenceStamp, OperationId};
 
 use super::{
     CoordinatorFollowup, CoordinatorMachine, CoordinatorRoute, CoordinatorState,
@@ -15,6 +15,7 @@ impl CoordinatorMachine {
         epoch: CoordinatorEpoch,
         broker_id: BrokerId,
         endpoint: BrokerEndpoint,
+        evidence: EvidenceStamp,
         followup_operation_id: OperationId,
     ) -> CoordinatorTransition {
         let (expected, target_epoch, followup) = match &self.state {
@@ -29,7 +30,13 @@ impl CoordinatorMachine {
         if operation_id != expected || epoch != target_epoch {
             return stale();
         }
-        let route = CoordinatorRoute::new(self.key.clone(), broker_id, endpoint, target_epoch);
+        let route = CoordinatorRoute::new_with_evidence(
+            self.key.clone(),
+            broker_id,
+            endpoint,
+            target_epoch,
+            evidence,
+        );
         match followup {
             None => {
                 self.state = CoordinatorState::Ready { route };

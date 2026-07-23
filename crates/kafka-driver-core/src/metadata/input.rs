@@ -1,6 +1,8 @@
 //! Refresh demand, route invalidation, and identity-fenced Metadata RPC outcomes.
 
-use crate::{BrokerRoute, MetadataQuery, MetadataSnapshot, OperationId, PartitionRoute};
+use crate::{
+    BrokerRoute, MetadataQuery, MetadataSnapshot, OperationId, OutcomeStamp, PartitionRoute,
+};
 
 /// One owner command or generated Metadata RPC result applied to metadata policy.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -23,6 +25,8 @@ pub enum MetadataInput {
     InvalidateBrokerRoute {
         /// Route token whose generation authorizes invalidation.
         route: BrokerRoute,
+        /// Position at which the failed broker response became observable.
+        observed_at: OutcomeStamp,
         /// Reserved operation identity used only if a fetch starts.
         operation_id: OperationId,
     },
@@ -30,6 +34,8 @@ pub enum MetadataInput {
     InvalidatePartitionRoute {
         /// Exact topic revision, broker, partition, and leader-epoch route.
         route: PartitionRoute,
+        /// Position at which the failed broker response became observable.
+        observed_at: OutcomeStamp,
         /// Reserved operation identity used only if a fetch starts.
         operation_id: OperationId,
     },

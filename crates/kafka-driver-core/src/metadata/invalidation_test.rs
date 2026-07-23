@@ -5,7 +5,8 @@ use std::num::{NonZeroU16, NonZeroUsize};
 use crate::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
     HostName, LeaderEpoch, MetadataGeneration, MetadataQuery, MetadataSnapshot, OperationId,
-    PartitionId, PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet, TopicName,
+    OutcomeStamp, PartitionId, PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet,
+    TopicName,
 };
 
 use super::{MetadataDisposition, MetadataEffect, MetadataInput, MetadataMachine};
@@ -17,10 +18,12 @@ fn exact_partition_route_is_withdrawn_while_unrelated_facts_remain_usable() {
 
     let invalidated = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route: route.clone(),
+        observed_at: OutcomeStamp::ORIGIN,
         operation_id: operation(2),
     });
     let repeated = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route,
+        observed_at: OutcomeStamp::ORIGIN,
         operation_id: operation(3),
     });
 
@@ -60,6 +63,7 @@ fn invalidation_during_an_active_query_requires_a_post_failure_query() {
 
     let invalidated = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route: failed.clone(),
+        observed_at: OutcomeStamp::ORIGIN,
         operation_id: operation(3),
     });
     assert_eq!(invalidated.disposition(), MetadataDisposition::Queued);
@@ -107,6 +111,7 @@ fn failed_refresh_keeps_the_route_revoked_until_later_evidence_arrives() {
     let failed = route(&machine, "orders", 3);
     let invalidated = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route: failed.clone(),
+        observed_at: OutcomeStamp::ORIGIN,
         operation_id: operation(2),
     });
     assert!(!invalidated.effects().is_empty());
@@ -176,33 +181,26 @@ fn unrelated_topic_refresh_does_not_restamp_retained_leader_provenance() {
 
     let invalidated = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route: orders,
+        observed_at: OutcomeStamp::ORIGIN,
         operation_id: operation(3),
     });
     assert_eq!(invalidated.disposition(), MetadataDisposition::Applied);
 }
 
 #[test]
-fn stale_generation_or_changed_leader_epoch_cannot_refresh_partition_metadata() {
+fn changed_leader_epoch_cannot_refresh_partition_metadata() {
     let mut machine = ready_machine();
-    let stale_generation = snapshot(0, 7)
-        .partition_route(&topic("orders"), partition(3))
-        .unwrap_or_else(|| panic!("stale route must exist"));
     let changed_epoch = snapshot(1, 8)
         .partition_route(&topic("orders"), partition(3))
         .unwrap_or_else(|| panic!("changed route must exist"));
 
-    let stale = machine.apply(MetadataInput::InvalidatePartitionRoute {
-        route: stale_generation,
-        operation_id: operation(2),
-    });
     let changed = machine.apply(MetadataInput::InvalidatePartitionRoute {
         route: changed_epoch,
-        operation_id: operation(3),
+        observed_at: OutcomeStamp::ORIGIN,
+        operation_id: operation(2),
     });
 
-    assert_eq!(stale.disposition(), MetadataDisposition::IgnoredStale);
     assert_eq!(changed.disposition(), MetadataDisposition::IgnoredStale);
-    assert!(stale.effects().is_empty());
     assert!(changed.effects().is_empty());
 }
 

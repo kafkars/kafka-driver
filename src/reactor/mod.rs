@@ -3,12 +3,14 @@
 mod bootstrap;
 mod broker;
 mod broker_set;
+mod causality;
 mod clock;
 mod command;
 mod coordinator;
 mod entropy;
 mod error;
 mod host;
+mod invalidation;
 mod mailbox;
 mod metadata;
 mod plaintext;
@@ -25,6 +27,8 @@ mod wait_queue;
 mod wake;
 
 #[cfg(test)]
+mod causality_test;
+#[cfg(test)]
 mod clock_test;
 #[cfg(test)]
 mod command_test;
@@ -38,6 +42,7 @@ mod wait_queue_test;
 pub(crate) use command::Command;
 pub use error::ReactorError;
 pub use host::{Reactor, TurnOutcome};
+pub(in crate::reactor) use invalidation::RouteInvalidation;
 pub(crate) use mailbox::{MailboxSender, TrySendError, mailbox};
 pub(in crate::reactor) use poller::{PollEvent, PollInterest, PollWake, Poller, Readiness};
 pub use wake::WakeHandle;

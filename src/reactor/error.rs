@@ -3,8 +3,8 @@
 use std::{fmt, io};
 
 use super::{
-    broker_set::BrokerSetError, clock::ClockOverflow, coordinator::CoordinatorOwnerError,
-    metadata::MetadataOwnerError,
+    broker_set::BrokerSetError, causality::CausalSequenceError, clock::ClockOverflow,
+    coordinator::CoordinatorOwnerError, metadata::MetadataOwnerError,
 };
 
 /// Why one reactor turn could not observe external readiness.
@@ -36,6 +36,13 @@ impl ReactorError {
         }
     }
 
+    pub(super) fn causality(source: CausalSequenceError) -> Self {
+        Self {
+            source: io::Error::other(source),
+            operation: ReactorOperation::Causality,
+        }
+    }
+
     pub(super) fn metadata(source: MetadataOwnerError) -> Self {
         Self {
             source: io::Error::other(source),
@@ -64,6 +71,7 @@ impl fmt::Display for ReactorError {
             ReactorOperation::Poll => formatter.write_str("the driver I/O selector failed"),
             ReactorOperation::BrokerSet => formatter.write_str("the broker set failed"),
             ReactorOperation::Clock => formatter.write_str("the driver clock failed"),
+            ReactorOperation::Causality => formatter.write_str("the causal sequence failed"),
             ReactorOperation::Metadata => formatter.write_str("the cluster metadata owner failed"),
             ReactorOperation::Coordinator => {
                 formatter.write_str("the coordinator discovery owner failed")
@@ -78,6 +86,7 @@ enum ReactorOperation {
     Poll,
     BrokerSet,
     Clock,
+    Causality,
     Metadata,
     Coordinator,
     Host,

@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use kafka_driver_core::{CallId, CorrelationId};
+use kafka_driver_core::{CallId, CorrelationId, OutcomeStamp};
 use kafka_wire_core::{ApiVersion, Bytes, DecodeError, DecodeLimits, Decoder, KafkaDecode};
 
 use crate::{
@@ -21,6 +21,7 @@ pub(super) trait PendingResponse: Send {
         self: Box<Self>,
         body: Bytes,
         limits: DecodeLimits,
+        observed_at: OutcomeStamp,
     ) -> Result<CompletionDisposition, SlotDecodeError>;
     fn fail(self: Box<Self>, failure: RequestError) -> CompletionDisposition;
 }
@@ -80,6 +81,7 @@ where
         self: Box<Self>,
         body: Bytes,
         limits: DecodeLimits,
+        observed_at: OutcomeStamp,
     ) -> Result<CompletionDisposition, SlotDecodeError> {
         let Self {
             version,
@@ -94,13 +96,13 @@ where
         });
         match decoded {
             Ok(response) => {
-                let delivered = completion.complete(Ok(response));
+                let delivered = completion.complete_observed(Ok(response), observed_at);
                 finish(timeline, CallOutcome::Succeeded, delivered);
                 Ok(disposition(delivered))
             }
             Err(error) => {
                 let failure = ResponseFailure::Decode(error.clone());
-                let delivered = completion.complete(Err(failure.clone()));
+                let delivered = completion.complete_observed(Err(failure.clone()), observed_at);
                 finish(timeline, CallOutcome::Failed(&failure), delivered);
                 Err(SlotDecodeError {
                     error,
@@ -111,7 +113,7 @@ where
     }
 
     fn fail(self: Box<Self>, failure: RequestError) -> CompletionDisposition {
-        let delivered = self.completion.complete(Err(failure.clone()));
+        let delivered = self.completion.complete_unobserved(Err(failure.clone()));
         finish(self.timeline, CallOutcome::Failed(&failure), delivered);
         disposition(delivered)
     }

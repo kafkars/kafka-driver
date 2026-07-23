@@ -2,7 +2,7 @@
 
 use kafka_driver_core::{
     CoordinatorEffect, CoordinatorEpoch, CoordinatorInput, CoordinatorKey, CoordinatorTransition,
-    Moment, OperationId,
+    EvidenceStamp, Moment, OperationId,
 };
 use kafka_wire::FIND_COORDINATOR_API_DESCRIPTOR;
 
@@ -18,13 +18,14 @@ use super::{CoordinatorOwner, CoordinatorOwnerError, entry::PendingCoordinator};
 impl CoordinatorOwner {
     pub(super) fn interpret(
         &mut self,
-        index: usize,
-        transition: CoordinatorTransition,
+        step: CoordinatorStep,
         broker: &mut SingleBroker,
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
+        evidence: EvidenceStamp,
     ) -> Result<(), CoordinatorOwnerError> {
+        let CoordinatorStep { index, transition } = step;
         for effect in transition.into_effects() {
             match effect {
                 CoordinatorEffect::Find {
@@ -36,6 +37,7 @@ impl CoordinatorOwner {
                     CoordinatorFind {
                         operation_id,
                         epoch,
+                        evidence,
                         key,
                     },
                     broker,
@@ -63,6 +65,7 @@ impl CoordinatorOwner {
         let CoordinatorFind {
             operation_id,
             epoch,
+            evidence,
             key,
         } = find;
         if self.entries[index].pending.is_some() {
@@ -90,6 +93,7 @@ impl CoordinatorOwner {
         self.entries[index].pending = Some(PendingCoordinator {
             operation_id,
             epoch,
+            evidence,
             version,
             call,
         });
@@ -138,8 +142,20 @@ impl CoordinatorOwner {
     }
 }
 
+pub(in crate::reactor) struct CoordinatorStep {
+    index: usize,
+    transition: CoordinatorTransition,
+}
+
+impl CoordinatorStep {
+    pub(in crate::reactor) const fn new(index: usize, transition: CoordinatorTransition) -> Self {
+        Self { index, transition }
+    }
+}
+
 struct CoordinatorFind {
     operation_id: OperationId,
     epoch: CoordinatorEpoch,
+    evidence: EvidenceStamp,
     key: CoordinatorKey,
 }

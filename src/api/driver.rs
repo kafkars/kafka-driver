@@ -142,10 +142,10 @@ impl Driver {
 
     /// Submits one generated request and retains the exact semantic route used.
     ///
-    /// The returned outcome has no receipt when the request settles before a
-    /// controller, coordinator, or partition-leader fact reaches broker
-    /// ownership. Its timeout has the same end-to-end semantics as
-    /// [`Self::request`].
+    /// A machine-approved broker response pairs the route fact with its causal
+    /// observation stamp. Failures that settle without an observed broker
+    /// response have no receipt. Its timeout has the same end-to-end semantics
+    /// as [`Self::request`].
     pub fn request_tracked<R>(
         &self,
         route: Route,

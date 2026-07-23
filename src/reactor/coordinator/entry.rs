@@ -1,6 +1,6 @@
 //! One coordinator machine paired with at most one generated response owner.
 
-use kafka_driver_core::{CoordinatorEpoch, CoordinatorMachine, OperationId};
+use kafka_driver_core::{CoordinatorEpoch, CoordinatorMachine, EvidenceStamp, OperationId};
 use kafka_wire::FindCoordinatorResponse;
 use kafka_wire_core::ApiVersion;
 
@@ -29,6 +29,7 @@ impl CoordinatorEntry {
 pub(super) struct PendingCoordinator {
     pub(super) operation_id: OperationId,
     pub(super) epoch: CoordinatorEpoch,
+    pub(super) evidence: EvidenceStamp,
     pub(super) version: ApiVersion,
     pub(super) call: Call<Result<FindCoordinatorResponse, RequestError>>,
 }

@@ -7,7 +7,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use kafka_driver_core::{BrokerRoute, CoordinatorRoute, PartitionRoute};
+use kafka_driver_core::{BrokerRoute, CoordinatorRoute, OutcomeStamp, PartitionRoute};
 
 use super::{Call, CompletionError, RequestError};
 
@@ -19,20 +19,33 @@ pub enum RouteReceipt {
     Controller {
         /// Exact metadata-generation broker route used by the request.
         route: BrokerRoute,
+        /// Reactor position at which the broker response became observable.
+        observed_at: OutcomeStamp,
     },
     /// Coordinator selected by one key's discovery epoch.
     Coordinator {
         /// Exact key and discovery-epoch route used by the request.
         route: CoordinatorRoute,
+        /// Reactor position at which the broker response became observable.
+        observed_at: OutcomeStamp,
     },
     /// Partition leader selected with topic evidence revision and leader epoch.
     PartitionLeader {
         /// Exact topic revision, partition, broker, and leader-epoch route.
         route: PartitionRoute,
+        /// Reactor position at which the broker response became observable.
+        observed_at: OutcomeStamp,
     },
 }
 
-/// One request result and its route receipt, when routing reached a broker fact.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum RouteFact {
+    Controller(BrokerRoute),
+    Coordinator(CoordinatorRoute),
+    PartitionLeader(PartitionRoute),
+}
+
+/// One request result and its route receipt when a routed response was observed.
 #[derive(Debug)]
 pub struct RoutedOutcome<T> {
     result: Result<T, RequestError>,
@@ -52,18 +65,18 @@ impl<T> RoutedOutcome<T> {
         &self.result
     }
 
-    /// Borrows the exact route fact used before broker submission.
+    /// Borrows the route fact and causal stamp for an observed broker response.
     pub const fn receipt(&self) -> Option<&RouteReceipt> {
         self.receipt.as_ref()
     }
 
-    /// Transfers the ordinary result and optional route receipt.
+    /// Transfers the ordinary result and optional observed-response receipt.
     pub fn into_parts(self) -> (Result<T, RequestError>, Option<RouteReceipt>) {
         (self.result, self.receipt)
     }
 }
 
-/// Runtime-neutral completion handle retaining one exact route receipt.
+/// Runtime-neutral completion handle retaining an observed-response receipt.
 #[must_use = "dropping a routed call abandons result and route observation"]
 pub struct RoutedCall<T> {
     call: Call<RoutedOutcome<T>>,
@@ -74,7 +87,7 @@ impl<T> RoutedCall<T> {
         Self { call }
     }
 
-    /// Blocks until the request settles, retaining any route used before settlement.
+    /// Blocks until settlement, retaining any observed-response route receipt.
     pub fn wait(self) -> Result<RoutedOutcome<T>, CompletionError> {
         self.call.wait()
     }
@@ -89,11 +102,32 @@ impl RouteReceipt {
     pub(crate) fn heap_bytes(&self) -> usize {
         match self {
             Self::Controller { .. } => 0,
-            Self::Coordinator { route } => route
+            Self::Coordinator { route, .. } => route
                 .key()
                 .heap_bytes()
                 .saturating_add(route.endpoint().heap_bytes()),
-            Self::PartitionLeader { route } => route.topic().heap_bytes(),
+            Self::PartitionLeader { route, .. } => route.topic().heap_bytes(),
+        }
+    }
+}
+
+impl RouteFact {
+    pub(crate) fn observe(self, observed_at: OutcomeStamp) -> RouteReceipt {
+        match self {
+            Self::Controller(route) => RouteReceipt::Controller { route, observed_at },
+            Self::Coordinator(route) => RouteReceipt::Coordinator { route, observed_at },
+            Self::PartitionLeader(route) => RouteReceipt::PartitionLeader { route, observed_at },
+        }
+    }
+
+    pub(crate) fn heap_bytes(&self) -> usize {
+        match self {
+            Self::Controller(_) => 0,
+            Self::Coordinator(route) => route
+                .key()
+                .heap_bytes()
+                .saturating_add(route.endpoint().heap_bytes()),
+            Self::PartitionLeader(route) => route.topic().heap_bytes(),
         }
     }
 }

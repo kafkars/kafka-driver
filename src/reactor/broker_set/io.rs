@@ -1,6 +1,6 @@
 //! Poll, timer, continuation, and shutdown delegation across broker owners.
 
-use kafka_driver_core::Moment;
+use kafka_driver_core::{Moment, OutcomeStamp};
 
 use crate::reactor::{
     PollEvent, Poller,
@@ -15,6 +15,7 @@ impl BrokerSet {
         poller: &Poller,
         event: PollEvent,
         now: Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerSetError> {
         let PollEvent::Resource { token, .. } = event else {
             return Ok(false);
@@ -25,7 +26,7 @@ impl BrokerSet {
         ) == Some(0)
         {
             return self.seed.as_mut().map_or(Ok(false), |seed| {
-                seed.observe(poller, event, now)
+                seed.observe(poller, event, now, observed_at)
                     .map_err(BrokerSetError::Broker)
             });
         }
@@ -42,7 +43,7 @@ impl BrokerSet {
             return Ok(false);
         };
         let lane = child.lane();
-        let progress = child.observe(poller, event, now)?;
+        let progress = child.observe(poller, event, now, observed_at)?;
         self.sync_lane(lane)?;
         Ok(progress)
     }
@@ -51,12 +52,13 @@ impl BrokerSet {
         &mut self,
         poller: &Poller,
         now: Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerSetError> {
         let mut progress = self.seed.as_mut().map_or(Ok(false), |seed| {
-            seed.continue_io(poller, now)
+            seed.continue_io(poller, now, observed_at)
                 .map_err(BrokerSetError::Broker)
         })?;
-        progress |= self.continue_runnable_lanes(poller, now)?;
+        progress |= self.continue_runnable_lanes(poller, now, observed_at)?;
         Ok(progress)
     }
 

@@ -42,10 +42,10 @@ fn controller_call_opens_the_advertised_broker_and_completes_there() {
     let outcome = await_call(call, &mut reactor, "settle tracked controller call")
         .unwrap_or_else(|error| panic!("observe tracked controller call: {error}"));
     assert_eq!(outcome.result(), &Ok(response));
-    assert!(matches!(
-        outcome.receipt(),
-        Some(RouteReceipt::Controller { .. })
-    ));
+    let Some(RouteReceipt::Controller { route, observed_at }) = outcome.receipt() else {
+        panic!("tracked controller response must retain its causal route receipt");
+    };
+    assert!(route.evidence_stamp().get() < observed_at.get());
 }
 
 #[test]

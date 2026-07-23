@@ -11,6 +11,8 @@ mod state;
 mod transition;
 
 #[cfg(test)]
+mod causality_test;
+#[cfg(test)]
 mod machine_test;
 
 pub use effect::CoordinatorEffect;

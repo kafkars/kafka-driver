@@ -1,6 +1,6 @@
 //! Fair bounded progress for broker lanes with immediate local work.
 
-use kafka_driver_core::Moment;
+use kafka_driver_core::{Moment, OutcomeStamp};
 
 use crate::reactor::Poller;
 
@@ -11,6 +11,7 @@ impl BrokerSet {
         &mut self,
         poller: &Poller,
         now: Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerSetError> {
         let mut progress = false;
         let mut lanes = 0;
@@ -28,7 +29,7 @@ impl BrokerSet {
                 .children
                 .get_mut(index)
                 .ok_or(BrokerSetError::UnknownBrokerChild)?
-                .continue_io(poller, now)?;
+                .continue_io(poller, now, observed_at)?;
             progress |= self.activate_child(index, poller, now)?;
             if admissions < self.admission_budget.get() {
                 let admitted = self

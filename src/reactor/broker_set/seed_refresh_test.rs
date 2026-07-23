@@ -128,7 +128,12 @@ fn observe_refusal(poller: &mut Poller, brokers: &mut BrokerSet) {
         .unwrap_or_else(|error| panic!("poll refused connection: {error}"));
     for event in events {
         brokers
-            .observe(poller, event, Moment::ORIGIN)
+            .observe(
+                poller,
+                event,
+                Moment::ORIGIN,
+                kafka_driver_core::OutcomeStamp::ORIGIN,
+            )
             .unwrap_or_else(|error| panic!("observe refused connection: {error}"));
     }
 }

@@ -1,6 +1,6 @@
 //! Admission of public calls behind one exact coordinator-key discovery.
 
-use kafka_driver_core::Moment;
+use kafka_driver_core::{EvidenceStamp, Moment};
 
 use crate::{
     RequestError,
@@ -18,6 +18,7 @@ impl CoordinatorOwner {
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
+        evidence: EvidenceStamp,
     ) -> Result<(), CoordinatorOwnerError> {
         let key = waiting.key().clone();
         let call_id = waiting.call_id();
@@ -43,6 +44,7 @@ impl CoordinatorOwner {
             poller,
             now,
             call_ids,
+            evidence,
             self.limits.turn_budget().get(),
         )
         .map(|_| ())

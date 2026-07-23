@@ -125,7 +125,12 @@ fn observe_refusal_if_needed(poller: &mut Poller, brokers: &mut BrokerSet, lane:
         .unwrap_or_else(|error| panic!("poll refused candidate: {error}"));
     for event in events {
         brokers
-            .observe(poller, event, Moment::ORIGIN)
+            .observe(
+                poller,
+                event,
+                Moment::ORIGIN,
+                kafka_driver_core::OutcomeStamp::ORIGIN,
+            )
             .unwrap_or_else(|error| panic!("observe refused candidate: {error}"));
     }
 }

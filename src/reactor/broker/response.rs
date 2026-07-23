@@ -1,6 +1,6 @@
 //! Frame inspection followed by machine-approved typed FIFO completion.
 
-use kafka_driver_core::{ConnectionEffect, ConnectionInput, ResponseFault};
+use kafka_driver_core::{ConnectionEffect, ConnectionInput, OutcomeStamp, ResponseFault};
 use kafka_driver_transport::FrameBody;
 
 use crate::{
@@ -16,6 +16,7 @@ impl SingleBroker {
         poller: &Poller,
         identity: ResourceIdentity,
         now: kafka_driver_core::Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerError> {
         let frames = std::mem::take(&mut self.frames);
         let mut processed = false;
@@ -24,7 +25,7 @@ impl SingleBroker {
                 break;
             }
             processed = true;
-            self.process_frame(poller, identity, frame, now)?;
+            self.process_frame(poller, identity, frame, now, observed_at)?;
         }
         self.frames = frames;
         self.frames.clear();
@@ -37,6 +38,7 @@ impl SingleBroker {
         identity: ResourceIdentity,
         frame: FrameBody,
         now: kafka_driver_core::Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<(), BrokerError> {
         if self.connection.state().phase() == kafka_driver_core::ConnectionPhase::Negotiating {
             return self.process_negotiation_frame(poller, identity, frame, now);
@@ -58,7 +60,7 @@ impl SingleBroker {
             transport_id: identity.transport_id(),
             correlation_id: envelope.correlation_id(),
         })?;
-        self.interpret_response(poller, transition.into_effects(), envelope)
+        self.interpret_response(poller, transition.into_effects(), envelope, observed_at)
     }
 
     fn reject_frame(
@@ -80,6 +82,7 @@ impl SingleBroker {
         poller: &Poller,
         effects: Vec<ConnectionEffect>,
         envelope: ResponseEnvelope,
+        observed_at: OutcomeStamp,
     ) -> Result<(), BrokerError> {
         let mut envelope = Some(envelope);
         let mut terminal = Vec::new();
@@ -95,10 +98,12 @@ impl SingleBroker {
                     let Some(owned) = envelope.take() else {
                         return Err(BrokerError::MissingEffect);
                     };
-                    match self
-                        .responses
-                        .complete_verified(call_id, correlation_id, owned)
-                    {
+                    match self.responses.complete_verified(
+                        call_id,
+                        correlation_id,
+                        owned,
+                        observed_at,
+                    ) {
                         Ok(_) | Err(ResponseDispatchError::BodyDecode { .. }) => {}
                         Err(error) => return Err(error.into()),
                     }

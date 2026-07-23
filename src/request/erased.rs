@@ -6,7 +6,7 @@ use kafka_driver_core::{CallId, CorrelationId, Moment};
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::{ApiKey, ApiVersion, Bytes};
 
-use crate::{RequestError, RouteReceipt, TrafficClass, response::ResponseRegistry};
+use crate::{RequestError, TrafficClass, api::RouteFact, response::ResponseRegistry};
 
 /// One generated request whose response type remains owned behind its completion.
 pub(crate) trait ErasedRequest: Send {
@@ -32,7 +32,7 @@ pub(crate) trait ErasedRequest: Send {
     fn mark_routed(&mut self, at: Instant);
 
     /// Records the exact semantic route selected before broker ownership.
-    fn record_route(&mut self, receipt: RouteReceipt) -> Result<(), RouteReceipt>;
+    fn record_route(&mut self, route: RouteFact) -> Result<(), RouteFact>;
 
     /// Encodes the request and transfers its typed completion into FIFO ownership.
     fn prepare(

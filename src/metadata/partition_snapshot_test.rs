@@ -12,7 +12,7 @@ use kafka_wire::{
 };
 use kafka_wire_core::StrBytes;
 
-use super::{MetadataBuildError, snapshot_from_response};
+use super::{MetadataBuildError, MetadataResponseProvenance, snapshot_from_response};
 
 #[test]
 fn successful_partitions_become_canonical_generation_fenced_routes() {
@@ -30,6 +30,7 @@ fn successful_partitions_become_canonical_generation_fenced_routes() {
     assert_eq!(route.broker_route().generation(), generation(3));
     assert_eq!(route.broker_route().broker_id(), broker_id(9));
     assert_eq!(route.leader_epoch(), LeaderEpoch::new(11).ok());
+    assert_eq!(route.evidence_stamp().get(), 3);
     assert_eq!(snapshot.partition_leaders().len(), 2);
 }
 
@@ -149,9 +150,12 @@ fn topic_refresh_replaces_only_its_topic_and_cluster_refresh_clears_routes() {
 
     let merged = snapshot_from_response(
         &payments_response,
-        generation(4),
-        operation(4),
-        &MetadataQuery::Topic(topic_name("payments")),
+        MetadataResponseProvenance::new(
+            generation(4),
+            kafka_driver_core::EvidenceStamp::from_raw(4),
+            operation(4),
+            &MetadataQuery::Topic(topic_name("payments")),
+        ),
         Some(&orders),
         BrokerDirectoryLimits::new(nonzero(2)),
         PartitionLeaderLimits::new(nonzero(2), nonzero(2)),
@@ -160,9 +164,12 @@ fn topic_refresh_replaces_only_its_topic_and_cluster_refresh_clears_routes() {
     let cluster_response = response::<2, 0>([broker(7), broker(9)], []);
     let cluster = snapshot_from_response(
         &cluster_response,
-        generation(5),
-        operation(5),
-        &MetadataQuery::Cluster,
+        MetadataResponseProvenance::new(
+            generation(5),
+            kafka_driver_core::EvidenceStamp::from_raw(5),
+            operation(5),
+            &MetadataQuery::Cluster,
+        ),
         Some(&merged),
         BrokerDirectoryLimits::new(nonzero(2)),
         PartitionLeaderLimits::new(nonzero(2), nonzero(2)),
@@ -189,6 +196,18 @@ fn topic_refresh_replaces_only_its_topic_and_cluster_refresh_clears_routes() {
         merged
             .partition_route(&topic_name("payments"), partition_id(0))
             .map(|route| route.revision().get()),
+        Some(4)
+    );
+    assert_eq!(
+        merged
+            .partition_route(&topic_name("orders"), partition_id(0))
+            .map(|route| route.evidence_stamp().get()),
+        Some(3)
+    );
+    assert_eq!(
+        merged
+            .partition_route(&topic_name("payments"), partition_id(0))
+            .map(|route| route.evidence_stamp().get()),
         Some(4)
     );
     assert!(cluster.partition_leaders().is_empty());
@@ -250,9 +269,12 @@ fn build(
 ) -> Result<kafka_driver_core::MetadataSnapshot, MetadataBuildError> {
     snapshot_from_response(
         response,
-        generation(3),
-        operation(3),
-        &MetadataQuery::Topic(topic_name("orders")),
+        MetadataResponseProvenance::new(
+            generation(3),
+            kafka_driver_core::EvidenceStamp::from_raw(3),
+            operation(3),
+            &MetadataQuery::Topic(topic_name("orders")),
+        ),
         None,
         BrokerDirectoryLimits::new(nonzero(max_brokers)),
         PartitionLeaderLimits::new(nonzero(max_topics), nonzero(max_partitions)),

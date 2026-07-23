@@ -15,6 +15,8 @@ mod state;
 mod transition;
 
 #[cfg(test)]
+mod causality_test;
+#[cfg(test)]
 mod epoch_test;
 #[cfg(test)]
 mod invalidation_test;

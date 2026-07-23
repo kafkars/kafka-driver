@@ -98,7 +98,7 @@ fn exact_group_key_discovers_then_routes_to_the_advertised_coordinator() {
     assert_eq!(outcome.result(), &Ok(response));
     assert!(matches!(
         outcome.receipt(),
-        Some(RouteReceipt::Coordinator { route }) if route.key() == &key
+        Some(RouteReceipt::Coordinator { route, .. }) if route.key() == &key
     ));
 }
 
@@ -237,7 +237,7 @@ fn await_fresh_coordinator(
         .unwrap_or_else(|error| panic!("observe post-invalidation request: {error}"));
     assert!(matches!(
         retried.receipt(),
-        Some(RouteReceipt::Coordinator { route }) if route.epoch().get() > 1
+        Some(RouteReceipt::Coordinator { route, .. }) if route.epoch().get() > 1
     ));
 }
 

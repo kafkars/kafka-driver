@@ -4,7 +4,7 @@ use std::num::NonZeroU16;
 
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
-    HostName, MetadataGeneration,
+    EvidenceStamp, HostName, MetadataGeneration,
 };
 use kafka_wire::{MetadataResponse, metadata_response::MetadataResponseBroker};
 
@@ -13,6 +13,7 @@ use super::MetadataBuildError;
 pub(super) fn broker_directory_from_response(
     response: &MetadataResponse,
     generation: MetadataGeneration,
+    evidence: EvidenceStamp,
     limits: BrokerDirectoryLimits,
 ) -> Result<BrokerDirectory, MetadataBuildError> {
     let broker_limit = limits.max_brokers().get();
@@ -27,7 +28,7 @@ pub(super) fn broker_directory_from_response(
         .iter()
         .map(broker_entry)
         .collect::<Result<Vec<_>, _>>()?;
-    BrokerDirectory::try_from_iter(generation, entries, limits)
+    BrokerDirectory::try_from_iter_with_evidence(generation, evidence, entries, limits)
         .map_err(MetadataBuildError::Directory)
 }
 

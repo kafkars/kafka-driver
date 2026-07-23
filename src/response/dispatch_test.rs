@@ -3,7 +3,7 @@
 use std::num::NonZeroUsize;
 
 use bytes::BytesMut;
-use kafka_driver_core::{CallFailure, CallId, CorrelationId, Delivery};
+use kafka_driver_core::{CallFailure, CallId, CorrelationId, Delivery, OutcomeStamp};
 use kafka_driver_transport::{FrameBody, FrameDecoder, FrameLimits};
 use kafka_wire::{
     ApiVersionsRequest, ApiVersionsResponse, RequestResponsePair, ResponseHeader,
@@ -32,7 +32,8 @@ fn verified_front_decodes_generated_response_and_completes_typed_call() {
     };
     assert_eq!(envelope.correlation_id(), correlation());
     assert!(envelope.body_bytes() > 0);
-    let Ok(dispatched) = registry.complete_verified(call_id(), correlation(), envelope) else {
+    let Ok(dispatched) = registry.complete_verified(call_id(), correlation(), envelope, observed())
+    else {
         panic!("machine-approved response must complete the FIFO front");
     };
 
@@ -56,14 +57,15 @@ fn verification_mismatch_does_not_pop_or_complete_the_front() {
         panic!("generated response header must be inspectable");
     };
 
-    let error = registry.complete_verified(CallId::from_raw(99), correlation(), envelope);
+    let error =
+        registry.complete_verified(CallId::from_raw(99), correlation(), envelope, observed());
     let Err(ResponseDispatchError::VerificationMismatch { envelope, .. }) = error else {
         panic!("wrong machine effect must preserve the response envelope");
     };
     assert_eq!(registry.pending(), 1);
     assert!(
         registry
-            .complete_verified(call_id(), correlation(), envelope)
+            .complete_verified(call_id(), correlation(), envelope, observed())
             .is_ok()
     );
     assert_eq!(call.wait(), Ok(Ok(response)));
@@ -83,7 +85,7 @@ fn malformed_body_fails_the_typed_call_after_verified_dispatch() {
 
     let Err(ResponseDispatchError::BodyDecode {
         error, completion, ..
-    }) = registry.complete_verified(call_id(), correlation(), envelope)
+    }) = registry.complete_verified(call_id(), correlation(), envelope, observed())
     else {
         panic!("missing generated body must fail typed decoding");
     };
@@ -128,7 +130,8 @@ fn successful_decode_reports_an_abandoned_receiver() {
         panic!("generated response header must be inspectable");
     };
 
-    let Ok(dispatched) = registry.complete_verified(call_id(), correlation(), envelope) else {
+    let Ok(dispatched) = registry.complete_verified(call_id(), correlation(), envelope, observed())
+    else {
         panic!("abandoned receiver must not invalidate response bytes");
     };
 
@@ -260,6 +263,10 @@ const fn call_id() -> CallId {
 
 const fn correlation() -> CorrelationId {
     CorrelationId::from_raw(11)
+}
+
+const fn observed() -> OutcomeStamp {
+    OutcomeStamp::from_raw(13)
 }
 
 const fn nonzero(value: usize) -> NonZeroUsize {

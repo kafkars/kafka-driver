@@ -8,7 +8,8 @@ use kafka_driver_core::{
 };
 
 use crate::{
-    RequestError, Route, RouteReceipt,
+    RequestError, Route,
+    api::RouteFact,
     reactor::{coordinator::CoordinatorWait, metadata::PartitionWait},
     request::ErasedRequest,
 };
@@ -61,7 +62,7 @@ impl Reactor {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());
         };
-        let Ok(request) = bind_route(request, RouteReceipt::Controller { route }) else {
+        let Ok(request) = bind_route(request, RouteFact::Controller(route)) else {
             return Ok(());
         };
         self.submit_broker_route(route, request, now)
@@ -88,6 +89,7 @@ impl Reactor {
                 request.fail(RequestError::RouteUnavailable);
                 return Ok(());
             };
+            let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
             metadata
                 .wait_for_partition(
                     PartitionWait::new(topic, partition, request),
@@ -95,12 +97,13 @@ impl Reactor {
                     &self.poller,
                     now,
                     &self.call_ids,
+                    evidence,
                 )
                 .map_err(ReactorError::metadata)?;
             return Ok(());
         };
         let broker = route.broker_route();
-        let Ok(request) = bind_route(request, RouteReceipt::PartitionLeader { route }) else {
+        let Ok(request) = bind_route(request, RouteFact::PartitionLeader(route)) else {
             return Ok(());
         };
         self.submit_broker_route(broker, request, now)
@@ -121,10 +124,8 @@ impl Reactor {
             self.coordinator_broker_route(coordinator)
                 .map(|route| (coordinator, route))
         }) {
-            let receipt = RouteReceipt::Coordinator {
-                route: coordinator.clone(),
-            };
-            let Ok(request) = bind_route(request, receipt) else {
+            let fact = RouteFact::Coordinator(coordinator.clone());
+            let Ok(request) = bind_route(request, fact) else {
                 return Ok(());
             };
             return self.submit_broker_route(route, request, now);
@@ -137,9 +138,10 @@ impl Reactor {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());
         };
+        let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         if let Some(route) = current {
             owner
-                .invalidate_unobserved(route, seed, &self.poller, now, &self.call_ids)
+                .invalidate_unobserved(route, seed, &self.poller, now, &self.call_ids, evidence)
                 .map_err(ReactorError::coordinator)?;
         }
         owner
@@ -149,6 +151,7 @@ impl Reactor {
                 &self.poller,
                 now,
                 &self.call_ids,
+                evidence,
             )
             .map_err(ReactorError::coordinator)
     }
@@ -173,9 +176,9 @@ fn not_ready() -> RequestError {
 
 pub(super) fn bind_route(
     mut request: Box<dyn ErasedRequest>,
-    receipt: RouteReceipt,
+    route: RouteFact,
 ) -> Result<Box<dyn ErasedRequest>, ()> {
-    if request.record_route(receipt).is_err() {
+    if request.record_route(route).is_err() {
         request.fail(RequestError::IdentityConflict);
         return Err(());
     }

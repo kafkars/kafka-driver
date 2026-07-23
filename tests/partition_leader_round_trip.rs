@@ -135,7 +135,7 @@ fn assert_exact_topic_invalidation(
     let (topic, partition) = target;
     let (seed_port, leader_port) = ports;
     let old_revision = match &receipt {
-        RouteReceipt::PartitionLeader { route }
+        RouteReceipt::PartitionLeader { route, .. }
             if route.topic() == topic && route.partition() == partition =>
         {
             route.revision()
@@ -209,7 +209,7 @@ fn assert_exact_topic_invalidation(
         .unwrap_or_else(|error| panic!("observe post-invalidation request: {error}"));
     assert!(matches!(
         outcome.receipt(),
-        Some(RouteReceipt::PartitionLeader { route }) if route.revision() > old_revision
+        Some(RouteReceipt::PartitionLeader { route, .. }) if route.revision() > old_revision
     ));
 }
 

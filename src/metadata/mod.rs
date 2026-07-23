@@ -11,4 +11,4 @@ mod broker_snapshot_test;
 mod partition_snapshot_test;
 
 pub(crate) use error::MetadataBuildError;
-pub(crate) use snapshot::snapshot_from_response;
+pub(crate) use snapshot::{MetadataResponseProvenance, snapshot_from_response};

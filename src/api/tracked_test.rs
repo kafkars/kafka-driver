@@ -4,7 +4,7 @@ use std::num::{NonZeroU16, NonZeroUsize};
 
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
-    HostName, MetadataGeneration,
+    HostName, MetadataGeneration, OutcomeStamp,
 };
 
 use crate::{Call, completion::completion_pair};
@@ -48,5 +48,6 @@ fn controller_receipt(raw_generation: u64) -> RouteReceipt {
         route: directory
             .route_to(broker_id)
             .unwrap_or_else(|| panic!("directory must issue broker route")),
+        observed_at: OutcomeStamp::from_raw(9),
     }
 }

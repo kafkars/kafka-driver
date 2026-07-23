@@ -33,19 +33,26 @@ impl CoordinatorMachine {
             CoordinatorInput::Refresh { operation_id } => self.refresh(operation_id),
             CoordinatorInput::Invalidate {
                 route,
+                observed_at,
                 operation_id,
-            } => self.invalidate(&route, operation_id),
+            } => self.invalidate(&route, observed_at, operation_id),
+            CoordinatorInput::Withdraw {
+                route,
+                operation_id,
+            } => self.withdraw(&route, operation_id),
             CoordinatorInput::DiscoverySucceeded {
                 operation_id,
                 epoch,
                 broker_id,
                 endpoint,
+                evidence,
                 followup_operation_id,
             } => self.succeed(
                 operation_id,
                 epoch,
                 broker_id,
                 endpoint,
+                evidence,
                 followup_operation_id,
             ),
             CoordinatorInput::DiscoveryFailed {

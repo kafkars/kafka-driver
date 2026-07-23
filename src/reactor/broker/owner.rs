@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 
 use kafka_driver_core::{
     AuthenticationLimits, BrokerMachine, ConnectionEpoch, ConnectionInput, ConnectionMachine,
-    ConnectionPhase, ConnectionState,
+    ConnectionPhase, ConnectionState, OutcomeStamp,
 };
 use kafka_driver_transport::FrameBody;
 use kafka_wire::OutboundFrameLimits;
@@ -75,8 +75,9 @@ impl SingleBroker {
         poller: &Poller,
         event: PollEvent,
         now: kafka_driver_core::Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerError> {
-        let progress = self.observe_connection(poller, event, now)?;
+        let progress = self.observe_connection(poller, event, now, observed_at)?;
         self.reconcile_connection(poller, now)?;
         Ok(progress)
     }
@@ -86,6 +87,7 @@ impl SingleBroker {
         poller: &Poller,
         event: PollEvent,
         now: kafka_driver_core::Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerError> {
         let PollEvent::Resource { token, readiness } = event else {
             return Ok(false);
@@ -100,7 +102,7 @@ impl SingleBroker {
                 | ConnectionPhase::Ready
                 | ConnectionPhase::Draining
         ) {
-            return self.drive_io(poller, token, readiness, now);
+            return self.drive_io(poller, token, readiness, now, observed_at);
         }
         let Some((identity, connection)) = self.resources.get_mut(token) else {
             return Ok(false);

@@ -1,7 +1,8 @@
 //! Exact topic lookup admission and bounded partition-wait progress.
 
 use kafka_driver_core::{
-    CallId, MetadataDisposition, MetadataInput, MetadataQuery, Moment, PartitionId, TopicName,
+    CallId, EvidenceStamp, MetadataDisposition, MetadataInput, MetadataQuery, Moment, PartitionId,
+    TopicName,
 };
 
 use crate::{
@@ -21,6 +22,7 @@ impl MetadataOwner {
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
+        evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
         let PartitionWait {
             topic,
@@ -41,7 +43,7 @@ impl MetadataOwner {
             self.reject_query_capacity(call_id)?;
             return Ok(());
         }
-        self.interpret(transition, broker, poller, now, call_ids)?;
+        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
         Ok(())
     }
 

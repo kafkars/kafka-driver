@@ -4,19 +4,19 @@ use std::num::{NonZeroU16, NonZeroUsize};
 
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
-    HostName, LeaderEpoch, MetadataGeneration, MetadataSnapshot, PartitionId, PartitionLeader,
-    PartitionLeaderLimits, PartitionLeaderSet, TopicName,
+    HostName, LeaderEpoch, MetadataGeneration, MetadataSnapshot, OutcomeStamp, PartitionId,
+    PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet, TopicName,
 };
 
 use crate::completion::completion_pair;
-use crate::{RequestError, RouteReceipt};
+use crate::{RequestError, api::RouteFact};
 
 use super::completion::RequestCompletion;
 
 #[test]
 fn one_request_completion_cannot_replace_its_first_route_receipt() {
-    let first = controller_receipt(7);
-    let second = controller_receipt(8);
+    let first = controller_fact(7);
+    let second = controller_fact(8);
     let (_receiver, sender) = completion_pair();
     let mut completion = RequestCompletion::<()>::routed(sender);
 
@@ -25,44 +25,60 @@ fn one_request_completion_cannot_replace_its_first_route_receipt() {
 }
 
 #[test]
-fn routed_failure_returns_the_route_owned_before_settlement() {
-    let receipt = controller_receipt(7);
+fn unobserved_failure_issues_no_causal_route_receipt() {
+    let route = controller_fact(7);
     let (receiver, sender) = completion_pair();
     let mut completion = RequestCompletion::<()>::routed(sender);
-    assert!(completion.record_route(receipt.clone()).is_ok());
+    assert!(completion.record_route(route).is_ok());
 
-    assert!(completion.complete(Err(RequestError::RouteUnavailable)));
+    assert!(completion.complete_unobserved(Err(RequestError::RouteUnavailable)));
 
     let outcome = receiver
         .wait()
         .unwrap_or_else(|error| panic!("completion must remain observable: {error}"));
     assert_eq!(outcome.result(), &Err(RequestError::RouteUnavailable));
-    assert_eq!(outcome.receipt(), Some(&receipt));
+    assert_eq!(outcome.receipt(), None);
+}
+
+#[test]
+fn observed_response_pairs_the_route_fact_with_its_outcome_stamp() {
+    let route = controller_fact(7);
+    let expected = route.clone().observe(OutcomeStamp::from_raw(11));
+    let (receiver, sender) = completion_pair();
+    let mut completion = RequestCompletion::<()>::routed(sender);
+    assert!(completion.record_route(route).is_ok());
+
+    assert!(completion.complete_observed(Ok(()), OutcomeStamp::from_raw(11)));
+
+    let outcome = receiver
+        .wait()
+        .unwrap_or_else(|error| panic!("completion must remain observable: {error}"));
+    assert_eq!(outcome.receipt(), Some(&expected));
 }
 
 #[test]
 fn routed_completion_weight_follows_owned_receipt_buffers() {
-    let (receipt, receipt_bytes) = partition_receipt(7);
+    let (route, receipt_bytes) = partition_fact(7);
     let (_receiver, sender) = completion_pair();
     let mut completion = RequestCompletion::<()>::routed(sender);
     assert_eq!(completion.route_heap_bytes(), 0);
 
-    assert!(completion.record_route(receipt).is_ok());
+    assert!(completion.record_route(route).is_ok());
 
     assert_eq!(completion.route_heap_bytes(), receipt_bytes);
 }
 
-fn controller_receipt(raw_generation: u64) -> RouteReceipt {
+fn controller_fact(raw_generation: u64) -> RouteFact {
     let broker_id = broker_id();
     let directory = broker_directory(raw_generation);
-    RouteReceipt::Controller {
-        route: directory
+    RouteFact::Controller(
+        directory
             .route_to(broker_id)
             .unwrap_or_else(|| panic!("directory must issue broker route")),
-    }
+    )
 }
 
-fn partition_receipt(raw_generation: u64) -> (RouteReceipt, usize) {
+fn partition_fact(raw_generation: u64) -> (RouteFact, usize) {
     let topic =
         TopicName::new("payments").unwrap_or_else(|error| panic!("valid topic rejected: {error}"));
     let partition =
@@ -86,7 +102,7 @@ fn partition_receipt(raw_generation: u64) -> (RouteReceipt, usize) {
         .unwrap_or_else(|| panic!("snapshot must issue partition route"));
     let receipt_bytes = route.topic().heap_bytes();
     assert!(receipt_bytes >= topic.as_str().len());
-    (RouteReceipt::PartitionLeader { route }, receipt_bytes)
+    (RouteFact::PartitionLeader(route), receipt_bytes)
 }
 
 fn broker_directory(raw_generation: u64) -> BrokerDirectory {

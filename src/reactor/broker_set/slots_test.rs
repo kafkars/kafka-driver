@@ -47,7 +47,11 @@ fn bounded_runnable_turns_reclaim_adjacent_sparse_slots_without_skipping() {
         assert!(brokers.has_local_io());
         assert!(
             brokers
-                .continue_io(&poller, Moment::ORIGIN)
+                .continue_io(
+                    &poller,
+                    Moment::ORIGIN,
+                    kafka_driver_core::OutcomeStamp::ORIGIN,
+                )
                 .unwrap_or_else(|error| panic!("reclaim one broker lane: {error}"))
         );
         assert_eq!(brokers.allocated_lanes(), remaining);

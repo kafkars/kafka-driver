@@ -3,7 +3,8 @@
 use std::collections::VecDeque;
 
 use crate::{
-    BrokerRoute, MetadataGeneration, MetadataQuery, MetadataSnapshot, OperationId, PartitionRoute,
+    BrokerRoute, MetadataGeneration, MetadataQuery, MetadataSnapshot, OperationId, OutcomeStamp,
+    PartitionRoute,
 };
 
 use super::{
@@ -67,12 +68,18 @@ impl MetadataMachine {
     pub(super) fn invalidate(
         &mut self,
         route: BrokerRoute,
+        observed_at: OutcomeStamp,
         operation_id: OperationId,
     ) -> MetadataTransition {
         let Some(current) = self.current() else {
             return stale();
         };
-        if current.controller_route() != Some(route) {
+        let Some(current_route) = current.controller_route() else {
+            return stale();
+        };
+        if !current_route.is_same_broker(route)
+            || current_route.evidence_stamp().is_after(observed_at)
+        {
             return stale();
         }
         let transition = self.refresh(MetadataQuery::Cluster, operation_id);
@@ -89,16 +96,16 @@ impl MetadataMachine {
     pub(super) fn invalidate_partition(
         &mut self,
         route: &PartitionRoute,
+        observed_at: OutcomeStamp,
         operation_id: OperationId,
     ) -> MetadataTransition {
         let Some(current) = self.current() else {
             return stale();
         };
         let current_route = current.partition_route(route.topic(), route.partition());
-        if current_route
-            .as_ref()
-            .is_none_or(|current| !current.is_same_fact(route))
-        {
+        if current_route.as_ref().is_none_or(|current| {
+            !current.is_same_assignment(route) || current.evidence_stamp().is_after(observed_at)
+        }) {
             return stale();
         }
         let transition = self.refresh(MetadataQuery::Topic(route.topic().clone()), operation_id);

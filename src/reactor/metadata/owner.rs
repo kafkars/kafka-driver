@@ -1,22 +1,26 @@
 //! Ordinary FIFO request interpretation for one deterministic metadata refresh owner.
 
 use kafka_driver_core::{
-    ConnectionPhase, MetadataEffect, MetadataGeneration, MetadataInput, MetadataMachine,
-    MetadataQuery, MetadataTransition, Moment, OperationId,
+    ConnectionPhase, EvidenceStamp, MetadataEffect, MetadataGeneration, MetadataInput,
+    MetadataMachine, MetadataQuery, MetadataTransition, Moment, OperationId,
 };
 use kafka_wire::{METADATA_API_DESCRIPTOR, MetadataResponse};
 
 use crate::{
-    Call, MetadataLimits, RequestError,
+    MetadataLimits,
     api::CallIds,
-    metadata::snapshot_from_response,
+    metadata::{MetadataResponseProvenance, snapshot_from_response},
     reactor::{Poller, broker::SingleBroker},
     request::erased_request_in,
 };
 
 use super::{
-    error::MetadataOwnerError, identity::MetadataOperationIds,
-    invalidation_wait::MetadataInvalidations, request::metadata_request, waiting::PartitionWaiters,
+    error::MetadataOwnerError,
+    identity::MetadataOperationIds,
+    invalidation_wait::MetadataInvalidations,
+    pending::{MetadataFetch, PendingMetadata},
+    request::metadata_request,
+    waiting::PartitionWaiters,
 };
 
 /// Reactor owner joining generated responses to deterministic metadata policy.
@@ -59,8 +63,9 @@ impl MetadataOwner {
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
+        evidence: EvidenceStamp,
     ) -> Result<bool, MetadataOwnerError> {
-        let mut progress = self.observe_completion(broker, poller, now, call_ids)?;
+        let mut progress = self.observe_completion(broker, poller, now, call_ids, evidence)?;
         if progress {
             self.waiters.begin_scan();
             self.invalidations.begin_scan();
@@ -72,7 +77,7 @@ impl MetadataOwner {
                 query: MetadataQuery::Cluster,
                 operation_id,
             });
-            progress |= self.interpret(transition, broker, poller, now, call_ids)?;
+            progress |= self.interpret(transition, broker, poller, now, call_ids, evidence)?;
         }
         Ok(progress)
     }
@@ -83,6 +88,7 @@ impl MetadataOwner {
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
+        evidence: EvidenceStamp,
     ) -> Result<bool, MetadataOwnerError> {
         let Some(result) = self
             .pending
@@ -99,7 +105,7 @@ impl MetadataOwner {
             Ok(Err(_)) | Err(_) => self.failure_input(pending.operation_id)?,
         };
         let transition = self.machine.apply(input);
-        self.interpret(transition, broker, poller, now, call_ids)?;
+        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
         Ok(true)
     }
 
@@ -110,9 +116,12 @@ impl MetadataOwner {
     ) -> Result<MetadataInput, MetadataOwnerError> {
         let Ok(snapshot) = snapshot_from_response(
             response,
-            pending.generation,
-            pending.operation_id,
-            &pending.query,
+            MetadataResponseProvenance::new(
+                pending.generation,
+                pending.evidence,
+                pending.operation_id,
+                &pending.query,
+            ),
             self.machine.current(),
             self.limits.broker_directory(),
             self.limits.partition_leaders(),
@@ -146,6 +155,7 @@ impl MetadataOwner {
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
+        evidence: EvidenceStamp,
     ) -> Result<bool, MetadataOwnerError> {
         let mut progress = false;
         for effect in transition.into_effects() {
@@ -159,6 +169,7 @@ impl MetadataOwner {
                         MetadataFetch {
                             operation_id,
                             generation,
+                            evidence,
                             query,
                         },
                         broker,
@@ -205,6 +216,7 @@ impl MetadataOwner {
         self.pending = Some(PendingMetadata {
             operation_id: fetch.operation_id,
             generation: fetch.generation,
+            evidence: fetch.evidence,
             query: fetch.query,
             call,
         });
@@ -216,18 +228,4 @@ impl MetadataOwner {
             .reserve()
             .ok_or(MetadataOwnerError::OperationIdentityExhausted)
     }
-}
-
-struct MetadataFetch {
-    operation_id: OperationId,
-    generation: MetadataGeneration,
-    query: MetadataQuery,
-}
-
-#[derive(Debug)]
-struct PendingMetadata {
-    operation_id: OperationId,
-    generation: MetadataGeneration,
-    query: MetadataQuery,
-    call: Call<Result<MetadataResponse, RequestError>>,
 }

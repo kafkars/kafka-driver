@@ -94,7 +94,12 @@ fn observe_failure(poller: &mut Poller, broker: &mut SingleBroker) -> BrokerErro
         .poll_into(Some(Duration::from_secs(1)), &mut events)
         .unwrap_or_else(|error| panic!("poll broker failure: {error}"));
     for event in events {
-        if let Err(error) = broker.observe(poller, event, kafka_driver_core::Moment::ORIGIN) {
+        if let Err(error) = broker.observe(
+            poller,
+            event,
+            kafka_driver_core::Moment::ORIGIN,
+            kafka_driver_core::OutcomeStamp::ORIGIN,
+        ) {
             return error;
         }
     }

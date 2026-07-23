@@ -1,12 +1,13 @@
 //! Exact metadata-route invalidation through the deterministic generation fence.
 
-use kafka_driver_core::{BrokerRoute, MetadataDisposition, MetadataInput, Moment, PartitionRoute};
+use kafka_driver_core::{
+    BrokerRoute, EvidenceStamp, MetadataDisposition, MetadataInput, Moment, PartitionRoute,
+};
 
 use crate::{
     InvalidationDisposition,
     api::CallIds,
-    completion::CompletionSender,
-    reactor::{Poller, broker::SingleBroker},
+    reactor::{Poller, RouteInvalidation, broker::SingleBroker},
 };
 
 use super::{MetadataOwner, MetadataOwnerError};
@@ -14,13 +15,14 @@ use super::{MetadataOwner, MetadataOwnerError};
 impl MetadataOwner {
     pub(in crate::reactor) fn invalidate_broker_route(
         &mut self,
-        route: BrokerRoute,
+        invalidation: RouteInvalidation<BrokerRoute>,
         broker: &mut SingleBroker,
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
-        completion: CompletionSender<InvalidationDisposition>,
+        evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
+        let (route, observed_at, completion) = invalidation.into_parts();
         if let Some(disposition) = self.invalidations.duplicate_controller(route) {
             let _ = completion.complete(disposition);
             return Ok(());
@@ -32,27 +34,30 @@ impl MetadataOwner {
         let operation_id = self.reserve_operation()?;
         let transition = self.machine.apply(MetadataInput::InvalidateBrokerRoute {
             route,
+            observed_at,
             operation_id,
         });
         let disposition = transition.disposition();
         if waits_for_evidence(disposition) {
-            self.invalidations.push_controller(route, completion);
+            self.invalidations
+                .push_controller(route, observed_at, completion);
         } else {
             let _ = completion.complete(immediate_disposition(disposition));
         }
-        self.interpret(transition, broker, poller, now, call_ids)?;
+        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
         Ok(())
     }
 
     pub(in crate::reactor) fn invalidate_partition_route(
         &mut self,
-        route: PartitionRoute,
+        invalidation: RouteInvalidation<PartitionRoute>,
         broker: &mut SingleBroker,
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
-        completion: CompletionSender<InvalidationDisposition>,
+        evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
+        let (route, observed_at, completion) = invalidation.into_parts();
         if let Some(disposition) = self.invalidations.duplicate_partition(&route) {
             let _ = completion.complete(disposition);
             return Ok(());
@@ -65,15 +70,17 @@ impl MetadataOwner {
         let barrier = route.clone();
         let transition = self.machine.apply(MetadataInput::InvalidatePartitionRoute {
             route,
+            observed_at,
             operation_id,
         });
         let disposition = transition.disposition();
         if waits_for_evidence(disposition) {
-            self.invalidations.push_partition(barrier, completion);
+            self.invalidations
+                .push_partition(barrier, observed_at, completion);
         } else {
             let _ = completion.complete(immediate_disposition(disposition));
         }
-        self.interpret(transition, broker, poller, now, call_ids)?;
+        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
         Ok(())
     }
 }

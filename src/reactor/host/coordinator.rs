@@ -1,6 +1,6 @@
 //! Host-phase integration for generated coordinator discovery and waiter routing.
 
-use crate::{RequestError, RouteReceipt};
+use crate::{RequestError, api::RouteFact};
 
 use super::{HostState, Reactor, ReactorError, routing::bind_route};
 
@@ -10,6 +10,7 @@ impl Reactor {
             return Ok(false);
         }
         let now = self.clock.now().map_err(ReactorError::clock)?;
+        let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         let (progress, waiting) = {
             let Some(coordinator) = &mut self.coordinator else {
                 return Ok(false);
@@ -18,7 +19,7 @@ impl Reactor {
                 return Ok(false);
             };
             let progress = coordinator
-                .drive(seed, &self.poller, now, &self.call_ids)
+                .drive(seed, &self.poller, now, &self.call_ids, evidence)
                 .map_err(ReactorError::coordinator)?;
             let waiting = coordinator.drain_waiters(now);
             (progress, waiting)
@@ -27,10 +28,8 @@ impl Reactor {
         let waiting_more = waiting.more_work();
         for routed in waiting.into_routed() {
             let route = self.coordinator_broker_route(routed.route());
-            let receipt = RouteReceipt::Coordinator {
-                route: routed.route().clone(),
-            };
-            let Ok(request) = bind_route(routed.into_request(), receipt) else {
+            let fact = RouteFact::Coordinator(routed.route().clone());
+            let Ok(request) = bind_route(routed.into_request(), fact) else {
                 continue;
             };
             match route {

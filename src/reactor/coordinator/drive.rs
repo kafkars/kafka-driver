@@ -1,6 +1,6 @@
 //! Fair observation of generated coordinator discovery completions.
 
-use kafka_driver_core::{ConnectionPhase, CoordinatorInput, Moment, OperationId};
+use kafka_driver_core::{ConnectionPhase, CoordinatorInput, EvidenceStamp, Moment, OperationId};
 use kafka_wire::FindCoordinatorResponse;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
     reactor::{Poller, broker::SingleBroker},
 };
 
-use super::{CoordinatorOwner, CoordinatorOwnerError, entry::PendingCoordinator};
+use super::{CoordinatorOwner, CoordinatorOwnerError, CoordinatorStep, entry::PendingCoordinator};
 
 impl CoordinatorOwner {
     pub(in crate::reactor) fn drive(
@@ -18,6 +18,7 @@ impl CoordinatorOwner {
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
+        evidence: EvidenceStamp,
     ) -> Result<bool, CoordinatorOwnerError> {
         let mut progress = 0;
         progress += self.observe_completions(
@@ -25,11 +26,12 @@ impl CoordinatorOwner {
             poller,
             now,
             call_ids,
+            evidence,
             self.limits.turn_budget().get(),
         )?;
         let remaining = self.limits.turn_budget().get() - progress;
         if remaining != 0 {
-            progress += self.start_requested(broker, poller, now, call_ids, remaining)?;
+            progress += self.start_requested(broker, poller, now, call_ids, evidence, remaining)?;
         }
         Ok(progress != 0)
     }
@@ -40,6 +42,7 @@ impl CoordinatorOwner {
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
+        evidence: EvidenceStamp,
         budget: usize,
     ) -> Result<usize, CoordinatorOwnerError> {
         let len = self.entries.len();
@@ -49,7 +52,7 @@ impl CoordinatorOwner {
                 break;
             }
             let index = (self.cursor + offset) % len;
-            if self.observe(index, broker, poller, now, call_ids)? {
+            if self.observe(index, broker, poller, now, call_ids, evidence)? {
                 completed += 1;
                 self.cursor = (index + 1) % len;
             }
@@ -63,6 +66,7 @@ impl CoordinatorOwner {
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
+        evidence: EvidenceStamp,
         budget: usize,
     ) -> Result<usize, CoordinatorOwnerError> {
         if broker.state().phase() != ConnectionPhase::Ready {
@@ -83,7 +87,14 @@ impl CoordinatorOwner {
             let transition = self.entries[index]
                 .machine
                 .apply(CoordinatorInput::Resolve { operation_id });
-            self.interpret(index, transition, broker, poller, now, call_ids)?;
+            self.interpret(
+                CoordinatorStep::new(index, transition),
+                broker,
+                poller,
+                now,
+                call_ids,
+                evidence,
+            )?;
             started += 1;
             self.cursor = (index + 1) % len;
         }
@@ -97,6 +108,7 @@ impl CoordinatorOwner {
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
+        evidence: EvidenceStamp,
     ) -> Result<bool, CoordinatorOwnerError> {
         let Some(result) = self
             .pending(index)
@@ -116,7 +128,14 @@ impl CoordinatorOwner {
             Ok(Err(_)) | Err(_) => discovery_failed(&pending, followup_operation_id),
         };
         let transition = self.entries[index].machine.apply(input);
-        self.interpret(index, transition, broker, poller, now, call_ids)?;
+        self.interpret(
+            CoordinatorStep::new(index, transition),
+            broker,
+            poller,
+            now,
+            call_ids,
+            evidence,
+        )?;
         self.entries[index].settle_invalidation();
         self.waiters.begin_scan();
         Ok(true)
@@ -136,6 +155,7 @@ impl CoordinatorOwner {
                 epoch: pending.epoch,
                 broker_id,
                 endpoint,
+                evidence: pending.evidence,
                 followup_operation_id,
             },
             Err(_) => discovery_failed(pending, followup_operation_id),

@@ -5,6 +5,7 @@ mod identity;
 mod invalidation;
 mod invalidation_wait;
 mod owner;
+mod pending;
 mod request;
 mod routing;
 mod waiting;

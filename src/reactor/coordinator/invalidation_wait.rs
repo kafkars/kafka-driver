@@ -1,26 +1,32 @@
 //! One bounded public invalidation barrier per coordinator key.
 
-use kafka_driver_core::{CoordinatorEpoch, CoordinatorState};
+use kafka_driver_core::{CoordinatorRoute, CoordinatorState, OutcomeStamp};
 
 use crate::{InvalidationDisposition, completion::CompletionSender};
 
 use super::entry::CoordinatorEntry;
 
 pub(super) struct CoordinatorInvalidation {
-    after: CoordinatorEpoch,
+    target: CoordinatorRoute,
+    observed_at: OutcomeStamp,
     completion: CompletionSender<InvalidationDisposition>,
 }
 
 impl CoordinatorInvalidation {
     pub(super) const fn new(
-        after: CoordinatorEpoch,
+        target: CoordinatorRoute,
+        observed_at: OutcomeStamp,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Self {
-        Self { after, completion }
+        Self {
+            target,
+            observed_at,
+            completion,
+        }
     }
 
-    pub(super) const fn after(&self) -> CoordinatorEpoch {
-        self.after
+    pub(super) fn matches(&self, route: &CoordinatorRoute) -> bool {
+        self.target == *route
     }
 }
 
@@ -30,7 +36,9 @@ impl CoordinatorEntry {
             return;
         };
         let disposition = match self.machine.current() {
-            Some(route) if route.epoch() > pending.after => Some(InvalidationDisposition::Applied),
+            Some(route) if route.evidence_stamp().is_after(pending.observed_at) => {
+                Some(InvalidationDisposition::Applied)
+            }
             _ if matches!(self.machine.state(), CoordinatorState::Unknown { .. }) => {
                 Some(InvalidationDisposition::Unavailable)
             }

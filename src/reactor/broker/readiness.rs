@@ -1,6 +1,6 @@
 //! Fairness-bounded socket progress from one generation-checked readiness event.
 
-use kafka_driver_core::TransportFailure;
+use kafka_driver_core::{OutcomeStamp, TransportFailure};
 
 use crate::reactor::{
     PollInterest, Poller, Readiness,
@@ -17,13 +17,14 @@ impl SingleBroker {
         token: ResourceToken,
         readiness: Readiness,
         now: kafka_driver_core::Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerError> {
         let Some((identity, _)) = self.resources.get_mut(token) else {
             return Ok(false);
         };
         let mut progress = false;
         if readiness.is_readable() {
-            progress |= self.drive_read(poller, token, identity, now)?;
+            progress |= self.drive_read(poller, token, identity, now, observed_at)?;
         }
         if self.resource_token == Some(token) && readiness.is_writable() {
             progress |= self.drive_write(poller, token, identity)?;
@@ -41,8 +42,9 @@ impl SingleBroker {
         &mut self,
         poller: &Poller,
         now: kafka_driver_core::Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerError> {
-        let progress = self.continue_connection_io(poller, now)?;
+        let progress = self.continue_connection_io(poller, now, observed_at)?;
         self.reconcile_connection(poller, now)?;
         Ok(progress)
     }
@@ -51,6 +53,7 @@ impl SingleBroker {
         &mut self,
         poller: &Poller,
         now: kafka_driver_core::Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerError> {
         let Some(token) = self.resource_token else {
             self.retry_read = false;
@@ -64,7 +67,7 @@ impl SingleBroker {
         };
         let mut progress = false;
         if read {
-            progress |= self.drive_read(poller, token, identity, now)?;
+            progress |= self.drive_read(poller, token, identity, now, observed_at)?;
         }
         if self.resource_token == Some(token) && write {
             progress |= self.drive_write(poller, token, identity)?;
@@ -86,6 +89,7 @@ impl SingleBroker {
         token: ResourceToken,
         identity: ResourceIdentity,
         now: kafka_driver_core::Moment,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerError> {
         let result = {
             let Some((observed, connection)) = self.resources.get_mut(token) else {
@@ -103,7 +107,7 @@ impl SingleBroker {
                 return Ok(true);
             }
         };
-        let processed = self.process_frames(poller, identity, now)?;
+        let processed = self.process_frames(poller, identity, now, observed_at)?;
         self.retry_read = matches!(
             progress.state(),
             ReadState::BudgetExhausted | ReadState::Interrupted

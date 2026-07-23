@@ -5,7 +5,7 @@ use std::num::NonZeroU16;
 use crate::{
     BrokerEndpoint, BrokerId, CoordinatorDisposition, CoordinatorEffect, CoordinatorEpoch,
     CoordinatorFollowup, CoordinatorInput, CoordinatorKey, CoordinatorKind, CoordinatorMachine,
-    CoordinatorRoute, CoordinatorState, HostName, OperationId,
+    CoordinatorRoute, CoordinatorState, EvidenceStamp, HostName, OperationId, OutcomeStamp,
 };
 
 #[test]
@@ -94,10 +94,12 @@ fn exact_route_invalidation_refreshes_and_stale_route_is_ignored() {
 
     let stale = machine.apply(CoordinatorInput::Invalidate {
         route: stale_route,
+        observed_at: OutcomeStamp::ORIGIN,
         operation_id: operation(2),
     });
     let refreshed = machine.apply(CoordinatorInput::Invalidate {
         route: current,
+        observed_at: OutcomeStamp::ORIGIN,
         operation_id: operation(3),
     });
 
@@ -121,6 +123,7 @@ fn invalidation_during_active_discovery_withdraws_route_and_requires_followup() 
 
     let invalidated = machine.apply(CoordinatorInput::Invalidate {
         route: failed,
+        observed_at: OutcomeStamp::ORIGIN,
         operation_id: operation(3),
     });
 
@@ -217,6 +220,7 @@ fn success(
         broker_id: BrokerId::new(raw_broker)
             .unwrap_or_else(|error| panic!("valid broker rejected: {error}")),
         endpoint: endpoint(raw_broker),
+        evidence: EvidenceStamp::ORIGIN,
         followup_operation_id: operation(raw_followup),
     }
 }

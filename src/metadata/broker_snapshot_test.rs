@@ -9,7 +9,7 @@ use kafka_driver_core::{
 use kafka_wire::{MetadataResponse, metadata_response::MetadataResponseBroker};
 use kafka_wire_core::StrBytes;
 
-use super::{MetadataBuildError, snapshot_from_response};
+use super::{MetadataBuildError, MetadataResponseProvenance, snapshot_from_response};
 
 #[test]
 fn valid_membership_is_canonical_and_issues_a_controller_route() {
@@ -33,6 +33,12 @@ fn valid_membership_is_canonical_and_issues_a_controller_route() {
         BrokerId::new(9).ok()
     );
     assert_eq!(snapshot.generation(), generation(7));
+    assert_eq!(
+        snapshot
+            .controller_route()
+            .map(|route| route.evidence_stamp().get()),
+        Some(7)
+    );
 }
 
 #[test]
@@ -176,9 +182,12 @@ fn build(
     };
     snapshot_from_response(
         response,
-        generation(raw_generation),
-        kafka_driver_core::OperationId::from_raw(raw_generation),
-        &MetadataQuery::Cluster,
+        MetadataResponseProvenance::new(
+            generation(raw_generation),
+            kafka_driver_core::EvidenceStamp::from_raw(raw_generation),
+            kafka_driver_core::OperationId::from_raw(raw_generation),
+            &MetadataQuery::Cluster,
+        ),
         None,
         BrokerDirectoryLimits::new(limit),
         kafka_driver_core::PartitionLeaderLimits::default(),
