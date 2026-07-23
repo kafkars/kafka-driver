@@ -79,6 +79,8 @@ impl BrokerChild {
     pub(super) fn complete(
         &mut self,
         outcome: DnsOutcome,
+        poller: &Poller,
+        now: Moment,
     ) -> Result<ChildResolution, BrokerSetError> {
         let transition = self
             .resolution
@@ -97,7 +99,9 @@ impl BrokerChild {
                 let Some(connection) = &mut self.connection else {
                     return Err(BrokerSetError::UnexpectedResolutionEffect);
                 };
-                connection.replace_resolved_addresses(endpoint.clone(), addresses.clone());
+                connection
+                    .finish_address_refresh(endpoint.clone(), addresses.clone(), poller, now)
+                    .map_err(BrokerSetError::Broker)?;
                 Ok(ChildResolution::Refreshed)
             }
             [
@@ -119,6 +123,12 @@ impl BrokerChild {
             [BrokerResolutionEffect::Failed { failure, .. }] if self.refresh_in_flight => {
                 self.refresh_in_flight = false;
                 self.last_dns_failure = Some(*failure);
+                let Some(connection) = &mut self.connection else {
+                    return Err(BrokerSetError::UnexpectedResolutionEffect);
+                };
+                connection
+                    .fail_address_refresh()
+                    .map_err(BrokerSetError::Broker)?;
                 Ok(ChildResolution::RefreshFailed)
             }
             [BrokerResolutionEffect::Failed { failure, .. }] => {
@@ -163,7 +173,9 @@ impl BrokerChild {
         let effects = transition.into_effects();
         let [BrokerResolutionEffect::Resolve { request }] = effects.as_slice() else {
             if let Some(connection) = &mut self.connection {
-                connection.request_address_refresh(endpoint);
+                connection
+                    .restore_address_refresh()
+                    .map_err(BrokerSetError::Broker)?;
             }
             return Err(BrokerSetError::UnexpectedResolutionEffect);
         };

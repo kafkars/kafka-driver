@@ -19,6 +19,16 @@ impl SingleBroker {
         now: Moment,
     ) -> Result<(), BrokerError> {
         let epoch = match self.broker.state() {
+            BrokerState::Refreshing { .. } => {
+                let (addresses, security, sasl) = config.into_parts();
+                if matches!(&addresses, crate::config::BrokerAddresses::Direct(_)) {
+                    return Err(BrokerError::MissingEffect);
+                }
+                let failed_epoch = self.refresh_epoch()?;
+                self.replace_connection_parts(addresses, security, sasl);
+                self.resume_after_refresh(failed_epoch, poller, now)?;
+                return Ok(());
+            }
             BrokerState::Backoff { .. } => {
                 self.replace_connection_config(config);
                 return Ok(());
@@ -70,6 +80,15 @@ impl SingleBroker {
 
     fn replace_connection_config(&mut self, config: BrokerConfig) {
         let (addresses, security, sasl) = config.into_parts();
+        self.replace_connection_parts(addresses, security, sasl);
+    }
+
+    fn replace_connection_parts(
+        &mut self,
+        addresses: crate::config::BrokerAddresses,
+        security: crate::config::BrokerSecurity,
+        sasl: Option<crate::SaslConfig>,
+    ) {
         self.entropy = AddressRotation::entropy_for(&addresses);
         self.addresses = AddressRotation::new(addresses);
         self.address_refresh = None;

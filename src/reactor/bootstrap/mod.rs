@@ -7,4 +7,4 @@ mod owner;
 mod owner_test;
 
 pub(in crate::reactor) use error::BootstrapOwnerError;
-pub(in crate::reactor) use owner::{BootstrapAction, BootstrapOwner};
+pub(in crate::reactor) use owner::{BootstrapAction, BootstrapOwner, ResolvedSeed};

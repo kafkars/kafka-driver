@@ -4,24 +4,30 @@ use super::{Reactor, ReactorError};
 
 impl Reactor {
     pub(super) fn schedule_address_refreshes(&mut self) -> Result<bool, ReactorError> {
-        let seed = self.brokers.take_seed_address_refresh();
+        let seed_refresh = self.brokers.take_seed_address_refresh().is_some();
         let Some(resolution) = &mut self.resolution else {
-            if let Some(endpoint) = seed {
-                self.brokers.restore_seed_address_refresh(endpoint);
+            if seed_refresh {
+                self.brokers
+                    .restore_seed_address_refresh()
+                    .map_err(ReactorError::broker_set)?;
             }
             return Ok(false);
         };
         let mut scheduled = false;
-        if let Some(endpoint) = seed {
+        if seed_refresh {
             match resolution.restart_bootstrap() {
                 Ok(restarted) => scheduled |= restarted,
                 Err(error) => {
-                    self.brokers.restore_seed_address_refresh(endpoint);
+                    self.brokers
+                        .restore_seed_address_refresh()
+                        .map_err(ReactorError::broker_set)?;
                     return Err(ReactorError::host(std::io::Error::other(error)));
                 }
             }
             if !scheduled {
-                self.brokers.restore_seed_address_refresh(endpoint);
+                self.brokers
+                    .restore_seed_address_refresh()
+                    .map_err(ReactorError::broker_set)?;
             }
         }
         let Some(lane) = self.brokers.take_address_refresh() else {

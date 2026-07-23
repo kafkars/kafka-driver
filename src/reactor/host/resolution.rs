@@ -13,10 +13,10 @@ use kafka_driver_core::DnsRequest;
 
 use crate::{
     ResolverLimits,
-    config::{BootstrapConfig, BrokerConfig},
+    config::BootstrapConfig,
     reactor::{
         ReactorError, WakeHandle,
-        bootstrap::{BootstrapAction, BootstrapOwner},
+        bootstrap::{BootstrapAction, BootstrapOwner, ResolvedSeed},
         entropy::JitterEntropy,
         resolver::{
             ResolutionOwner, Resolver, ResolverEffectIds, ResolverOwnership, ResolverShutdown,
@@ -149,9 +149,9 @@ impl NameResolution {
                             self.submit(permit, request)?;
                             self.bootstrap_in_flight = true;
                         }
-                        BootstrapAction::Install(config) if broker.is_none() => {
+                        BootstrapAction::Install(seed) if broker.is_none() => {
                             self.cancel(permit);
-                            broker = Some(config);
+                            broker = Some(seed);
                         }
                         BootstrapAction::Install(_) => {
                             self.cancel(permit);
@@ -220,15 +220,16 @@ impl Reactor {
         Ok(turn)
     }
 
-    fn install_broker(&mut self, config: BrokerConfig, now: Moment) -> Result<(), ReactorError> {
+    fn install_broker(&mut self, seed: ResolvedSeed, now: Moment) -> Result<(), ReactorError> {
         if self.brokers.has_seed() {
             return self
                 .brokers
-                .replace_seed_endpoint(config, &self.poller, now)
+                .replace_seed_endpoint(seed, &self.poller, now)
+                .map(|_| ())
                 .map_err(ReactorError::broker_set);
         }
         self.brokers
-            .install_seed(config, &self.poller, now)
+            .install_resolved_seed(seed, &self.poller, now)
             .map_err(ReactorError::broker_set)
     }
 }

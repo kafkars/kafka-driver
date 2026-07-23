@@ -8,8 +8,8 @@ use std::{
 
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
-    BrokerState, DnsOutcome, EffectId, HostName, IpAddress, MetadataGeneration, Moment,
-    ResolutionLimits, ResolvedAddress, ResolvedAddressSet,
+    DnsOutcome, EffectId, HostName, IpAddress, MetadataGeneration, Moment, ResolutionLimits,
+    ResolvedAddress, ResolvedAddressSet,
 };
 use kafka_wire::ApiVersionsRequest;
 
@@ -65,9 +65,10 @@ fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
         )
         .unwrap_or_else(|error| panic!("complete initial resolution: {error}"));
     observe_refusal_if_needed(&mut poller, &mut brokers, lane);
-    let BrokerState::Backoff { deadline, .. } = connection(&brokers, lane).broker_state() else {
-        panic!("refused candidate must enter backoff");
-    };
+    assert_eq!(
+        connection(&brokers, lane).broker_state().phase(),
+        kafka_driver_core::BrokerPhase::Refreshing
+    );
     assert_eq!(brokers.address_refreshes.len(), 1);
 
     // When
@@ -88,9 +89,14 @@ fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
             Moment::ORIGIN,
         )
         .unwrap_or_else(|error| panic!("complete address refresh: {error}"));
+    let kafka_driver_core::BrokerState::Backoff { deadline, .. } =
+        connection(&brokers, lane).broker_state()
+    else {
+        panic!("fresh addresses must retain the original reconnect backoff");
+    };
     brokers
         .fire_due(&poller, deadline)
-        .unwrap_or_else(|error| panic!("deliver reconnect deadline: {error}"));
+        .unwrap_or_else(|error| panic!("fire refreshed reconnect: {error}"));
     let (mut peer, _) = available
         .accept()
         .unwrap_or_else(|error| panic!("accept refreshed broker: {error}"));
@@ -108,7 +114,9 @@ fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
 }
 
 fn observe_refusal_if_needed(poller: &mut Poller, brokers: &mut BrokerSet, lane: BrokerLane) {
-    if connection(brokers, lane).broker_state().phase() == kafka_driver_core::BrokerPhase::Backoff {
+    if connection(brokers, lane).broker_state().phase()
+        == kafka_driver_core::BrokerPhase::Refreshing
+    {
         return;
     }
     let mut events = Vec::with_capacity(2);

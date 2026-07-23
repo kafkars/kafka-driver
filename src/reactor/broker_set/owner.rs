@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, num::NonZeroUsize};
 
-use kafka_driver_core::{BrokerDirectory, MetadataGeneration};
+use kafka_driver_core::{BrokerDirectory, ConnectionEpoch, MetadataGeneration};
 
 use crate::{
     MetadataLimits, TrafficClass,
@@ -18,6 +18,7 @@ use super::{
 /// Shard-local owner of a seed connection and disjoint broker token namespaces.
 pub(in crate::reactor) struct BrokerSet {
     pub(super) seed: Option<SingleBroker>,
+    pub(super) seed_generation: Option<ConnectionEpoch>,
     pub(super) directory: Option<BrokerDirectory>,
     pub(super) broker_limits: BrokerLimits,
     pub(super) broker_capacity: NonZeroUsize,
@@ -78,6 +79,7 @@ impl BrokerSet {
             .ok_or(BrokerSetError::OwnerCapacityOverflow)?;
         Ok(Self {
             seed: None,
+            seed_generation: None,
             directory: None,
             broker_limits,
             broker_capacity,

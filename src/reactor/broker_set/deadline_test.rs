@@ -78,7 +78,7 @@ fn dns_success_without_socket_readiness_still_expires_the_waiting_call() {
 }
 
 #[test]
-fn reconnect_backoff_cannot_outlive_a_waiting_call_deadline() {
+fn endpoint_refresh_cannot_outlive_a_waiting_call_deadline() {
     // Given: the selected address refuses its initial connection and enters backoff.
     let listener = TcpListener::bind("127.0.0.1:0")
         .unwrap_or_else(|error| panic!("reserve refused broker address: {error}"));
@@ -118,7 +118,10 @@ fn reconnect_backoff_cannot_outlive_a_waiting_call_deadline() {
         )
         .unwrap_or_else(|error| panic!("complete DNS: {error}"));
     observe_once(&mut poller, &mut brokers);
-    assert_eq!(brokers.child_broker_phase(lane), Some(BrokerPhase::Backoff));
+    assert_eq!(
+        brokers.child_broker_phase(lane),
+        Some(BrokerPhase::Refreshing)
+    );
 
     // When: the call deadline arrives before the reconnect timer.
     assert_eq!(brokers.next_deadline(), Some(Moment::from_nanos(10)));
@@ -128,7 +131,10 @@ fn reconnect_backoff_cannot_outlive_a_waiting_call_deadline() {
 
     // Then: retry policy retains ownership, but the accepted call is terminal.
     assert!(progress.made_progress());
-    assert_eq!(brokers.child_broker_phase(lane), Some(BrokerPhase::Backoff));
+    assert_eq!(
+        brokers.child_broker_phase(lane),
+        Some(BrokerPhase::Refreshing)
+    );
     assert_eq!(brokers.waiting_calls(), 0);
     assert!(matches!(
         call.wait(),

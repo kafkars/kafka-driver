@@ -2,7 +2,7 @@
 
 use kafka_driver_core::DnsOutcome;
 
-use crate::{config::BrokerConfig, reactor::broker_set::BrokerLane};
+use crate::reactor::{bootstrap::ResolvedSeed, broker_set::BrokerLane};
 
 pub(super) struct BrokerDnsOutcome {
     pub(super) lane: BrokerLane,
@@ -13,7 +13,7 @@ pub(super) struct ResolutionProgress {
     pub(super) outcomes: usize,
     pub(super) submissions: usize,
     pub(super) more_work: bool,
-    pub(super) broker: Option<BrokerConfig>,
+    pub(super) broker: Option<ResolvedSeed>,
     pub(super) restarted: bool,
 }
 

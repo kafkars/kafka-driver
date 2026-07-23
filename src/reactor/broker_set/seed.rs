@@ -4,7 +4,7 @@ use kafka_driver_core::{BrokerState, ConnectionState, Moment};
 
 use crate::{
     config::BrokerConfig,
-    reactor::{Poller, broker::SingleBroker, resource::ResourceNamespace},
+    reactor::{Poller, bootstrap::ResolvedSeed, broker::SingleBroker, resource::ResourceNamespace},
     request::ErasedRequest,
 };
 
@@ -33,6 +33,18 @@ impl BrokerSet {
         Ok(())
     }
 
+    pub(in crate::reactor) fn install_resolved_seed(
+        &mut self,
+        seed: ResolvedSeed,
+        poller: &Poller,
+        now: Moment,
+    ) -> Result<(), BrokerSetError> {
+        let generation = seed.generation();
+        self.install_seed(seed.into_config(), poller, now)?;
+        self.seed_generation = Some(generation);
+        Ok(())
+    }
+
     pub(in crate::reactor) const fn has_seed(&self) -> bool {
         self.seed.is_some()
     }
@@ -51,27 +63,39 @@ impl BrokerSet {
 
     pub(in crate::reactor) fn restore_seed_address_refresh(
         &mut self,
-        endpoint: kafka_driver_core::BrokerEndpoint,
-    ) {
+    ) -> Result<(), BrokerSetError> {
         if let Some(seed) = &mut self.seed {
-            seed.request_address_refresh(endpoint);
+            seed.restore_address_refresh()
+                .map_err(BrokerSetError::Broker)?;
         }
+        Ok(())
     }
 
     pub(in crate::reactor) fn replace_seed_endpoint(
         &mut self,
-        config: BrokerConfig,
+        seed: ResolvedSeed,
         poller: &Poller,
         now: Moment,
-    ) -> Result<(), BrokerSetError> {
-        let Some(seed) = &mut self.seed else {
+    ) -> Result<bool, BrokerSetError> {
+        let generation = seed.generation();
+        let Some(current) = self.seed_generation else {
+            return Err(BrokerSetError::UnexpectedResolutionEffect);
+        };
+        if generation <= current {
+            return Ok(false);
+        }
+        let config = seed.into_config();
+        let Some(current_seed) = &mut self.seed else {
             return Err(BrokerSetError::SeedMissing);
         };
         if !config.is_resolved() {
             return Err(BrokerSetError::UnexpectedResolutionEffect);
         }
-        seed.replace_exhausted_endpoint(config, poller, now)
-            .map_err(BrokerSetError::Broker)
+        current_seed
+            .replace_exhausted_endpoint(config, poller, now)
+            .map_err(BrokerSetError::Broker)?;
+        self.seed_generation = Some(generation);
+        Ok(true)
     }
 
     pub(in crate::reactor) fn submit_seed(

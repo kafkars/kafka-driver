@@ -78,7 +78,7 @@ impl BrokerSet {
             .children
             .get_mut(index)
             .ok_or(BrokerSetError::UnknownBrokerChild)?
-            .complete(outcome)?;
+            .complete(outcome, poller, now)?;
         let ChildResolution::Resolved(pending) = action else {
             self.sync_lane(lane)?;
             return Ok(!matches!(action, ChildResolution::Ignored));

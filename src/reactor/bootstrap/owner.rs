@@ -13,8 +13,28 @@ use super::BootstrapOwnerError;
 /// One external action returned to the shard-owned resolver interpreter.
 pub(in crate::reactor) enum BootstrapAction {
     Resolve(kafka_driver_core::DnsRequest),
-    Install(BrokerConfig),
+    Install(ResolvedSeed),
     RetryScheduled,
+}
+
+/// Complete endpoint-bound seed configuration fenced by its bootstrap generation.
+pub(in crate::reactor) struct ResolvedSeed {
+    generation: ConnectionEpoch,
+    config: BrokerConfig,
+}
+
+impl ResolvedSeed {
+    pub(in crate::reactor) const fn new(generation: ConnectionEpoch, config: BrokerConfig) -> Self {
+        Self { generation, config }
+    }
+
+    pub(in crate::reactor) const fn generation(&self) -> ConnectionEpoch {
+        self.generation
+    }
+
+    pub(in crate::reactor) fn into_config(self) -> BrokerConfig {
+        self.config
+    }
 }
 
 /// Reactor-side owner joining pure bootstrap policy to the blocking DNS worker.
@@ -121,17 +141,19 @@ impl BootstrapOwner {
             [BootstrapEffect::Resolve { request }] => Ok(BootstrapAction::Resolve(request.clone())),
             [
                 BootstrapEffect::Resolved {
+                    epoch,
                     endpoint,
                     addresses,
                     ..
                 },
             ] => {
                 let _ = self.retry.apply(BootstrapRetryInput::Succeeded)?;
-                Ok(BootstrapAction::Install(
+                Ok(BootstrapAction::Install(ResolvedSeed::new(
+                    *epoch,
                     self.broker
                         .clone()
                         .at_resolved(endpoint.clone(), addresses.clone()),
-                ))
+                )))
             }
             _ => Err(BootstrapOwnerError::UnexpectedEffect),
         }

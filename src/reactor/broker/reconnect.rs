@@ -57,43 +57,53 @@ impl SingleBroker {
             self.observe_closed_state();
             let epoch = self.connection.epoch();
             let broker_phase = self.broker.state().phase();
-            if matches!(
-                broker_phase,
-                BrokerPhase::Connecting | BrokerPhase::Available
-            ) && let Some(endpoint) = self.addresses.failed()
-            {
-                self.address_refresh = Some(endpoint);
-            }
             let connection_state = self.connection.state();
-            let input = match (broker_phase, connection_state) {
+            let permanently_rejected = matches!(
+                (broker_phase, connection_state),
                 (
                     BrokerPhase::Connecting,
                     ConnectionState::Closed {
                         reason: kafka_driver_core::CloseReason::AuthenticationFailed(failure),
                         ..
                     },
+                ) if failure.disposition() == AuthenticationFailureDisposition::Permanent
+            );
+            let exhausted_endpoint = (!permanently_rejected
+                && matches!(
+                    broker_phase,
+                    BrokerPhase::Connecting | BrokerPhase::Available
+                ))
+            .then(|| self.addresses.failed())
+            .flatten();
+            let input = match (broker_phase, connection_state, exhausted_endpoint) {
+                (
+                    BrokerPhase::Connecting,
+                    ConnectionState::Closed {
+                        reason: kafka_driver_core::CloseReason::AuthenticationFailed(failure),
+                        ..
+                    },
+                    _,
                 ) if failure.disposition() == AuthenticationFailureDisposition::Permanent => {
                     BrokerInput::ConnectionRejected { epoch, failure }
                 }
-                (BrokerPhase::Connecting | BrokerPhase::Available, _) => {
-                    let Some(timer_id) = self.ids.reserve_reconnect_timer() else {
-                        return Err(BrokerError::IdentityExhausted);
-                    };
+                (BrokerPhase::Connecting | BrokerPhase::Available, _, Some(endpoint)) => {
+                    let reconnect = self.reserve_reconnect(now)?;
+                    self.begin_address_refresh(endpoint, epoch);
+                    BrokerInput::EndpointExhausted { epoch, reconnect }
+                }
+                (BrokerPhase::Connecting | BrokerPhase::Available, _, None) => {
                     BrokerInput::ConnectionFailed {
                         epoch,
-                        reconnect: ReconnectSchedule::new(
-                            timer_id,
-                            now,
-                            self.entropy.next_sample(),
-                        ),
+                        reconnect: self.reserve_reconnect(now)?,
                     }
                 }
-                (BrokerPhase::Draining, _) => BrokerInput::ConnectionDrained { epoch },
+                (BrokerPhase::Draining, _, _) => BrokerInput::ConnectionDrained { epoch },
                 (
                     BrokerPhase::Dormant
                     | BrokerPhase::Backoff
                     | BrokerPhase::Refreshing
                     | BrokerPhase::Closed,
+                    _,
                     _,
                 ) => break,
             };
@@ -102,6 +112,18 @@ impl SingleBroker {
             self.interpret_broker_effects(poller, transition.into_effects(), now)?;
         }
         Ok(())
+    }
+
+    fn reserve_reconnect(&mut self, now: Moment) -> Result<ReconnectSchedule, BrokerError> {
+        let timer_id = self
+            .ids
+            .reserve_reconnect_timer()
+            .ok_or(BrokerError::IdentityExhausted)?;
+        Ok(ReconnectSchedule::new(
+            timer_id,
+            now,
+            self.entropy.next_sample(),
+        ))
     }
 
     pub(super) fn interpret_broker_effects(

@@ -26,8 +26,8 @@ use crate::{
 };
 
 use super::{
-    BrokerError, BrokerIds, address_rotation::AddressRotation, failure::transport_failure,
-    limits::BrokerLimits, terminal::expect_no_effects,
+    BrokerError, BrokerIds, address_refresh::AddressRefresh, address_rotation::AddressRotation,
+    failure::transport_failure, limits::BrokerLimits, terminal::expect_no_effects,
 };
 
 /// Single-owner adapter for one broker and its replaceable connection epoch.
@@ -35,7 +35,7 @@ use super::{
 pub(in crate::reactor) struct SingleBroker {
     pub(super) limits: BrokerLimits,
     pub(super) addresses: AddressRotation,
-    pub(super) address_refresh: Option<kafka_driver_core::BrokerEndpoint>,
+    pub(super) address_refresh: Option<AddressRefresh>,
     pub(super) broker: BrokerMachine,
     pub(super) connection: ConnectionMachine,
     pub(super) last_close_reason: Option<kafka_driver_core::CloseReason>,
