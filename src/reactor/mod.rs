@@ -35,6 +35,8 @@ mod command_test;
 #[cfg(test)]
 mod entropy_test;
 #[cfg(test)]
+mod invalidation_test;
+#[cfg(test)]
 mod mailbox_test;
 #[cfg(test)]
 mod wait_queue_test;
@@ -42,7 +44,7 @@ mod wait_queue_test;
 pub(crate) use command::Command;
 pub use error::ReactorError;
 pub use host::{Reactor, TurnOutcome};
-pub(in crate::reactor) use invalidation::RouteInvalidation;
+pub(in crate::reactor) use invalidation::{InvalidationSubscribers, RouteInvalidation};
 pub(crate) use mailbox::{MailboxSender, TrySendError, mailbox};
 pub(in crate::reactor) use poller::{PollEvent, PollInterest, PollWake, Poller, Readiness};
 pub use wake::WakeHandle;

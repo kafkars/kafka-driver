@@ -10,7 +10,7 @@ use crate::{
     reactor::{Poller, RouteInvalidation, broker::SingleBroker},
 };
 
-use super::{MetadataOwner, MetadataOwnerError};
+use super::{MetadataOwner, MetadataOwnerError, invalidation_wait::InvalidationJoin};
 
 impl MetadataOwner {
     pub(in crate::reactor) fn invalidate_broker_route(
@@ -23,10 +23,17 @@ impl MetadataOwner {
         evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
         let (route, observed_at, completion) = invalidation.into_parts();
-        if let Some(disposition) = self.invalidations.duplicate_controller(route) {
-            let _ = completion.complete(disposition);
-            return Ok(());
-        }
+        let completion = match self
+            .invalidations
+            .join_controller(route, observed_at, completion)
+        {
+            InvalidationJoin::Joined => return Ok(()),
+            InvalidationJoin::Full(completion) => {
+                let _ = completion.complete(InvalidationDisposition::Unavailable);
+                return Ok(());
+            }
+            InvalidationJoin::Missing(completion) => completion,
+        };
         if !self.invalidations.has_capacity() {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
@@ -58,10 +65,17 @@ impl MetadataOwner {
         evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
         let (route, observed_at, completion) = invalidation.into_parts();
-        if let Some(disposition) = self.invalidations.duplicate_partition(&route) {
-            let _ = completion.complete(disposition);
-            return Ok(());
-        }
+        let completion = match self
+            .invalidations
+            .join_partition(&route, observed_at, completion)
+        {
+            InvalidationJoin::Joined => return Ok(()),
+            InvalidationJoin::Full(completion) => {
+                let _ = completion.complete(InvalidationDisposition::Unavailable);
+                return Ok(());
+            }
+            InvalidationJoin::Missing(completion) => completion,
+        };
         if !self.invalidations.has_capacity() {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());

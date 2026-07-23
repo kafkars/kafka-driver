@@ -2,17 +2,18 @@
 
 use std::{collections::VecDeque, num::NonZeroUsize};
 
-use kafka_driver_core::{
-    BrokerRoute, MetadataMachine, MetadataQuery, OutcomeStamp, PartitionRoute,
+use kafka_driver_core::{BrokerRoute, MetadataMachine, OutcomeStamp, PartitionRoute};
+
+use crate::{
+    InvalidationDisposition, completion::CompletionSender, reactor::InvalidationSubscribers,
 };
 
-use crate::{InvalidationDisposition, completion::CompletionSender};
-
-use super::MetadataOwner;
+use super::{MetadataOwner, invalidation_target::InvalidationTarget};
 
 pub(super) struct MetadataInvalidations {
     pending: VecDeque<PendingInvalidation>,
     capacity: usize,
+    subscriber_count: usize,
     scan_remaining: usize,
 }
 
@@ -21,42 +22,59 @@ impl MetadataInvalidations {
         Self {
             pending: VecDeque::with_capacity(capacity.get().min(16)),
             capacity: capacity.get(),
+            subscriber_count: 0,
             scan_remaining: 0,
         }
     }
 
-    pub(super) fn duplicate_controller(
-        &self,
+    pub(super) fn join_controller(
+        &mut self,
         route: BrokerRoute,
-    ) -> Option<InvalidationDisposition> {
-        self.pending
+        observed_at: OutcomeStamp,
+        completion: CompletionSender<InvalidationDisposition>,
+    ) -> InvalidationJoin {
+        let Some(index) = self
+            .pending
             .iter()
-            .find_map(|pending| match &pending.target {
-                InvalidationTarget::Controller { route: current, .. } if *current == route => {
-                    Some(InvalidationDisposition::Coalesced)
-                }
-                _ => None,
-            })
+            .position(|pending| pending.target.matches_controller(route))
+        else {
+            return InvalidationJoin::Missing(completion);
+        };
+        if !self.has_capacity() {
+            return InvalidationJoin::Full(completion);
+        }
+        let pending = &mut self.pending[index];
+        pending.target.observe(observed_at);
+        pending.subscribers.subscribe(completion);
+        self.subscriber_count += 1;
+        InvalidationJoin::Joined
     }
 
-    pub(super) fn duplicate_partition(
-        &self,
+    pub(super) fn join_partition(
+        &mut self,
         route: &PartitionRoute,
-    ) -> Option<InvalidationDisposition> {
-        self.pending
+        observed_at: OutcomeStamp,
+        completion: CompletionSender<InvalidationDisposition>,
+    ) -> InvalidationJoin {
+        let Some(index) = self
+            .pending
             .iter()
-            .find_map(|pending| match &pending.target {
-                InvalidationTarget::Partition { route: current, .. }
-                    if current.is_same_fact(route) =>
-                {
-                    Some(InvalidationDisposition::Coalesced)
-                }
-                _ => None,
-            })
+            .position(|pending| pending.target.matches_partition(route))
+        else {
+            return InvalidationJoin::Missing(completion);
+        };
+        if !self.has_capacity() {
+            return InvalidationJoin::Full(completion);
+        }
+        let pending = &mut self.pending[index];
+        pending.target.observe(observed_at);
+        pending.subscribers.subscribe(completion);
+        self.subscriber_count += 1;
+        InvalidationJoin::Joined
     }
 
     pub(super) fn has_capacity(&self) -> bool {
-        self.pending.len() < self.capacity
+        self.subscriber_count < self.capacity
     }
 
     pub(super) fn push_controller(
@@ -66,9 +84,10 @@ impl MetadataInvalidations {
         completion: CompletionSender<InvalidationDisposition>,
     ) {
         self.pending.push_back(PendingInvalidation {
-            target: InvalidationTarget::Controller { route, observed_at },
-            completion,
+            target: InvalidationTarget::controller(route, observed_at),
+            subscribers: InvalidationSubscribers::new(completion),
         });
+        self.subscriber_count += 1;
     }
 
     pub(super) fn push_partition(
@@ -78,9 +97,10 @@ impl MetadataInvalidations {
         completion: CompletionSender<InvalidationDisposition>,
     ) {
         self.pending.push_back(PendingInvalidation {
-            target: InvalidationTarget::Partition { route, observed_at },
-            completion,
+            target: InvalidationTarget::partition(route, observed_at),
+            subscribers: InvalidationSubscribers::new(completion),
         });
+        self.subscriber_count += 1;
     }
 
     pub(super) fn begin_scan(&mut self) {
@@ -100,9 +120,11 @@ impl MetadataInvalidations {
                 break;
             };
             self.scan_remaining -= 1;
-            if let Some(disposition) = settled_disposition(machine, &pending.target) {
-                let _ = pending.completion.complete(disposition);
-                settled += 1;
+            if let Some(disposition) = pending.target.settled(machine) {
+                let subscribers = pending.subscribers.len();
+                pending.subscribers.complete(disposition);
+                self.release(subscribers);
+                settled += subscribers;
             } else {
                 self.pending.push_back(pending);
             }
@@ -120,58 +142,29 @@ impl MetadataInvalidations {
 
     pub(super) fn fail_all(&mut self) {
         for pending in self.pending.drain(..) {
-            let _ = pending
-                .completion
+            pending
+                .subscribers
                 .complete(InvalidationDisposition::Unavailable);
         }
+        self.subscriber_count = 0;
         self.scan_remaining = 0;
     }
-}
 
-fn settled_disposition(
-    machine: &MetadataMachine,
-    target: &InvalidationTarget,
-) -> Option<InvalidationDisposition> {
-    let (revoked, query) = match target {
-        InvalidationTarget::Controller { route, .. } => (
-            machine.controller_revocation_pending(*route),
-            MetadataQuery::Cluster,
-        ),
-        InvalidationTarget::Partition { route, .. } => (
-            machine.partition_revocation_pending(route),
-            MetadataQuery::Topic(route.topic().clone()),
-        ),
-    };
-    let newer = match target {
-        InvalidationTarget::Controller { observed_at, .. } => machine
-            .current()
-            .and_then(kafka_driver_core::MetadataSnapshot::controller_route)
-            .is_some_and(|route| route.evidence_stamp().is_after(*observed_at)),
-        InvalidationTarget::Partition { route, observed_at } => machine
-            .current()
-            .and_then(|snapshot| snapshot.partition_route(route.topic(), route.partition()))
-            .is_some_and(|route| route.evidence_stamp().is_after(*observed_at)),
-    };
-    if !revoked && newer {
-        return Some(InvalidationDisposition::Applied);
+    fn release(&mut self, subscribers: usize) {
+        debug_assert!(subscribers <= self.subscriber_count);
+        self.subscriber_count -= subscribers;
     }
-    (!machine.query_pending(&query)).then_some(InvalidationDisposition::Unavailable)
 }
 
 struct PendingInvalidation {
     target: InvalidationTarget,
-    completion: CompletionSender<InvalidationDisposition>,
+    subscribers: InvalidationSubscribers,
 }
 
-enum InvalidationTarget {
-    Controller {
-        route: BrokerRoute,
-        observed_at: OutcomeStamp,
-    },
-    Partition {
-        route: PartitionRoute,
-        observed_at: OutcomeStamp,
-    },
+pub(super) enum InvalidationJoin {
+    Missing(CompletionSender<InvalidationDisposition>),
+    Joined,
+    Full(CompletionSender<InvalidationDisposition>),
 }
 
 pub(super) struct InvalidationProgress {

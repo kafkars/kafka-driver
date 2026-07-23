@@ -18,6 +18,7 @@ pub(in crate::reactor) struct CoordinatorOwner {
     pub(super) entries: Vec<CoordinatorEntry>,
     pub(super) cursor: usize,
     pub(super) waiters: CoordinatorWaiters,
+    pub(super) invalidation_subscribers: usize,
     operation_ids: CoordinatorOperationIds,
 }
 
@@ -28,6 +29,7 @@ impl CoordinatorOwner {
             entries: Vec::with_capacity(limits.keys().get().min(16)),
             cursor: 0,
             waiters: CoordinatorWaiters::new(limits.waiting_calls(), limits.waiting_bytes()),
+            invalidation_subscribers: 0,
             operation_ids: CoordinatorOperationIds::new(),
         }
     }

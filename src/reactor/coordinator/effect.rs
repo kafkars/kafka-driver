@@ -119,7 +119,7 @@ impl CoordinatorOwner {
             let mut effects = transition.into_effects().into_iter();
             match (effects.next(), effects.next()) {
                 (None, None) => {
-                    self.entries[index].settle_invalidation();
+                    self.settle_invalidation(index);
                     return Ok(());
                 }
                 (

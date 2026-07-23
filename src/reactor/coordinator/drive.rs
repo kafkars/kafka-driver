@@ -136,7 +136,7 @@ impl CoordinatorOwner {
             call_ids,
             evidence,
         )?;
-        self.entries[index].settle_invalidation();
+        self.settle_invalidation(index);
         self.waiters.begin_scan();
         Ok(true)
     }

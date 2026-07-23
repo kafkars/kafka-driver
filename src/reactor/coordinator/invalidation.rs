@@ -30,13 +30,29 @@ impl CoordinatorOwner {
             let _ = completion.complete(InvalidationDisposition::IgnoredStale);
             return Ok(());
         };
-        if let Some(pending) = &self.entries[index].invalidation {
-            let disposition = if pending.matches(&route) {
-                InvalidationDisposition::Coalesced
-            } else {
-                InvalidationDisposition::IgnoredStale
-            };
-            let _ = completion.complete(disposition);
+        if self.entries[index].invalidation.is_some() {
+            if !self.entries[index]
+                .invalidation
+                .as_ref()
+                .is_some_and(|pending| pending.matches(&route))
+            {
+                let _ = completion.complete(InvalidationDisposition::IgnoredStale);
+                return Ok(());
+            }
+            if !self.has_invalidation_capacity() {
+                let _ = completion.complete(InvalidationDisposition::Unavailable);
+                return Ok(());
+            }
+            self.entries[index]
+                .invalidation
+                .as_mut()
+                .unwrap_or_else(|| unreachable!("invalidation existence checked above"))
+                .subscribe(observed_at, completion);
+            self.retain_invalidation_subscriber();
+            return Ok(());
+        }
+        if !self.has_invalidation_capacity() {
+            let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         }
         let barrier = route.clone();
@@ -55,6 +71,7 @@ impl CoordinatorOwner {
                 observed_at,
                 completion,
             ));
+            self.retain_invalidation_subscriber();
         } else {
             let _ = completion.complete(immediate_disposition(disposition));
         }
@@ -104,17 +121,21 @@ impl CoordinatorOwner {
 fn waits_for_evidence(disposition: CoordinatorDisposition) -> bool {
     matches!(
         disposition,
-        CoordinatorDisposition::Applied | CoordinatorDisposition::RefreshQueued
+        CoordinatorDisposition::Applied
+            | CoordinatorDisposition::RefreshQueued
+            | CoordinatorDisposition::Coalesced
     )
 }
 
 fn immediate_disposition(disposition: CoordinatorDisposition) -> InvalidationDisposition {
     match disposition {
-        CoordinatorDisposition::AlreadyKnown | CoordinatorDisposition::Coalesced => {
-            InvalidationDisposition::Coalesced
-        }
         CoordinatorDisposition::IgnoredStale => InvalidationDisposition::IgnoredStale,
-        CoordinatorDisposition::Applied | CoordinatorDisposition::RefreshQueued => {
+        CoordinatorDisposition::AlreadyKnown => {
+            unreachable!("invalidation cannot report already-known resolution")
+        }
+        CoordinatorDisposition::Applied
+        | CoordinatorDisposition::RefreshQueued
+        | CoordinatorDisposition::Coalesced => {
             unreachable!("evidence-bearing disposition")
         }
     }

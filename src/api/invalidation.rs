@@ -10,8 +10,6 @@ use super::{Call, Driver, RouteReceipt, SubmitError};
 pub enum InvalidationDisposition {
     /// Post-failure metadata or discovery evidence crossed the revocation barrier.
     Applied,
-    /// An identical public revocation barrier already owns this demand.
-    Coalesced,
     /// The receipt names a generation or epoch older than current ownership.
     IgnoredStale,
     /// Newer evidence could not be obtained or barrier capacity was unavailable.
@@ -23,8 +21,10 @@ impl Driver {
     ///
     /// Exact admission withdraws the failed fact immediately. This call
     /// completes only after a query started after the failure supplies newer
-    /// evidence; failed discovery completes it as unavailable. A receipt from
-    /// older fact provenance cannot disturb newer routing ownership.
+    /// evidence; identical invalidations subscribe to that same terminal
+    /// outcome and raise its causal watermark when necessary. Failed discovery
+    /// completes every subscriber as unavailable. A receipt from older fact
+    /// provenance cannot disturb newer routing ownership.
     /// Invalidation is bounded ordinary work and may be rejected by the public
     /// mailbox before admission.
     pub fn invalidate(

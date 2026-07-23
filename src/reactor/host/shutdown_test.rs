@@ -18,7 +18,7 @@ use super::{Reactor, TurnOutcome};
 #[test]
 fn zero_wait_turn_returns_while_resolver_shutdown_is_blocked() {
     let (commands, shutdown, mut reactor) = Reactor::new(
-        DriverLimits::default(),
+        &DriverLimits::default(),
         None,
         Arc::new(CallIds::new()),
         Arc::new(Observation::default()),

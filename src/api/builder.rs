@@ -83,7 +83,7 @@ impl DriverBuilder {
         let call_ids = Arc::new(CallIds::new());
         let observation = Arc::new(Observation::default());
         let (commands, shutdown, reactor) = Reactor::new(
-            self.limits,
+            &self.limits,
             Some(target),
             Arc::clone(&call_ids),
             Arc::clone(&observation),

@@ -17,7 +17,7 @@ fn request_expired_during_mailbox_residence_never_reaches_routing() {
     // Given: public submission succeeded 900 ms into the reactor clock's past.
     let call_ids = Arc::new(CallIds::new());
     let (_commands, _shutdown, mut reactor) = Reactor::new(
-        DriverLimits::default(),
+        &DriverLimits::default(),
         None,
         Arc::clone(&call_ids),
         Arc::new(Observation::default()),

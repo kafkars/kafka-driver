@@ -23,7 +23,7 @@ use support::complete_negotiation;
 
 #[test]
 fn embedded_shutdown_completes_once_and_closes_admission() {
-    let (driver, mut reactor, _listener) = build_reactor(DriverLimits::default());
+    let (driver, mut reactor, _listener) = build_reactor(&DriverLimits::default());
     let call = driver.shutdown();
     assert!(call.is_ok());
 
@@ -46,7 +46,7 @@ fn embedded_shutdown_completes_once_and_closes_admission() {
 #[test]
 fn shutdown_subscriber_capacity_rejects_one_more_pending_observer() {
     let limits = DriverLimits::new(NonZeroUsize::MIN, NonZeroUsize::MIN);
-    let (driver, mut reactor, _listener) = build_reactor(limits);
+    let (driver, mut reactor, _listener) = build_reactor(&limits);
     let first = driver.shutdown();
 
     let second = driver.shutdown();
@@ -66,7 +66,7 @@ fn shutdown_subscriber_capacity_rejects_one_more_pending_observer() {
 fn concurrent_shutdown_subscribers_share_one_control_command() {
     let subscriber_count = 8;
     let limits = DriverLimits::new(nonzero(subscriber_count), NonZeroUsize::MIN);
-    let (driver, mut reactor, _listener) = build_reactor(limits);
+    let (driver, mut reactor, _listener) = build_reactor(&limits);
     let start = Arc::new(Barrier::new(subscriber_count));
     let mut subscribers = Vec::with_capacity(subscriber_count);
     for _ in 0..subscriber_count {
@@ -100,7 +100,7 @@ fn concurrent_shutdown_subscribers_share_one_control_command() {
 #[test]
 fn full_request_mailbox_cannot_reject_or_delay_shutdown() {
     let limits = DriverLimits::new(NonZeroUsize::MIN, NonZeroUsize::MIN);
-    let (driver, mut reactor, _listener) = build_reactor(limits);
+    let (driver, mut reactor, _listener) = build_reactor(&limits);
     let request = driver
         .call(ApiVersionsRequest::default(), Duration::from_secs(1))
         .unwrap_or_else(|error| panic!("fill request mailbox: {error}"));
@@ -124,7 +124,7 @@ fn full_request_mailbox_cannot_reject_or_delay_shutdown() {
 
 #[test]
 fn cross_thread_admission_wakes_a_blocked_reactor_turn() {
-    let (driver, mut reactor, listener) = build_reactor(DriverLimits::default());
+    let (driver, mut reactor, listener) = build_reactor(&DriverLimits::default());
     let (mut peer, _) = listener
         .accept()
         .unwrap_or_else(|error| panic!("accept lifecycle connection: {error}"));
@@ -142,7 +142,7 @@ fn cross_thread_admission_wakes_a_blocked_reactor_turn() {
 
 #[test]
 fn explicit_wake_releases_an_idle_embedded_turn() {
-    let (_driver, mut reactor, listener) = build_reactor(DriverLimits::default());
+    let (_driver, mut reactor, listener) = build_reactor(&DriverLimits::default());
     let (mut peer, _) = listener
         .accept()
         .unwrap_or_else(|error| panic!("accept lifecycle connection: {error}"));
@@ -159,7 +159,7 @@ fn explicit_wake_releases_an_idle_embedded_turn() {
 
 #[test]
 fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
-    let (driver, mut reactor, _listener) = build_reactor(DriverLimits::default());
+    let (driver, mut reactor, _listener) = build_reactor(&DriverLimits::default());
     let owner = thread::spawn(move || {
         loop {
             let outcome = reactor
@@ -181,7 +181,7 @@ fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
 
 #[test]
 fn generated_call_before_broker_readiness_is_not_sent_or_left_pending() {
-    let (driver, mut reactor, _listener) = build_reactor(DriverLimits::default());
+    let (driver, mut reactor, _listener) = build_reactor(&DriverLimits::default());
     let call = driver.call(ApiVersionsRequest::default(), Duration::from_secs(1));
     let Ok(call) = call else {
         panic!("request command must enter the mailbox");
@@ -244,14 +244,14 @@ fn generated_call_reaches_a_ready_configured_broker_owner() {
     ));
 }
 
-fn build_reactor(limits: DriverLimits) -> (Driver, Reactor, TcpListener) {
+fn build_reactor(limits: &DriverLimits) -> (Driver, Reactor, TcpListener) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .unwrap_or_else(|error| panic!("bind lifecycle broker: {error}"));
     let address = listener
         .local_addr()
         .unwrap_or_else(|error| panic!("read lifecycle broker address: {error}"));
     let Ok((driver, reactor)) = Driver::builder()
-        .limits(limits)
+        .limits(*limits)
         .broker(address)
         .build_reactor()
     else {

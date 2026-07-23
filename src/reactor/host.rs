@@ -80,7 +80,7 @@ pub struct Reactor {
 
 impl Reactor {
     pub(crate) fn new(
-        limits: DriverLimits,
+        limits: &DriverLimits,
         target: Option<DriverTarget>,
         call_ids: Arc<CallIds>,
         observation: Arc<Observation>,
@@ -131,7 +131,7 @@ impl Reactor {
             command_batch: Vec::with_capacity(limits.command_budget().get()),
             poll_events: Vec::with_capacity(limits.poll_event_budget().get()),
             commands,
-            limits,
+            limits: *limits,
             poller,
             brokers,
             resolution,

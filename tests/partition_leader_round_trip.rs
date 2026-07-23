@@ -143,8 +143,11 @@ fn assert_exact_topic_invalidation(
         _ => panic!("partition scenario requires a partition receipt"),
     };
     let invalidation = driver
-        .invalidate(receipt)
+        .invalidate(receipt.clone())
         .unwrap_or_else(|error| panic!("admit partition invalidation: {error}"));
+    let duplicate = driver
+        .invalidate(receipt)
+        .unwrap_or_else(|error| panic!("admit duplicate partition invalidation: {error}"));
     drive(reactor, Duration::ZERO, "interpret partition invalidation");
     let retry = driver
         .request_tracked(
@@ -191,6 +194,7 @@ fn assert_exact_topic_invalidation(
         "install post-invalidation Metadata",
     );
     assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
+    assert_eq!(duplicate.wait(), Ok(InvalidationDisposition::Applied));
     wait_for_frame(leader, reactor);
     let request = read_request(leader);
     leader

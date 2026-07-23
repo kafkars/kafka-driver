@@ -168,6 +168,9 @@ fn exact_coordinator_receipt_refreshes_once_and_then_becomes_stale() {
     let invalidation = driver
         .invalidate(receipt.clone())
         .unwrap_or_else(|error| panic!("admit coordinator invalidation: {error}"));
+    let duplicate = driver
+        .invalidate(receipt.clone())
+        .unwrap_or_else(|error| panic!("admit duplicate coordinator invalidation: {error}"));
     drive(
         &mut reactor,
         Duration::ZERO,
@@ -180,7 +183,7 @@ fn exact_coordinator_receipt_refreshes_once_and_then_becomes_stale() {
         &mut coordinator,
         &key,
         coordinator_port,
-        invalidation,
+        [invalidation, duplicate],
     );
 
     let stale = driver
@@ -202,7 +205,7 @@ fn await_fresh_coordinator(
     coordinator: &mut TcpStream,
     key: &CoordinatorKey,
     coordinator_port: u16,
-    invalidation: kafka_driver::Call<InvalidationDisposition>,
+    invalidations: [kafka_driver::Call<InvalidationDisposition>; 2],
 ) {
     let retry = driver
         .request_tracked(
@@ -218,7 +221,9 @@ fn await_fresh_coordinator(
     );
     assert_no_frame(coordinator);
     answer_discovery(seed, reactor, "orders-readers", coordinator_port);
-    assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
+    for invalidation in invalidations {
+        assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
+    }
     wait_for_frame(coordinator, reactor);
     let request = read_request(coordinator);
     coordinator

@@ -46,10 +46,15 @@ fn exact_receipt_moves_the_controller_and_then_becomes_stale() {
     let mut invalidation = driver
         .invalidate(old_receipt.clone())
         .unwrap_or_else(|error| panic!("admit controller invalidation: {error}"));
-    assert_progress(&reactor.turn(Duration::ZERO), 1);
+    let mut duplicate = driver
+        .invalidate(old_receipt.clone())
+        .unwrap_or_else(|error| panic!("admit duplicate controller invalidation: {error}"));
+    assert_progress(&reactor.turn(Duration::ZERO), 2);
     assert_pending(&mut invalidation);
+    assert_pending(&mut duplicate);
     install_metadata(&mut seed, &mut reactor, second_port);
     assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
+    assert_eq!(duplicate.wait(), Ok(InvalidationDisposition::Applied));
 
     let (new_receipt, _second_peer) =
         tracked_controller_call(&driver, &mut reactor, &second_listener);

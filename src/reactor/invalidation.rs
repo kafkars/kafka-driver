@@ -11,6 +11,36 @@ pub(in crate::reactor) struct RouteInvalidation<R> {
     completion: CompletionSender<InvalidationDisposition>,
 }
 
+/// Public callers subscribed to one route target's terminal evidence outcome.
+pub(in crate::reactor) struct InvalidationSubscribers {
+    subscribers: Vec<CompletionSender<InvalidationDisposition>>,
+}
+
+impl InvalidationSubscribers {
+    pub(in crate::reactor) fn new(first: CompletionSender<InvalidationDisposition>) -> Self {
+        Self {
+            subscribers: vec![first],
+        }
+    }
+
+    pub(in crate::reactor) fn subscribe(
+        &mut self,
+        completion: CompletionSender<InvalidationDisposition>,
+    ) {
+        self.subscribers.push(completion);
+    }
+
+    pub(in crate::reactor) const fn len(&self) -> usize {
+        self.subscribers.len()
+    }
+
+    pub(in crate::reactor) fn complete(self, disposition: InvalidationDisposition) {
+        for subscriber in self.subscribers {
+            let _ = subscriber.complete(disposition);
+        }
+    }
+}
+
 impl<R> RouteInvalidation<R> {
     pub(in crate::reactor) const fn new(
         route: R,

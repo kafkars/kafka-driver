@@ -3,6 +3,7 @@
 mod error;
 mod identity;
 mod invalidation;
+mod invalidation_target;
 mod invalidation_wait;
 mod owner;
 mod pending;

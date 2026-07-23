@@ -5,6 +5,7 @@ use std::{num::NonZeroUsize, time::Duration};
 const DEFAULT_KEYS: NonZeroUsize = nonzero(256);
 const DEFAULT_WAITING_CALLS: NonZeroUsize = nonzero(256);
 const DEFAULT_WAITING_BYTES: NonZeroUsize = nonzero(8 * 1024 * 1024);
+const DEFAULT_INVALIDATION_WAITERS: NonZeroUsize = nonzero(256);
 const DEFAULT_TURN_BUDGET: NonZeroUsize = nonzero(64);
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -15,6 +16,7 @@ pub struct CoordinatorLimits {
     keys: NonZeroUsize,
     waiting_calls: NonZeroUsize,
     waiting_bytes: NonZeroUsize,
+    invalidation_waiters: NonZeroUsize,
     turn_budget: NonZeroUsize,
     request_timeout: Duration,
 }
@@ -25,6 +27,7 @@ impl CoordinatorLimits {
         keys: NonZeroUsize,
         waiting_calls: NonZeroUsize,
         waiting_bytes: NonZeroUsize,
+        invalidation_waiters: NonZeroUsize,
         turn_budget: NonZeroUsize,
         request_timeout: Duration,
     ) -> Self {
@@ -32,6 +35,7 @@ impl CoordinatorLimits {
             keys,
             waiting_calls,
             waiting_bytes,
+            invalidation_waiters,
             turn_budget,
             request_timeout,
         }
@@ -52,6 +56,11 @@ impl CoordinatorLimits {
         self.waiting_bytes
     }
 
+    /// Returns maximum public invalidations awaiting newer coordinator evidence.
+    pub const fn invalidation_waiters(self) -> NonZeroUsize {
+        self.invalidation_waiters
+    }
+
     /// Returns maximum coordinator completions or waiters examined per turn.
     pub const fn turn_budget(self) -> NonZeroUsize {
         self.turn_budget
@@ -67,6 +76,7 @@ impl CoordinatorLimits {
             DEFAULT_KEYS,
             DEFAULT_WAITING_CALLS,
             DEFAULT_WAITING_BYTES,
+            DEFAULT_INVALIDATION_WAITERS,
             DEFAULT_TURN_BUDGET,
             DEFAULT_REQUEST_TIMEOUT,
         )
