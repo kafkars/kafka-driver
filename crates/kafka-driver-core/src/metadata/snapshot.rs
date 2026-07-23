@@ -86,6 +86,7 @@ impl MetadataSnapshot {
             leader.partition(),
             leader.leader_epoch(),
             leader.revision(),
+            leader.evidence_stamp(),
         ))
     }
 

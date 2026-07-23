@@ -1,19 +1,25 @@
 //! Broker route identity fenced to exactly one metadata generation.
 
-use crate::{BrokerId, MetadataGeneration};
+use crate::{BrokerId, EvidenceStamp, MetadataGeneration};
 
 /// Permission to route one call to a broker from one metadata generation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BrokerRoute {
     generation: MetadataGeneration,
     broker_id: BrokerId,
+    evidence: EvidenceStamp,
 }
 
 impl BrokerRoute {
-    pub(super) const fn new(generation: MetadataGeneration, broker_id: BrokerId) -> Self {
+    pub(super) const fn new(
+        generation: MetadataGeneration,
+        broker_id: BrokerId,
+        evidence: EvidenceStamp,
+    ) -> Self {
         Self {
             generation,
             broker_id,
+            evidence,
         }
     }
 
@@ -25,5 +31,10 @@ impl BrokerRoute {
     /// Returns the routed Kafka broker identity.
     pub const fn broker_id(self) -> BrokerId {
         self.broker_id
+    }
+
+    /// Returns when the external query that installed this route began.
+    pub const fn evidence_stamp(self) -> EvidenceStamp {
+        self.evidence
     }
 }

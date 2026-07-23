@@ -1,6 +1,6 @@
 //! One validated topic-partition leader assignment.
 
-use crate::{BrokerId, LeaderEpoch, MetadataRevision, PartitionId, TopicName};
+use crate::{BrokerId, EvidenceStamp, LeaderEpoch, MetadataRevision, PartitionId, TopicName};
 
 /// Broker ownership for one partition from one accepted topic observation.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -10,6 +10,7 @@ pub struct PartitionLeader {
     broker_id: BrokerId,
     leader_epoch: Option<LeaderEpoch>,
     revision: MetadataRevision,
+    evidence: EvidenceStamp,
 }
 
 impl PartitionLeader {
@@ -21,12 +22,32 @@ impl PartitionLeader {
         leader_epoch: Option<LeaderEpoch>,
         revision: MetadataRevision,
     ) -> Self {
+        Self::new_with_evidence(
+            topic,
+            partition,
+            broker_id,
+            leader_epoch,
+            revision,
+            EvidenceStamp::ORIGIN,
+        )
+    }
+
+    /// Creates one assignment retaining when its external query began.
+    pub const fn new_with_evidence(
+        topic: TopicName,
+        partition: PartitionId,
+        broker_id: BrokerId,
+        leader_epoch: Option<LeaderEpoch>,
+        revision: MetadataRevision,
+        evidence: EvidenceStamp,
+    ) -> Self {
         Self {
             topic,
             partition,
             broker_id,
             leader_epoch,
             revision,
+            evidence,
         }
     }
 
@@ -53,5 +74,10 @@ impl PartitionLeader {
     /// Returns the accepted Metadata operation that observed this leader fact.
     pub const fn revision(&self) -> MetadataRevision {
         self.revision
+    }
+
+    /// Returns when the external query that observed this assignment began.
+    pub const fn evidence_stamp(&self) -> EvidenceStamp {
+        self.evidence
     }
 }

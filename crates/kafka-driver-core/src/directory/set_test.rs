@@ -2,7 +2,7 @@
 
 use std::{num::NonZeroU16, num::NonZeroUsize};
 
-use crate::{BrokerEndpoint, BrokerId, HostName, MetadataGeneration};
+use crate::{BrokerEndpoint, BrokerId, EvidenceStamp, HostName, MetadataGeneration};
 
 use super::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryError, BrokerDirectoryLimits,
@@ -89,6 +89,37 @@ fn route_token_cannot_cross_metadata_generations() {
         Err(BrokerRouteError::StaleGeneration {
             current: MetadataGeneration::from_raw(5),
             routed: MetadataGeneration::from_raw(4),
+        })
+    );
+}
+
+#[test]
+fn route_token_cannot_cross_distinct_evidence_in_one_generation() {
+    let limits = BrokerDirectoryLimits::new(nonzero_size(1));
+    let first = BrokerDirectory::try_from_iter_with_evidence(
+        MetadataGeneration::from_raw(4),
+        EvidenceStamp::from_raw(7),
+        [entry(7, "same.test")],
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("first directory: {error}"));
+    let route = first
+        .route_to(id(7))
+        .unwrap_or_else(|| panic!("known broker must produce a route"));
+    let other = BrokerDirectory::try_from_iter_with_evidence(
+        MetadataGeneration::from_raw(4),
+        EvidenceStamp::from_raw(8),
+        [entry(7, "same.test")],
+        limits,
+    )
+    .unwrap_or_else(|error| panic!("other directory: {error}"));
+
+    assert_eq!(route.evidence_stamp(), EvidenceStamp::from_raw(7));
+    assert_eq!(
+        other.resolve(route),
+        Err(BrokerRouteError::StaleEvidence {
+            current: EvidenceStamp::from_raw(8),
+            routed: EvidenceStamp::from_raw(7),
         })
     );
 }

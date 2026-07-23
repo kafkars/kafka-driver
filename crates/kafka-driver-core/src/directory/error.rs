@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt};
 
-use crate::{BrokerId, MetadataGeneration};
+use crate::{BrokerId, EvidenceStamp, MetadataGeneration};
 
 /// Why an immutable broker directory could not be constructed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,6 +44,13 @@ pub enum BrokerRouteError {
         /// Generation retained by the route token.
         routed: MetadataGeneration,
     },
+    /// The route belongs to different causal evidence for the same generation.
+    StaleEvidence {
+        /// Evidence retained by the directory.
+        current: EvidenceStamp,
+        /// Evidence retained by the route token.
+        routed: EvidenceStamp,
+    },
     /// The generation matched but no such broker exists in the snapshot.
     UnknownBroker {
         /// Kafka broker identity absent from the directory.
@@ -57,6 +64,12 @@ impl fmt::Display for BrokerRouteError {
             Self::StaleGeneration { current, routed } => write!(
                 formatter,
                 "broker route generation {} does not match current generation {}",
+                routed.get(),
+                current.get()
+            ),
+            Self::StaleEvidence { current, routed } => write!(
+                formatter,
+                "broker route evidence {} does not match current evidence {}",
                 routed.get(),
                 current.get()
             ),

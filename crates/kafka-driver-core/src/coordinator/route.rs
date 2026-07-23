@@ -1,6 +1,6 @@
 //! Coordinator endpoint permission fenced by one key's discovery epoch.
 
-use crate::{BrokerEndpoint, BrokerId, CoordinatorEpoch, CoordinatorKey};
+use crate::{BrokerEndpoint, BrokerId, CoordinatorEpoch, CoordinatorKey, EvidenceStamp};
 
 /// Permission to route one call using an identity-fenced coordinator discovery.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -9,6 +9,7 @@ pub struct CoordinatorRoute {
     broker_id: BrokerId,
     endpoint: BrokerEndpoint,
     epoch: CoordinatorEpoch,
+    evidence: EvidenceStamp,
 }
 
 impl CoordinatorRoute {
@@ -18,11 +19,22 @@ impl CoordinatorRoute {
         endpoint: BrokerEndpoint,
         epoch: CoordinatorEpoch,
     ) -> Self {
+        Self::new_with_evidence(key, broker_id, endpoint, epoch, EvidenceStamp::ORIGIN)
+    }
+
+    pub(super) const fn new_with_evidence(
+        key: CoordinatorKey,
+        broker_id: BrokerId,
+        endpoint: BrokerEndpoint,
+        epoch: CoordinatorEpoch,
+        evidence: EvidenceStamp,
+    ) -> Self {
         Self {
             key,
             broker_id,
             endpoint,
             epoch,
+            evidence,
         }
     }
 
@@ -44,5 +56,10 @@ impl CoordinatorRoute {
     /// Returns the discovery epoch that fences invalidation.
     pub const fn epoch(&self) -> CoordinatorEpoch {
         self.epoch
+    }
+
+    /// Returns when the external discovery that installed this route began.
+    pub const fn evidence_stamp(&self) -> EvidenceStamp {
+        self.evidence
     }
 }

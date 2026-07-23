@@ -70,9 +70,9 @@ pub use endpoint_dialer::{
 };
 pub use identity::{
     BrokerId, BrokerIdError, CallId, ConnectionEpoch, CoordinatorEpoch, CoordinatorKey,
-    CoordinatorKeyError, CoordinatorKind, EffectId, LeaderEpoch, LeaderEpochError,
-    MetadataGeneration, MetadataRevision, OperationId, PartitionId, PartitionIdError, TimerId,
-    TopicName, TopicNameError, TransportId,
+    CoordinatorKeyError, CoordinatorKind, EffectId, EvidenceStamp, LeaderEpoch, LeaderEpochError,
+    MetadataGeneration, MetadataRevision, OperationId, OutcomeStamp, PartitionId, PartitionIdError,
+    TimerId, TopicName, TopicNameError, TransportId,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use metadata::{

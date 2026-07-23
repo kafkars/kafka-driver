@@ -2,6 +2,7 @@
 
 mod broker;
 mod call;
+mod causality;
 mod coordinator;
 mod effect;
 mod partition;
@@ -11,6 +12,8 @@ mod transport;
 #[cfg(test)]
 mod broker_test;
 #[cfg(test)]
+mod causality_test;
+#[cfg(test)]
 mod coordinator_test;
 #[cfg(test)]
 mod partition_test;
@@ -19,6 +22,7 @@ mod topic_test;
 
 pub use broker::{BrokerId, BrokerIdError, MetadataGeneration, MetadataRevision};
 pub use call::{CallId, OperationId};
+pub use causality::{EvidenceStamp, OutcomeStamp};
 pub use coordinator::{CoordinatorEpoch, CoordinatorKey, CoordinatorKeyError, CoordinatorKind};
 pub use effect::{EffectId, TimerId};
 pub use partition::{LeaderEpoch, LeaderEpochError, PartitionId, PartitionIdError};

@@ -4,8 +4,8 @@ use std::num::NonZeroU16;
 
 use crate::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
-    BrokerRouteError, HostName, LeaderEpoch, MetadataGeneration, PartitionId, PartitionLeader,
-    PartitionLeaderLimits, PartitionLeaderSet, TopicName,
+    BrokerRouteError, EvidenceStamp, HostName, LeaderEpoch, MetadataGeneration, PartitionId,
+    PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet, TopicName,
 };
 
 use super::{MetadataSnapshot, MetadataSnapshotError};
@@ -77,6 +77,39 @@ fn partition_route_carries_generation_identity_and_known_leader_epoch() {
     assert_eq!(route.topic(), &topic("orders"));
     assert_eq!(route.partition(), partition(3));
     assert_eq!(route.leader_epoch(), LeaderEpoch::new(11).ok());
+}
+
+#[test]
+fn controller_and_partition_routes_retain_their_independent_query_evidence() {
+    let brokers = BrokerDirectory::try_from_iter_with_evidence(
+        generation(7),
+        EvidenceStamp::from_raw(11),
+        [entry(1)],
+        BrokerDirectoryLimits::default(),
+    )
+    .unwrap_or_else(|error| panic!("valid broker directory: {error}"));
+    let leader = PartitionLeader::new_with_evidence(
+        topic("orders"),
+        partition(3),
+        broker_id(1),
+        LeaderEpoch::new(9).ok(),
+        crate::MetadataRevision::from_raw(2),
+        EvidenceStamp::from_raw(5),
+    );
+    let leaders = PartitionLeaderSet::try_from_iter([leader], PartitionLeaderLimits::default())
+        .unwrap_or_else(|error| panic!("valid partition leaders: {error}"));
+    let snapshot = MetadataSnapshot::try_with_leaders(brokers, Some(broker_id(1)), leaders)
+        .unwrap_or_else(|error| panic!("coherent snapshot: {error}"));
+
+    let controller = snapshot
+        .controller_route()
+        .unwrap_or_else(|| panic!("controller route"));
+    let partition = snapshot
+        .partition_route(&topic("orders"), partition(3))
+        .unwrap_or_else(|| panic!("partition route"));
+
+    assert_eq!(controller.evidence_stamp(), EvidenceStamp::from_raw(11));
+    assert_eq!(partition.evidence_stamp(), EvidenceStamp::from_raw(5));
 }
 
 #[test]

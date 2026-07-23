@@ -35,8 +35,8 @@ pub use kafka_driver_core::{
     AuthenticationFailure, AuthenticationFailureDisposition, BootstrapError, BootstrapLimits,
     BootstrapSet, BrokerDirectoryLimits, BrokerEndpoint, BrokerRoute, BrokerState, CallFailure,
     CallId, CloseReason as ConnectionCloseReason, ConnectionPhase, CoordinatorKey,
-    CoordinatorKeyError, CoordinatorKind, CoordinatorRoute, HostName, HostNameError,
-    MetadataGeneration, MetadataRevision, Moment, NegotiationFailure, PartitionId,
+    CoordinatorKeyError, CoordinatorKind, CoordinatorRoute, EvidenceStamp, HostName, HostNameError,
+    MetadataGeneration, MetadataRevision, Moment, NegotiationFailure, OutcomeStamp, PartitionId,
     PartitionIdError, PartitionRoute, TopicName, TopicNameError, TransportFailure,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
