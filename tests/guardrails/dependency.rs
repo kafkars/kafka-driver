@@ -187,6 +187,15 @@ fn ci_delegates_validation_to_the_canonical_repository_gate() {
 }
 
 #[test]
+fn ci_runs_the_same_gate_on_linux_and_macos() {
+    let root = workspace_root();
+    let workflow = read(&root.join(".github/workflows/ci.yml"));
+
+    assert!(workflow.contains("os: [ubuntu-latest, macos-latest]"));
+    assert!(workflow.contains("runs-on: ${{ matrix.os }}"));
+}
+
+#[test]
 fn package_extraction_matches_exact_names_only() {
     let packages = lockfile_packages(
         "[[package]]\nname = \"tokio-util-extra\"\n[[package]]\nname = \"bytes\"\n",

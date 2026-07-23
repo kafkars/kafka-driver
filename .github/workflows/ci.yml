@@ -18,9 +18,13 @@ env:
 
 jobs:
   validate:
-    name: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: validate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     defaults:
       run:
         shell: bash
