@@ -77,6 +77,25 @@ fn rolling_retains_one_bounded_bootstrap_set_argument() {
 }
 
 #[test]
+fn tls_rolling_retains_logical_endpoints_trust_and_coordination() {
+    let parsed = Arguments::parse(strings([
+        "tls-rolling",
+        "kafka-1:9092,kafka-2:9092",
+        "/secrets/ca-cert.pem",
+        "/coordination",
+    ]));
+
+    assert_eq!(
+        parsed,
+        Ok(Arguments::TlsRolling {
+            bootstrap: "kafka-1:9092,kafka-2:9092".to_owned(),
+            certificate: "/secrets/ca-cert.pem".to_owned(),
+            coordination: "/coordination".to_owned(),
+        })
+    );
+}
+
+#[test]
 fn movement_retains_the_stable_seed_topic_and_coordination_boundary() {
     let parsed = Arguments::parse(strings([
         "movement",
@@ -209,6 +228,10 @@ fn partial_or_expanded_commands_are_rejected() {
     );
     assert_eq!(
         Arguments::parse(strings(["rolling", "one:1", "gates", "extra"])),
+        Err(ArgumentError::Shape)
+    );
+    assert_eq!(
+        Arguments::parse(strings(["tls-rolling", "one:1", "ca.pem"])),
         Err(ArgumentError::Shape)
     );
     assert_eq!(

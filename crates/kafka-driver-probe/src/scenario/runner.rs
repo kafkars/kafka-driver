@@ -14,7 +14,14 @@ use super::{
 };
 
 pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
-    let (session, scenario) = match arguments {
+    let (session, scenario) = prepare(arguments)?;
+    let outcome = execute(&session, scenario);
+    let close = session.close();
+    outcome.and(close)
+}
+
+fn prepare(arguments: Arguments) -> Result<(ProbeSession, Scenario), ProbeError> {
+    let prepared = match arguments {
         Arguments::Readiness { bootstrap } => (spawn_plaintext(&bootstrap)?, Scenario::Readiness),
         Arguments::DnsRotation { bootstrap } => {
             (spawn_plaintext(&bootstrap)?, Scenario::DnsRotation)
@@ -35,6 +42,18 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
             spawn_plaintext(&bootstrap)?,
             Scenario::Rolling { coordination },
         ),
+        Arguments::TlsRolling {
+            bootstrap,
+            certificate,
+            coordination,
+        } => {
+            let endpoints = endpoint::bootstrap(&bootstrap)
+                .map_err(|source| ProbeError::stage("validate TLS bootstrap endpoint", source))?;
+            (
+                security::tls_bootstrap_session(endpoints, &certificate)?,
+                Scenario::TlsRolling { coordination },
+            )
+        }
         Arguments::Movement {
             bootstrap,
             topic,
@@ -90,28 +109,29 @@ pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
             (spawn_plaintext(&bootstrap)?, Scenario::Measure { samples })
         }
     };
-    let outcome = match scenario {
-        Scenario::Readiness => readiness::run(&session),
-        Scenario::DnsRotation => dns_rotation::run(&session),
-        Scenario::Routes { topic, group } => routes::run(&session, topic, group),
-        Scenario::Reconnect => reconnect::run(&session),
-        Scenario::Rolling { coordination } => reconnect::run_rolling(&session, &coordination),
+    Ok(prepared)
+}
+
+fn execute(session: &ProbeSession, scenario: Scenario) -> Result<(), ProbeError> {
+    match scenario {
+        Scenario::Readiness => readiness::run(session),
+        Scenario::DnsRotation => dns_rotation::run(session),
+        Scenario::Routes { topic, group } => routes::run(session, topic, group),
+        Scenario::Reconnect => reconnect::run(session),
+        Scenario::Rolling { coordination } => reconnect::run_rolling(session, &coordination),
+        Scenario::TlsRolling { coordination } => reconnect::run_tls_rolling(session, &coordination),
         Scenario::Movement {
             topic,
             coordination,
-        } => movement::run(&session, topic, &coordination),
-        Scenario::Authentication { mechanism } => authentication::run(&session, mechanism),
+        } => movement::run(session, topic, &coordination),
+        Scenario::Authentication { mechanism } => authentication::run(session, mechanism),
         Scenario::AuthenticationRejection { mechanism } => {
-            authentication_rejection::run(&session, mechanism)
+            authentication_rejection::run(session, mechanism)
         }
-        Scenario::Tls => encryption::run(&session),
-        Scenario::TlsAuthentication { mechanism } => {
-            secure_authentication::run(&session, mechanism)
-        }
-        Scenario::Measure { samples } => measurement::run(&session, samples),
-    };
-    let close = session.close();
-    outcome.and(close)
+        Scenario::Tls => encryption::run(session),
+        Scenario::TlsAuthentication { mechanism } => secure_authentication::run(session, mechanism),
+        Scenario::Measure { samples } => measurement::run(session, samples),
+    }
 }
 
 fn spawn_plaintext(bootstrap: &str) -> Result<ProbeSession, ProbeError> {
@@ -132,6 +152,7 @@ enum Scenario {
     Routes { topic: String, group: String },
     Reconnect,
     Rolling { coordination: String },
+    TlsRolling { coordination: String },
     Movement { topic: String, coordination: String },
     Authentication { mechanism: SaslSelection },
     AuthenticationRejection { mechanism: SaslSelection },

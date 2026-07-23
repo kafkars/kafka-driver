@@ -46,6 +46,23 @@ pub(super) fn run_rolling(session: &ProbeSession, coordination: &str) -> Result<
     Ok(())
 }
 
+pub(super) fn run_tls_rolling(
+    session: &ProbeSession,
+    coordination: &str,
+) -> Result<(), ProbeError> {
+    session.await_seed()?;
+    announce("READY initial TLS multi-broker connection")?;
+
+    await_gate(coordination, FIRST_STOP, "first TLS rolling stop signal")?;
+    await_recovery(session)?;
+    announce("RECOVERED TLS broker failover 1")?;
+
+    await_gate(coordination, SECOND_STOP, "second TLS rolling stop signal")?;
+    await_recovery(session)?;
+    println!("PASS TLS broker failover 2");
+    Ok(())
+}
+
 fn await_gate(coordination: &str, name: &str, label: &'static str) -> Result<(), ProbeError> {
     let gate = Path::new(coordination).join(name);
     for _ in 0..COORDINATION_ATTEMPTS {

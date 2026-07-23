@@ -229,6 +229,29 @@ fn release_qualification_is_scheduled_and_pins_the_protocol() {
 }
 
 #[test]
+fn secure_cluster_qualification_binds_each_advertised_host_to_its_identity() {
+    let root = workspace_root();
+    let manifest = read(&root.join("package.json"));
+    let compose = read(&root.join("smoke/kafka-secure-cluster.compose.yml"));
+    let scenario = read(&root.join("smoke/real-kafka-secure-multi-broker.smoke.mjs"));
+    let identities = read(&root.join("smoke/support/tls-identities.mjs"));
+
+    assert!(manifest.contains(
+        "\"smoke:real-kafka-secure-multi-broker\": \
+         \"smoque run smoke/ --tag real-kafka-secure-multi-broker --ci\""
+    ));
+    assert!(compose.contains("image: rust:1.88.0-bookworm@sha256:af306cfa71d987911a781c37b59d7d67d934f49684058f96cf72079c3626bfe0"));
+    for (number, broker) in [(1, "kafka-1"), (2, "kafka-2"), (3, "kafka-3")] {
+        assert!(compose.contains(&format!("SSL://{broker}:9092")));
+        assert!(compose.contains(&format!("KAFKA_{number}_SSL_SECRETS")));
+    }
+    assert!(identities.contains("DNS.1 = ${brokerName}"));
+    assert!(scenario.contains("\"kafka-1:9092,kafka-2:9092\""));
+    assert!(scenario.contains("RECOVERED TLS broker failover 1"));
+    assert!(scenario.contains("PASS TLS broker failover 2"));
+}
+
+#[test]
 fn package_extraction_matches_exact_names_only() {
     let packages = lockfile_packages(
         "[[package]]\nname = \"tokio-util-extra\"\n[[package]]\nname = \"bytes\"\n",

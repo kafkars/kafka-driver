@@ -1,6 +1,8 @@
 //! Construction and graceful closure of one public dedicated driver host.
 
-use kafka_driver::{Driver, DriverHost, SaslConfig, TlsClientConfig};
+use kafka_driver::{
+    BootstrapSet, Driver, DriverHost, SaslConfig, TlsClientConfig, TlsClientPolicy,
+};
 
 use crate::error::ProbeError;
 
@@ -26,6 +28,13 @@ impl ProbeSession {
         tls: TlsClientConfig,
     ) -> Result<Self, ProbeError> {
         Self::spawn_builder(Driver::builder().rustls_broker(address, tls))
+    }
+
+    pub(crate) fn spawn_tls_bootstrap(
+        endpoints: BootstrapSet,
+        tls: TlsClientPolicy,
+    ) -> Result<Self, ProbeError> {
+        Self::spawn_builder(Driver::builder().rustls_bootstrap(endpoints, tls))
     }
 
     pub(crate) fn spawn_tls_sasl(

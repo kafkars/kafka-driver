@@ -2,7 +2,7 @@
 
 use std::{fs, net::SocketAddr, sync::Arc};
 
-use kafka_driver::{SaslConfig, TlsClientConfig};
+use kafka_driver::{BootstrapSet, SaslConfig, TlsClientPolicy};
 use rustls::{
     ClientConfig, RootCertStore,
     pki_types::{CertificateDer, ServerName, pem::PemObject},
@@ -15,8 +15,15 @@ pub(crate) fn session(
     certificate_path: &str,
     server_name: String,
 ) -> Result<ProbeSession, ProbeError> {
-    let tls = configuration(certificate_path, server_name)?;
+    let tls = policy(certificate_path)?.for_server(server_identity(server_name)?);
     ProbeSession::spawn_tls(address, tls)
+}
+
+pub(crate) fn bootstrap_session(
+    endpoints: BootstrapSet,
+    certificate_path: &str,
+) -> Result<ProbeSession, ProbeError> {
+    ProbeSession::spawn_tls_bootstrap(endpoints, policy(certificate_path)?)
 }
 
 pub(crate) fn authenticated_session(
@@ -25,14 +32,11 @@ pub(crate) fn authenticated_session(
     server_name: String,
     sasl: SaslConfig,
 ) -> Result<ProbeSession, ProbeError> {
-    let tls = configuration(certificate_path, server_name)?;
+    let tls = policy(certificate_path)?.for_server(server_identity(server_name)?);
     ProbeSession::spawn_tls_sasl(address, tls, sasl)
 }
 
-fn configuration(
-    certificate_path: &str,
-    server_name: String,
-) -> Result<TlsClientConfig, ProbeError> {
+fn policy(certificate_path: &str) -> Result<TlsClientPolicy, ProbeError> {
     let pem = fs::read(certificate_path)
         .map_err(|source| ProbeError::stage("read TLS trust anchor", source))?;
     let certificate = CertificateDer::from_pem_slice(&pem)
@@ -48,7 +52,10 @@ fn configuration(
         .map_err(|source| ProbeError::stage("select safe TLS protocol versions", source))?
         .with_root_certificates(roots)
         .with_no_client_auth();
-    let server_name = ServerName::try_from(server_name)
-        .map_err(|source| ProbeError::stage("validate TLS server identity", source))?;
-    Ok(TlsClientConfig::new(Arc::new(client), server_name))
+    Ok(TlsClientPolicy::new(Arc::new(client)))
+}
+
+fn server_identity(server_name: String) -> Result<ServerName<'static>, ProbeError> {
+    ServerName::try_from(server_name)
+        .map_err(|source| ProbeError::stage("validate TLS server identity", source))
 }
