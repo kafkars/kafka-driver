@@ -15,6 +15,8 @@ pub enum BrokerPhase {
     Available,
     /// A bounded reconnect delay is pending.
     Backoff,
+    /// Reconnect is suspended until newer endpoint evidence arrives.
+    Refreshing,
     /// Shutdown is waiting for the current connection child.
     Draining,
     /// The broker owner is terminal and will not reconnect.
@@ -69,6 +71,19 @@ pub enum BrokerState {
         /// Absolute driver-relative reconnect deadline.
         deadline: Moment,
     },
+    /// Every known address failed and reconnect awaits a fresh resolver result.
+    Refreshing {
+        /// Generation whose address pass was exhausted.
+        failed_epoch: ConnectionEpoch,
+        /// Fresh generation reserved before external DNS work.
+        next_epoch: ConnectionEpoch,
+        /// Retry ordinal preserved across endpoint refresh.
+        retry: RetryOrdinal,
+        /// Reserved reconnect identity not scheduled while DNS is outstanding.
+        timer_id: TimerId,
+        /// Original failure-relative reconnect deadline.
+        deadline: Moment,
+    },
     /// Host shutdown is waiting for one current child to close.
     Draining {
         /// Connection generation asked to drain.
@@ -89,6 +104,7 @@ impl BrokerState {
             Self::Connecting { .. } => BrokerPhase::Connecting,
             Self::Available { .. } => BrokerPhase::Available,
             Self::Backoff { .. } => BrokerPhase::Backoff,
+            Self::Refreshing { .. } => BrokerPhase::Refreshing,
             Self::Draining { .. } => BrokerPhase::Draining,
             Self::Closed { .. } => BrokerPhase::Closed,
         }

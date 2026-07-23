@@ -89,7 +89,13 @@ impl SingleBroker {
                     }
                 }
                 (BrokerPhase::Draining, _) => BrokerInput::ConnectionDrained { epoch },
-                (BrokerPhase::Dormant | BrokerPhase::Backoff | BrokerPhase::Closed, _) => break,
+                (
+                    BrokerPhase::Dormant
+                    | BrokerPhase::Backoff
+                    | BrokerPhase::Refreshing
+                    | BrokerPhase::Closed,
+                    _,
+                ) => break,
             };
             let transition = self.broker.apply(input);
             require_applied(transition.disposition())?;

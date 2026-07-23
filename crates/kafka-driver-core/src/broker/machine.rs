@@ -4,15 +4,14 @@ use crate::{ConnectionEpoch, Moment, TimerId};
 
 use super::{
     BackoffPolicy, BrokerCloseReason, BrokerEffect, BrokerInput, BrokerState, BrokerTransition,
-    ReconnectSchedule, RetryOrdinal,
 };
 
 /// Long-lived policy owner above one replaceable connection child at a time.
 #[must_use]
 #[derive(Debug)]
 pub struct BrokerMachine {
-    state: BrokerState,
-    backoff: BackoffPolicy,
+    pub(super) state: BrokerState,
+    pub(super) backoff: BackoffPolicy,
 }
 
 impl BrokerMachine {
@@ -32,6 +31,12 @@ impl BrokerMachine {
             BrokerInput::ConnectionReady { epoch } => self.connection_ready(epoch),
             BrokerInput::ConnectionFailed { epoch, reconnect } => {
                 self.connection_failed(epoch, reconnect)
+            }
+            BrokerInput::EndpointExhausted { epoch, reconnect } => {
+                self.endpoint_exhausted(epoch, reconnect)
+            }
+            BrokerInput::EndpointRefreshed { failed_epoch, now } => {
+                self.endpoint_refreshed(failed_epoch, now)
             }
             BrokerInput::ConnectionRejected { epoch, failure } => {
                 self.connection_rejected(epoch, failure)
@@ -76,48 +81,6 @@ impl BrokerMachine {
         }
         self.state = BrokerState::Available { epoch };
         BrokerTransition::applied(Vec::new())
-    }
-
-    fn connection_failed(
-        &mut self,
-        epoch: ConnectionEpoch,
-        reconnect: ReconnectSchedule,
-    ) -> BrokerTransition {
-        let retry = match self.state {
-            BrokerState::Connecting {
-                epoch: expected,
-                retry,
-            } if epoch == expected => match retry {
-                Some(current) => current.next(),
-                None => Some(RetryOrdinal::first()),
-            },
-            BrokerState::Available { epoch: expected } if epoch == expected => {
-                Some(RetryOrdinal::first())
-            }
-            _ => return BrokerTransition::stale(),
-        };
-        let Some(retry) = retry else {
-            return self.close(BrokerCloseReason::RetryExhausted);
-        };
-        let Some(next_epoch) = epoch.get().checked_add(1).map(ConnectionEpoch::from_raw) else {
-            return self.close(BrokerCloseReason::EpochExhausted);
-        };
-        let delay = self.backoff.delay(retry, reconnect.jitter);
-        let Some(deadline) = reconnect.now.checked_add(delay) else {
-            return self.close(BrokerCloseReason::ClockOverflow);
-        };
-        self.state = BrokerState::Backoff {
-            failed_epoch: epoch,
-            next_epoch,
-            retry,
-            timer_id: reconnect.timer_id,
-            deadline,
-        };
-        BrokerTransition::applied(vec![BrokerEffect::ScheduleReconnect {
-            failed_epoch: epoch,
-            timer_id: reconnect.timer_id,
-            at: deadline,
-        }])
     }
 
     fn connection_rejected(
@@ -183,6 +146,12 @@ impl BrokerMachine {
                 };
                 BrokerTransition::applied(vec![BrokerEffect::CancelReconnect { timer_id }])
             }
+            BrokerState::Refreshing { .. } => {
+                self.state = BrokerState::Closed {
+                    reason: BrokerCloseReason::Requested,
+                };
+                BrokerTransition::applied(Vec::new())
+            }
             BrokerState::Draining { .. } | BrokerState::Closed { .. } => {
                 BrokerTransition::ignored()
             }
@@ -199,7 +168,7 @@ impl BrokerMachine {
         self.close(BrokerCloseReason::Requested)
     }
 
-    fn close(&mut self, reason: BrokerCloseReason) -> BrokerTransition {
+    pub(super) fn close(&mut self, reason: BrokerCloseReason) -> BrokerTransition {
         self.state = BrokerState::Closed { reason };
         BrokerTransition::applied(Vec::new())
     }

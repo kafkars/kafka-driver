@@ -4,6 +4,7 @@ mod effect;
 mod input;
 mod machine;
 mod policy;
+mod recovery;
 mod state;
 mod transition;
 
@@ -11,6 +12,8 @@ mod transition;
 mod machine_test;
 #[cfg(test)]
 mod policy_test;
+#[cfg(test)]
+mod recovery_test;
 
 pub use effect::BrokerEffect;
 pub use input::{BrokerInput, ReconnectSchedule};

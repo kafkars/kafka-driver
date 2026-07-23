@@ -40,6 +40,22 @@ pub enum BrokerInput {
         /// External identities, time, and entropy for retry.
         reconnect: ReconnectSchedule,
     },
+    /// Reports that a terminal connection exhausted every resolved address.
+    EndpointExhausted {
+        /// Failed connection generation awaiting newer endpoint evidence.
+        epoch: ConnectionEpoch,
+
+        /// Reserved retry identity, time, and entropy held until refresh.
+        reconnect: ReconnectSchedule,
+    },
+    /// Reports that newer endpoint evidence is ready for a suspended reconnect.
+    EndpointRefreshed {
+        /// Failed generation whose endpoint refresh produced the evidence.
+        failed_epoch: ConnectionEpoch,
+
+        /// Current driver-relative time used to preserve the original backoff.
+        now: Moment,
+    },
     /// Reports a permanent authentication rejection for the named generation.
     ConnectionRejected {
         /// Terminal connection generation.
