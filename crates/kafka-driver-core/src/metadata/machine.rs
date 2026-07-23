@@ -46,6 +46,10 @@ impl MetadataMachine {
                 route,
                 operation_id,
             } => self.invalidate(route, operation_id),
+            MetadataInput::InvalidatePartitionRoute {
+                route,
+                operation_id,
+            } => self.invalidate_partition(&route, operation_id),
             MetadataInput::RefreshSucceeded {
                 operation_id,
                 snapshot,

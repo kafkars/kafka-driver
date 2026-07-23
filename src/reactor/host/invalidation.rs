@@ -23,15 +23,13 @@ impl Reactor {
     ) -> Result<InvalidationDisposition, ReactorError> {
         let now = self.clock.now().map_err(ReactorError::clock)?;
         match receipt {
-            RouteReceipt::Controller { route } => self.invalidate_metadata(route, now),
+            RouteReceipt::Controller { route } => self.invalidate_broker_route(route, now),
             RouteReceipt::Coordinator { route } => self.invalidate_coordinator(route, now),
-            RouteReceipt::PartitionLeader { route } => {
-                self.invalidate_metadata(route.broker_route(), now)
-            }
+            RouteReceipt::PartitionLeader { route } => self.invalidate_partition(route, now),
         }
     }
 
-    fn invalidate_metadata(
+    fn invalidate_broker_route(
         &mut self,
         route: kafka_driver_core::BrokerRoute,
         now: kafka_driver_core::Moment,
@@ -40,7 +38,21 @@ impl Reactor {
             return Ok(InvalidationDisposition::Unavailable);
         };
         metadata
-            .invalidate(route, seed, &self.poller, now, &self.call_ids)
+            .invalidate_broker_route(route, seed, &self.poller, now, &self.call_ids)
+            .map(metadata_disposition)
+            .map_err(ReactorError::metadata)
+    }
+
+    fn invalidate_partition(
+        &mut self,
+        route: kafka_driver_core::PartitionRoute,
+        now: kafka_driver_core::Moment,
+    ) -> Result<InvalidationDisposition, ReactorError> {
+        let (Some(metadata), Some(seed)) = (&mut self.metadata, self.brokers.seed_mut()) else {
+            return Ok(InvalidationDisposition::Unavailable);
+        };
+        metadata
+            .invalidate_partition_route(route, seed, &self.poller, now, &self.call_ids)
             .map(metadata_disposition)
             .map_err(ReactorError::metadata)
     }

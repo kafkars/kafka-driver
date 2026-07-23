@@ -4,9 +4,11 @@
 mod broker;
 mod support;
 
-use std::{io::Write, time::Duration};
+use std::{io::Write, net::TcpStream, time::Duration};
 
-use kafka_driver::{Driver, PartitionId, Route, RouteReceipt, TopicName};
+use kafka_driver::{
+    Driver, InvalidationDisposition, PartitionId, Reactor, Route, RouteReceipt, TopicName,
+};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
 };
@@ -19,7 +21,7 @@ use broker::{
 use support::complete_negotiation;
 
 #[test]
-fn missing_partition_fact_fetches_exact_topic_then_routes_to_its_leader() {
+fn partition_route_fetches_and_invalidates_only_its_exact_topic() {
     let seed_listener = listener();
     let leader_listener = listener();
     let seed_port = local_port(&seed_listener);
@@ -106,9 +108,43 @@ fn missing_partition_fact_fetches_exact_topic_then_routes_to_its_leader() {
         .wait()
         .unwrap_or_else(|error| panic!("observe tracked partition call: {error}"));
     assert_eq!(outcome.result(), &Ok(response));
+    let receipt = outcome
+        .receipt()
+        .cloned()
+        .unwrap_or_else(|| panic!("partition call must publish its route"));
     assert!(matches!(
-        outcome.receipt(),
-        Some(RouteReceipt::PartitionLeader { route })
+        &receipt,
+        RouteReceipt::PartitionLeader { route }
             if route.topic() == &topic && route.partition() == partition
     ));
+    assert_exact_topic_invalidation(&driver, &mut reactor, &mut seed, receipt);
+}
+
+fn assert_exact_topic_invalidation(
+    driver: &Driver,
+    reactor: &mut Reactor,
+    seed: &mut TcpStream,
+    receipt: RouteReceipt,
+) {
+    let invalidation = driver
+        .invalidate(receipt)
+        .unwrap_or_else(|error| panic!("admit partition invalidation: {error}"));
+    drive(reactor, Duration::ZERO, "interpret partition invalidation");
+    drive(
+        reactor,
+        Duration::from_secs(1),
+        "write partition-scoped Metadata",
+    );
+    let refresh = read_metadata_request(seed);
+    let refreshed_topics = refresh
+        .request
+        .topics
+        .unwrap_or_else(|| panic!("partition invalidation must not request cluster metadata"));
+
+    assert_eq!(refreshed_topics.len(), 1);
+    assert_eq!(
+        refreshed_topics[0].name.as_ref().map(StrBytes::as_str),
+        Some("orders")
+    );
+    assert_eq!(invalidation.wait(), Ok(InvalidationDisposition::Applied));
 }

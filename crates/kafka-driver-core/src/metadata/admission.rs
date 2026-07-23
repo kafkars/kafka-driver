@@ -2,7 +2,9 @@
 
 use std::collections::VecDeque;
 
-use crate::{BrokerRoute, MetadataGeneration, MetadataQuery, MetadataSnapshot, OperationId};
+use crate::{
+    BrokerRoute, MetadataGeneration, MetadataQuery, MetadataSnapshot, OperationId, PartitionRoute,
+};
 
 use super::{
     MetadataMachine, MetadataState, MetadataTransition,
@@ -74,6 +76,21 @@ impl MetadataMachine {
             return stale();
         }
         self.refresh(MetadataQuery::Cluster, operation_id)
+    }
+
+    pub(super) fn invalidate_partition(
+        &mut self,
+        route: &PartitionRoute,
+        operation_id: OperationId,
+    ) -> MetadataTransition {
+        let Some(current) = self.current() else {
+            return stale();
+        };
+        let current_route = current.partition_route(route.topic(), route.partition());
+        if current_route.as_ref() != Some(route) {
+            return stale();
+        }
+        self.resolve(MetadataQuery::Topic(route.topic().clone()), operation_id)
     }
 
     pub(super) fn start(
