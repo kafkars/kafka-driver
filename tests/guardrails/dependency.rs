@@ -196,6 +196,26 @@ fn ci_runs_the_same_gate_on_linux_and_macos() {
 }
 
 #[test]
+fn release_qualification_is_scheduled_and_pins_the_protocol() {
+    let root = workspace_root();
+    let guardrails = load_guardrails(&root);
+    let workflow = read(&root.join(".github/workflows/qualification.yml"));
+    let repository = format!(
+        "repository: {}",
+        guardrails.dependencies.kafka_wire_repository
+    );
+    let revision = format!("ref: {}", guardrails.dependencies.kafka_wire_revision);
+
+    assert!(workflow.contains("schedule:"));
+    assert!(workflow.contains("tags: [\"v*\"]"));
+    assert!(workflow.contains(&repository));
+    assert!(workflow.contains(&revision));
+    assert!(!workflow.contains("KAFKA_PROTOCOL_SSH_KEY"));
+    assert!(!workflow.contains("KAFKA_PROTOCOL_TOKEN"));
+    assert!(workflow.contains("run: npm run qualify:real-kafka"));
+}
+
+#[test]
 fn package_extraction_matches_exact_names_only() {
     let packages = lockfile_packages(
         "[[package]]\nname = \"tokio-util-extra\"\n[[package]]\nname = \"bytes\"\n",

@@ -1,0 +1,59 @@
+name: Release qualification
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * 1"
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qualification-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  real-kafka:
+    name: pinned Kafka and performance policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: kafka-driver
+    steps:
+      - name: Check out kafka-driver
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: kafka-driver
+
+      - name: Check out verified protocol source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: kafkars/kafka-wire
+          ref: ed9c35f2db6e8639a3c2c33a3f6fbcc365386b42
+          path: kafka-protocol
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+
+      - name: Install pinned Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: kafka-driver/package-lock.json
+
+      - name: Install qualification harness
+        run: npm ci
+
+      - name: Run managed real-broker qualification
+        run: npm run qualify:real-kafka
