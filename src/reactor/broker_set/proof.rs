@@ -49,7 +49,7 @@ impl BrokerSet {
                 .complete_scram_proof(poller, proof)
                 .map_err(BrokerSetError::Broker)
         })?;
-        self.sync_address_refresh(lane)?;
+        self.sync_lane(lane)?;
         Ok(progress)
     }
 }

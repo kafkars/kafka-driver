@@ -11,7 +11,9 @@ use crate::{
     reactor::scram_proof::ScramProofSender,
 };
 
-use super::{BrokerSetError, child::BrokerChild, lane_queue::LaneQueue};
+use super::{
+    BrokerSetError, child::BrokerChild, deadline_index::DeadlineIndex, lane_queue::LaneQueue,
+};
 
 /// Shard-local owner of a seed connection and disjoint broker token namespaces.
 pub(in crate::reactor) struct BrokerSet {
@@ -30,11 +32,13 @@ pub(in crate::reactor) struct BrokerSet {
     pub(super) free_slots: Vec<usize>,
     pub(super) lane_slots: BTreeMap<super::BrokerLane, usize>,
     pub(super) address_refreshes: LaneQueue,
+    pub(super) deadlines: DeadlineIndex,
     pub(super) broker_template: Option<BrokerTemplate>,
     pub(super) scram_proof: Option<ScramProofSender>,
     pub(super) waiting_calls: NonZeroUsize,
     pub(super) waiting_bytes: NonZeroUsize,
     pub(super) admission_budget: NonZeroUsize,
+    pub(super) lane_turn_budget: NonZeroUsize,
     pub(super) admission_cursor: usize,
 }
 
@@ -82,11 +86,13 @@ impl BrokerSet {
             free_slots: Vec::new(),
             lane_slots: BTreeMap::new(),
             address_refreshes: LaneQueue::new(lane_capacity),
+            deadlines: DeadlineIndex::new(lane_capacity),
             broker_template,
             scram_proof,
             waiting_calls: metadata_limits.waiting_calls(),
             waiting_bytes: metadata_limits.waiting_bytes(),
             admission_budget: metadata_limits.admission_budget(),
+            lane_turn_budget: metadata_limits.lane_turn_budget(),
             admission_cursor: 0,
         })
     }
@@ -123,7 +129,7 @@ impl BrokerSet {
                 }
                 lane
             };
-            self.sync_address_refresh(lane)?;
+            self.sync_lane(lane)?;
             position += 1;
         }
         self.directory = Some(directory.clone());

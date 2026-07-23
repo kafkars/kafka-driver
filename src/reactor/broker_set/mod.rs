@@ -3,6 +3,7 @@
 mod child;
 mod child_io;
 mod child_resolution;
+mod deadline_index;
 mod error;
 mod io;
 mod lane;
@@ -19,6 +20,10 @@ mod waiting;
 
 #[cfg(test)]
 mod address_refresh_test;
+#[cfg(test)]
+mod deadline_budget_test;
+#[cfg(test)]
+mod deadline_index_test;
 #[cfg(test)]
 mod deadline_test;
 #[cfg(test)]

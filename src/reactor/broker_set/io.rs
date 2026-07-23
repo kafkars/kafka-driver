@@ -43,7 +43,7 @@ impl BrokerSet {
         };
         let lane = child.lane();
         let progress = child.observe(poller, event, now)?;
-        self.sync_address_refresh(lane)?;
+        self.sync_lane(lane)?;
         Ok(progress | self.reclaim_reusable_children()?)
     }
 
@@ -64,7 +64,7 @@ impl BrokerSet {
                 .ok_or(BrokerSetError::UnknownBrokerChild)?;
             let lane = child.lane();
             progress |= child.continue_io(poller, now)?;
-            self.sync_address_refresh(lane)?;
+            self.sync_lane(lane)?;
             position += 1;
         }
         progress |= self.activate_pending(poller, now)?;
@@ -84,29 +84,34 @@ impl BrokerSet {
             .map_or(Ok(DeadlineProgress::idle()), |seed| {
                 seed.fire_due(poller, now).map_err(BrokerSetError::Broker)
             })?;
-        let mut position = 0;
-        while let Some(index) = self.active_slots.get(position).copied() {
+        let mut progressed_lanes = 0;
+        while progressed_lanes < self.lane_turn_budget.get() {
+            let Some(lane) = self.deadlines.take_due(now) else {
+                break;
+            };
+            let Some(index) = self.child_index(lane) else {
+                continue;
+            };
             let child = self
                 .children
                 .get_mut(index)
                 .ok_or(BrokerSetError::UnknownBrokerChild)?;
-            let lane = child.lane();
             progress = progress.merge(child.fire_due(poller, now)?);
-            self.sync_address_refresh(lane)?;
-            position += 1;
+            self.sync_lane(lane)?;
+            progressed_lanes += 1;
         }
+        let more_due = self.deadlines.next_deadline().is_some_and(|at| at <= now);
         progress = progress.merge(DeadlineProgress::from_work(
             usize::from(self.reclaim_reusable_children()?),
-            false,
+            more_due,
         ));
         Ok(progress)
     }
 
     pub(in crate::reactor) fn next_deadline(&self) -> Option<Moment> {
-        self.active_slots
-            .iter()
-            .filter_map(|index| self.children.get(*index))
-            .filter_map(|child| child.next_deadline())
+        self.deadlines
+            .next_deadline()
+            .into_iter()
             .chain(self.seed.as_ref().and_then(SingleBroker::next_deadline))
             .min()
     }
@@ -126,7 +131,9 @@ impl BrokerSet {
                 .children
                 .get_mut(index)
                 .ok_or(BrokerSetError::UnknownBrokerChild)?;
+            let lane = child.lane();
             child.begin_drain(poller, now)?;
+            self.sync_lane(lane)?;
             position += 1;
         }
         Ok(())

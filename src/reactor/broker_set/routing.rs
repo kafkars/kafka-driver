@@ -40,7 +40,7 @@ impl BrokerSet {
         let result = child
             .submit(poller, route, &endpoint, effect_id, request, now)
             .map(|request| request.map(|request| (lane, request)));
-        self.sync_address_refresh(lane)?;
+        self.sync_lane(lane)?;
         result
     }
 
@@ -60,7 +60,7 @@ impl BrokerSet {
             .ok_or(BrokerSetError::UnknownBrokerChild)?
             .complete(outcome)?;
         let ChildResolution::Resolved(pending) = action else {
-            self.sync_address_refresh(lane)?;
+            self.sync_lane(lane)?;
             return Ok(!matches!(action, ChildResolution::Ignored));
         };
         let child = self
@@ -69,7 +69,7 @@ impl BrokerSet {
             .ok_or(BrokerSetError::UnknownBrokerChild)?;
         child.stage(pending);
         self.activate_child(index, poller, now)?;
-        self.sync_address_refresh(lane)?;
+        self.sync_lane(lane)?;
         Ok(true)
     }
 
@@ -81,7 +81,13 @@ impl BrokerSet {
         let mut progress = false;
         let mut position = 0;
         while let Some(index) = self.active_slots.get(position).copied() {
+            let lane = self
+                .children
+                .get(index)
+                .ok_or(BrokerSetError::UnknownBrokerChild)?
+                .lane();
             progress |= self.activate_child(index, poller, now)?;
+            self.sync_lane(lane)?;
             position += 1;
         }
         Ok(progress)
@@ -108,7 +114,7 @@ impl BrokerSet {
         let request = self
             .child_mut_for_lane(lane)?
             .start_address_refresh(effect_id)?;
-        self.sync_address_refresh(lane)?;
+        self.sync_lane(lane)?;
         Ok(request)
     }
 

@@ -96,7 +96,7 @@ fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
         .unwrap_or_else(|error| panic!("accept refreshed broker: {error}"));
     complete_negotiation(&mut poller, connection_mut(&mut brokers, lane), &mut peer);
     brokers
-        .sync_address_refresh(lane)
+        .sync_lane(lane)
         .unwrap_or_else(|error| panic!("sync refreshed broker lane: {error}"));
 
     // Then

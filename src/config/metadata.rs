@@ -8,6 +8,7 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_WAITING_CALLS: NonZeroUsize = nonzero(256);
 const DEFAULT_WAITING_BYTES: NonZeroUsize = nonzero(8 * 1024 * 1024);
 const DEFAULT_ADMISSION_BUDGET: NonZeroUsize = nonzero(64);
+const DEFAULT_LANE_TURN_BUDGET: NonZeroUsize = nonzero(256);
 const DEFAULT_PARTITION_WAITING_CALLS: NonZeroUsize = nonzero(256);
 const DEFAULT_PARTITION_WAITING_BYTES: NonZeroUsize = nonzero(8 * 1024 * 1024);
 const DEFAULT_PARTITION_ADMISSION_BUDGET: NonZeroUsize = nonzero(64);
@@ -23,6 +24,7 @@ pub struct MetadataLimits {
     waiting_calls: NonZeroUsize,
     waiting_bytes: NonZeroUsize,
     admission_budget: NonZeroUsize,
+    lane_turn_budget: NonZeroUsize,
     partition_waiting_calls: NonZeroUsize,
     partition_waiting_bytes: NonZeroUsize,
     partition_admission_budget: NonZeroUsize,
@@ -39,6 +41,7 @@ impl MetadataLimits {
             waiting_calls: DEFAULT_WAITING_CALLS,
             waiting_bytes: DEFAULT_WAITING_BYTES,
             admission_budget: DEFAULT_ADMISSION_BUDGET,
+            lane_turn_budget: DEFAULT_LANE_TURN_BUDGET,
             partition_waiting_calls: DEFAULT_PARTITION_WAITING_CALLS,
             partition_waiting_bytes: DEFAULT_PARTITION_WAITING_BYTES,
             partition_admission_budget: DEFAULT_PARTITION_ADMISSION_BUDGET,
@@ -70,6 +73,12 @@ impl MetadataLimits {
         self.waiting_calls = waiting_calls;
         self.waiting_bytes = waiting_bytes;
         self.admission_budget = admission_budget;
+        self
+    }
+
+    /// Replaces the global broker-lane work bound for one reactor phase.
+    pub const fn with_lane_turn_budget(mut self, lane_turn_budget: NonZeroUsize) -> Self {
+        self.lane_turn_budget = lane_turn_budget;
         self
     }
 
@@ -119,6 +128,11 @@ impl MetadataLimits {
     /// Returns maximum waiting calls admitted or expired for one lane in one turn.
     pub const fn admission_budget(self) -> NonZeroUsize {
         self.admission_budget
+    }
+
+    /// Returns maximum broker lanes progressed in one reactor phase.
+    pub const fn lane_turn_budget(self) -> NonZeroUsize {
+        self.lane_turn_budget
     }
 
     /// Returns maximum calls waiting for a topic-partition route.
