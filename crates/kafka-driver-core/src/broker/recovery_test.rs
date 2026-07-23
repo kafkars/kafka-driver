@@ -43,6 +43,12 @@ fn only_matching_refresh_waits_for_the_original_reconnect_deadline() {
     });
     assert_eq!(stale.disposition(), BrokerDisposition::IgnoredStale);
     assert_eq!(machine.state().phase(), BrokerPhase::Refreshing);
+    apply(
+        &mut machine,
+        BrokerInput::EndpointRefreshStarted {
+            failed_epoch: EPOCH_1,
+        },
+    );
 
     let refreshed = machine.apply(BrokerInput::EndpointRefreshed {
         failed_epoch: EPOCH_1,
@@ -74,6 +80,12 @@ fn only_matching_refresh_waits_for_the_original_reconnect_deadline() {
 fn refresh_after_the_original_deadline_opens_without_scheduling_a_stale_timer() {
     let mut machine = connecting_machine();
     apply(&mut machine, exhausted(EPOCH_1, 1_000));
+    apply(
+        &mut machine,
+        BrokerInput::EndpointRefreshStarted {
+            failed_epoch: EPOCH_1,
+        },
+    );
 
     let refreshed = machine.apply(BrokerInput::EndpointRefreshed {
         failed_epoch: EPOCH_1,

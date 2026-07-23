@@ -7,9 +7,9 @@ use std::{
 };
 
 use kafka_driver_core::{
-    BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
-    DnsOutcome, EffectId, HostName, IpAddress, MetadataGeneration, Moment, ResolutionLimits,
-    ResolvedAddress, ResolvedAddressSet,
+    AddressRefreshState, BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits,
+    BrokerEndpoint, BrokerId, BrokerState, DnsFailure, DnsOutcome, EffectId, HostName, IpAddress,
+    MetadataGeneration, Moment, ResolutionLimits, ResolvedAddress, ResolvedAddressSet,
 };
 use kafka_wire::ApiVersionsRequest;
 
@@ -77,6 +77,7 @@ fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
     let refresh = brokers
         .start_address_refresh(lane, EffectId::from_raw(2))
         .unwrap_or_else(|error| panic!("start address refresh: {error}"));
+    let refresh = retry_after_temporary_failure(&mut brokers, &poller, lane, &refresh);
     brokers
         .complete_resolution(
             lane,
@@ -111,6 +112,43 @@ fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
         kafka_driver_core::ConnectionPhase::Ready
     );
     drop(call);
+}
+
+fn retry_after_temporary_failure(
+    brokers: &mut BrokerSet,
+    poller: &Poller,
+    lane: BrokerLane,
+    refresh: &kafka_driver_core::DnsRequest,
+) -> kafka_driver_core::DnsRequest {
+    brokers
+        .complete_resolution(
+            lane,
+            DnsOutcome::new(
+                refresh.epoch(),
+                refresh.effect_id(),
+                Err(DnsFailure::Temporary),
+            ),
+            poller,
+            Moment::ORIGIN,
+        )
+        .unwrap_or_else(|error| panic!("fail address refresh: {error}"));
+    let BrokerState::Refreshing {
+        refresh: AddressRefreshState::Backoff { deadline, .. },
+        ..
+    } = connection(brokers, lane).broker_state()
+    else {
+        panic!("failed refresh must enter deterministic DNS backoff");
+    };
+    assert!(deadline > Moment::ORIGIN);
+    assert_eq!(brokers.take_address_refresh(), None);
+    assert!(!brokers.has_local_io());
+    brokers
+        .fire_due(poller, deadline)
+        .unwrap_or_else(|error| panic!("fire address refresh retry: {error}"));
+    assert_eq!(brokers.take_address_refresh(), Some(lane));
+    brokers
+        .start_address_refresh(lane, EffectId::from_raw(3))
+        .unwrap_or_else(|error| panic!("retry address refresh: {error}"))
 }
 
 fn observe_refusal_if_needed(poller: &mut Poller, brokers: &mut BrokerSet, lane: BrokerLane) {

@@ -3,8 +3,8 @@
 use crate::ConnectionEpoch;
 
 use super::{
-    BrokerCloseReason, BrokerEffect, BrokerMachine, BrokerState, BrokerTransition,
-    ReconnectSchedule, RetryOrdinal,
+    AddressRefreshState, BrokerCloseReason, BrokerEffect, BrokerMachine, BrokerState,
+    BrokerTransition, ReconnectSchedule, RetryOrdinal,
 };
 
 impl BrokerMachine {
@@ -46,47 +46,9 @@ impl BrokerMachine {
             retry: recovery.retry,
             timer_id: recovery.timer_id,
             deadline: recovery.deadline,
+            refresh: AddressRefreshState::Pending { last_retry: None },
         };
         BrokerTransition::applied(Vec::new())
-    }
-
-    pub(super) fn endpoint_refreshed(
-        &mut self,
-        failed_epoch: ConnectionEpoch,
-        now: crate::Moment,
-    ) -> BrokerTransition {
-        let BrokerState::Refreshing {
-            failed_epoch: expected,
-            next_epoch,
-            retry,
-            timer_id,
-            deadline,
-        } = self.state
-        else {
-            return BrokerTransition::stale();
-        };
-        if failed_epoch != expected {
-            return BrokerTransition::stale();
-        }
-        if now < deadline {
-            self.state = BrokerState::Backoff {
-                failed_epoch,
-                next_epoch,
-                retry,
-                timer_id,
-                deadline,
-            };
-            return BrokerTransition::applied(vec![BrokerEffect::ScheduleReconnect {
-                failed_epoch,
-                timer_id,
-                at: deadline,
-            }]);
-        }
-        self.state = BrokerState::Connecting {
-            epoch: next_epoch,
-            retry: Some(retry),
-        };
-        BrokerTransition::applied(vec![BrokerEffect::OpenConnection { epoch: next_epoch }])
     }
 
     fn recovery_after(

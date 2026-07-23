@@ -1,6 +1,6 @@
 //! Valid long-lived broker states across replaceable connection generations.
 
-use crate::{AuthenticationFailure, ConnectionEpoch, Moment, TimerId};
+use crate::{AuthenticationFailure, ConnectionEpoch, DnsFailure, Moment, TimerId};
 
 use super::RetryOrdinal;
 
@@ -36,6 +36,32 @@ pub enum BrokerCloseReason {
     ClockOverflow,
     /// Broker authentication failed permanently for this configuration.
     AuthenticationFailed(AuthenticationFailure),
+    /// Endpoint refresh returned a structurally unusable resolver result.
+    EndpointResolutionFailed(DnsFailure),
+}
+
+/// DNS retry ownership while reconnect waits for fresh endpoint evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AddressRefreshState {
+    /// The logical endpoint is ready for bounded resolver admission.
+    Pending {
+        /// Last scheduled retry, or `None` before the first failure.
+        last_retry: Option<RetryOrdinal>,
+    },
+    /// One identity-fenced resolver request owns the logical endpoint.
+    Resolving {
+        /// Last scheduled retry, or `None` for the first attempt.
+        last_retry: Option<RetryOrdinal>,
+    },
+    /// A capped jittered delay prevents immediate resolver resubmission.
+    Backoff {
+        /// One-based refresh retry ordinal controlling the delay cap.
+        retry: RetryOrdinal,
+        /// Owned endpoint-refresh timer identity.
+        timer_id: TimerId,
+        /// Absolute driver-relative retry deadline.
+        deadline: Moment,
+    },
 }
 
 /// Immutable broker lifecycle snapshot containing only state-valid data.
@@ -83,6 +109,8 @@ pub enum BrokerState {
         timer_id: TimerId,
         /// Original failure-relative reconnect deadline.
         deadline: Moment,
+        /// Endpoint-resolution attempt and retry ownership.
+        refresh: AddressRefreshState,
     },
     /// Host shutdown is waiting for one current child to close.
     Draining {

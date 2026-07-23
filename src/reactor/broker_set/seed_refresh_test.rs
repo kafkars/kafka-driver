@@ -42,7 +42,12 @@ fn seed_refresh_suspends_old_reconnect_and_ignores_stale_configuration() {
         brokers.seed_mut().map(|seed| seed.broker_state().phase()),
         Some(BrokerPhase::Refreshing)
     );
-    assert!(brokers.take_seed_address_refresh().is_some());
+    assert!(
+        brokers
+            .take_seed_address_refresh()
+            .unwrap_or_else(|error| panic!("take seed refresh: {error}"))
+            .is_some()
+    );
     assert_eq!(brokers.next_deadline(), None);
 
     // When: time passes beyond old backoff and a stale DNS generation arrives.

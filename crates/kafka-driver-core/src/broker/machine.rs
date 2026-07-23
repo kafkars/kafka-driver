@@ -35,6 +35,22 @@ impl BrokerMachine {
             BrokerInput::EndpointExhausted { epoch, reconnect } => {
                 self.endpoint_exhausted(epoch, reconnect)
             }
+            BrokerInput::EndpointRefreshStarted { failed_epoch } => {
+                self.endpoint_refresh_started(failed_epoch)
+            }
+            BrokerInput::EndpointRefreshDeferred { failed_epoch } => {
+                self.endpoint_refresh_deferred(failed_epoch)
+            }
+            BrokerInput::EndpointRefreshFailed {
+                failed_epoch,
+                failure,
+                retry,
+            } => self.endpoint_refresh_failed(failed_epoch, failure, retry),
+            BrokerInput::EndpointRefreshRetryElapsed {
+                failed_epoch,
+                timer_id,
+                now,
+            } => self.endpoint_refresh_retry_elapsed(failed_epoch, timer_id, now),
             BrokerInput::EndpointRefreshed { failed_epoch, now } => {
                 self.endpoint_refreshed(failed_epoch, now)
             }
@@ -145,6 +161,17 @@ impl BrokerMachine {
                     reason: BrokerCloseReason::Requested,
                 };
                 BrokerTransition::applied(vec![BrokerEffect::CancelReconnect { timer_id }])
+            }
+            BrokerState::Refreshing {
+                refresh: super::AddressRefreshState::Backoff { timer_id, .. },
+                ..
+            } => {
+                self.state = BrokerState::Closed {
+                    reason: BrokerCloseReason::Requested,
+                };
+                BrokerTransition::applied(vec![BrokerEffect::CancelEndpointRefreshRetry {
+                    timer_id,
+                }])
             }
             BrokerState::Refreshing { .. } => {
                 self.state = BrokerState::Closed {

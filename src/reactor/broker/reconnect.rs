@@ -75,6 +75,7 @@ impl SingleBroker {
                 ))
             .then(|| self.addresses.failed())
             .flatten();
+            let mut pending_refresh = None;
             let input = match (broker_phase, connection_state, exhausted_endpoint) {
                 (
                     BrokerPhase::Connecting,
@@ -88,7 +89,7 @@ impl SingleBroker {
                 }
                 (BrokerPhase::Connecting | BrokerPhase::Available, _, Some(endpoint)) => {
                     let reconnect = self.reserve_reconnect(now)?;
-                    self.begin_address_refresh(endpoint, epoch);
+                    pending_refresh = Some((endpoint, epoch));
                     BrokerInput::EndpointExhausted { epoch, reconnect }
                 }
                 (BrokerPhase::Connecting | BrokerPhase::Available, _, None) => {
@@ -109,6 +110,11 @@ impl SingleBroker {
             };
             let transition = self.broker.apply(input);
             require_applied(transition.disposition())?;
+            if let Some((endpoint, failed_epoch)) = pending_refresh
+                && self.broker.state().phase() == BrokerPhase::Refreshing
+            {
+                self.begin_address_refresh(endpoint, failed_epoch)?;
+            }
             self.interpret_broker_effects(poller, transition.into_effects(), now)?;
         }
         Ok(())
@@ -117,7 +123,7 @@ impl SingleBroker {
     fn reserve_reconnect(&mut self, now: Moment) -> Result<ReconnectSchedule, BrokerError> {
         let timer_id = self
             .ids
-            .reserve_reconnect_timer()
+            .reserve_policy_timer()
             .ok_or(BrokerError::IdentityExhausted)?;
         Ok(ReconnectSchedule::new(
             timer_id,
@@ -146,7 +152,17 @@ impl SingleBroker {
                     failed_epoch,
                     at,
                 ))?,
-                BrokerEffect::CancelReconnect { timer_id } => {
+                BrokerEffect::ScheduleEndpointRefreshRetry {
+                    failed_epoch,
+                    timer_id,
+                    at,
+                } => self.timers.schedule(DeadlineTimer::for_endpoint_refresh(
+                    timer_id,
+                    failed_epoch,
+                    at,
+                ))?,
+                BrokerEffect::CancelReconnect { timer_id }
+                | BrokerEffect::CancelEndpointRefreshRetry { timer_id } => {
                     self.timers.cancel(timer_id);
                 }
                 BrokerEffect::DrainConnection { epoch } => {

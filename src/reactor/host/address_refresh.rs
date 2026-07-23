@@ -4,7 +4,11 @@ use super::{Reactor, ReactorError};
 
 impl Reactor {
     pub(super) fn schedule_address_refreshes(&mut self) -> Result<bool, ReactorError> {
-        let seed_refresh = self.brokers.take_seed_address_refresh().is_some();
+        let seed_refresh = self
+            .brokers
+            .take_seed_address_refresh()
+            .map_err(ReactorError::broker_set)?
+            .is_some();
         let Some(resolution) = &mut self.resolution else {
             if seed_refresh {
                 self.brokers

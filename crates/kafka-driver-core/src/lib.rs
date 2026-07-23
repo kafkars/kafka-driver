@@ -39,9 +39,9 @@ pub use bootstrap::{
     BootstrapRetryTransition, BootstrapSet, BootstrapState, BootstrapTransition,
 };
 pub use broker::{
-    BackoffPolicy, BackoffPolicyError, BrokerCloseReason, BrokerDisposition, BrokerEffect,
-    BrokerInput, BrokerMachine, BrokerPhase, BrokerState, BrokerTransition, JitterSample,
-    ReconnectSchedule, RetryOrdinal,
+    AddressRefreshState, BackoffPolicy, BackoffPolicyError, BrokerCloseReason, BrokerDisposition,
+    BrokerEffect, BrokerInput, BrokerMachine, BrokerPhase, BrokerState, BrokerTransition,
+    EndpointRefreshSchedule, JitterSample, ReconnectSchedule, RetryOrdinal,
 };
 pub use broker_resolution::{
     BrokerResolutionDisposition, BrokerResolutionEffect, BrokerResolutionInput,

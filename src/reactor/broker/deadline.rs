@@ -78,6 +78,14 @@ impl SingleBroker {
         if deadline.subject() == DeadlineSubject::Reconnect {
             return self.deliver_reconnect(poller, deadline.epoch(), deadline.timer_id(), now);
         }
+        if deadline.subject() == DeadlineSubject::EndpointRefresh {
+            return self.deliver_address_refresh_retry(
+                poller,
+                deadline.epoch(),
+                deadline.timer_id(),
+                now,
+            );
+        }
         let transition = self.connection.apply(ConnectionInput::DeadlineElapsed {
             epoch: deadline.epoch(),
             timer_id: deadline.timer_id(),

@@ -15,6 +15,8 @@ pub(in crate::reactor) enum DeadlineSubject {
     Authentication,
     /// Delay before creating a fresh connection generation.
     Reconnect,
+    /// Delay before retrying discovered-broker endpoint resolution.
+    EndpointRefresh,
 }
 
 /// One scheduled connection deadline and the identities its event must echo.
@@ -76,6 +78,19 @@ impl DeadlineTimer {
             timer_id,
             epoch: failed_epoch,
             subject: DeadlineSubject::Reconnect,
+            at,
+        }
+    }
+
+    pub(in crate::reactor) const fn for_endpoint_refresh(
+        timer_id: TimerId,
+        failed_epoch: ConnectionEpoch,
+        at: Moment,
+    ) -> Self {
+        Self {
+            timer_id,
+            epoch: failed_epoch,
+            subject: DeadlineSubject::EndpointRefresh,
             at,
         }
     }

@@ -1,6 +1,6 @@
 //! Data-only commands and connection outcomes accepted by broker policy.
 
-use crate::{AuthenticationFailure, ConnectionEpoch, Moment, TimerId};
+use crate::{AuthenticationFailure, ConnectionEpoch, DnsFailure, Moment, TimerId};
 
 use super::JitterSample;
 
@@ -14,6 +14,25 @@ pub struct ReconnectSchedule {
 
 impl ReconnectSchedule {
     /// Creates a reconnect schedule from reactor-owned observations.
+    pub const fn new(timer_id: TimerId, now: Moment, jitter: JitterSample) -> Self {
+        Self {
+            timer_id,
+            now,
+            jitter,
+        }
+    }
+}
+
+/// External identities, time, and entropy for one endpoint-refresh retry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EndpointRefreshSchedule {
+    pub(super) timer_id: TimerId,
+    pub(super) now: Moment,
+    pub(super) jitter: JitterSample,
+}
+
+impl EndpointRefreshSchedule {
+    /// Creates a retry schedule from reactor-owned observations.
     pub const fn new(timer_id: TimerId, now: Moment, jitter: JitterSample) -> Self {
         Self {
             timer_id,
@@ -47,6 +66,38 @@ pub enum BrokerInput {
 
         /// Reserved retry identity, time, and entropy held until refresh.
         reconnect: ReconnectSchedule,
+    },
+    /// Reports that external DNS ownership began for a suspended reconnect.
+    EndpointRefreshStarted {
+        /// Failed generation whose endpoint is being refreshed.
+        failed_epoch: ConnectionEpoch,
+    },
+    /// Returns DNS ownership when bounded worker admission could not proceed.
+    EndpointRefreshDeferred {
+        /// Failed generation whose endpoint refresh remains pending.
+        failed_epoch: ConnectionEpoch,
+    },
+    /// Reports one sanitized endpoint-refresh failure.
+    EndpointRefreshFailed {
+        /// Failed connection generation awaiting endpoint evidence.
+        failed_epoch: ConnectionEpoch,
+
+        /// Sanitized resolver failure classification.
+        failure: DnsFailure,
+
+        /// External identities, time, and entropy available for retry.
+        retry: EndpointRefreshSchedule,
+    },
+    /// Reports one endpoint-refresh retry timer firing.
+    EndpointRefreshRetryElapsed {
+        /// Failed connection generation echoed from the timer.
+        failed_epoch: ConnectionEpoch,
+
+        /// Endpoint-refresh timer identity that fired.
+        timer_id: TimerId,
+
+        /// Current driver-relative time.
+        now: Moment,
     },
     /// Reports that newer endpoint evidence is ready for a suspended reconnect.
     EndpointRefreshed {

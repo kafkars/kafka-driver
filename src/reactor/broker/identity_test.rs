@@ -19,7 +19,7 @@ fn given_fresh_sources_when_work_is_reserved_then_each_domain_advances_independe
     let Some(submission) = ids.reserve_submission() else {
         panic!("fresh submission identities must exist");
     };
-    let Some(reconnect) = ids.reserve_reconnect_timer() else {
+    let Some(reconnect) = ids.reserve_policy_timer() else {
         panic!("fresh reconnect timer must exist");
     };
 

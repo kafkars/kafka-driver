@@ -127,7 +127,7 @@ impl BrokerChild {
                     return Err(BrokerSetError::UnexpectedResolutionEffect);
                 };
                 connection
-                    .fail_address_refresh()
+                    .fail_address_refresh(*failure, poller, now)
                     .map_err(BrokerSetError::Broker)?;
                 Ok(ChildResolution::RefreshFailed)
             }
@@ -161,9 +161,21 @@ impl BrokerChild {
         let endpoint = self
             .connection
             .as_mut()
-            .and_then(super::super::broker::SingleBroker::take_address_refresh)
+            .ok_or(BrokerSetError::UnexpectedResolutionEffect)?
+            .take_address_refresh()
+            .map_err(BrokerSetError::Broker)?
             .ok_or(BrokerSetError::UnexpectedResolutionEffect)?;
-        let epoch = self.reserve_epoch()?;
+        let epoch = match self.reserve_epoch() {
+            Ok(epoch) => epoch,
+            Err(error) => {
+                if let Some(connection) = &mut self.connection {
+                    connection
+                        .restore_address_refresh()
+                        .map_err(BrokerSetError::Broker)?;
+                }
+                return Err(error);
+            }
+        };
         let transition = self.resolution.apply(BrokerResolutionInput::Start {
             route,
             endpoint: endpoint.clone(),

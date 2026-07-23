@@ -24,6 +24,8 @@ mod terminal;
 mod write_admission;
 
 #[cfg(test)]
+mod address_refresh_terminal_test;
+#[cfg(test)]
 mod address_rotation_test;
 #[cfg(test)]
 mod authentication_fixture_test;

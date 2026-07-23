@@ -96,7 +96,7 @@ impl BrokerIds {
         })
     }
 
-    pub(in crate::reactor) fn reserve_reconnect_timer(&mut self) -> Option<TimerId> {
+    pub(in crate::reactor) fn reserve_policy_timer(&mut self) -> Option<TimerId> {
         let timer = self.timer?;
         self.timer = timer.checked_add(1);
         Some(TimerId::from_raw(timer))

@@ -75,7 +75,7 @@ impl SingleBroker {
         Ok(progress)
     }
 
-    pub(in crate::reactor) const fn has_local_io(&self) -> bool {
+    pub(in crate::reactor) fn has_local_io(&self) -> bool {
         self.has_continuation_io() || self.address_refresh_needed()
     }
 

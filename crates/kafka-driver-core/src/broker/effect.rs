@@ -19,9 +19,23 @@ pub enum BrokerEffect {
         /// Absolute driver-relative reconnect deadline.
         at: Moment,
     },
+    /// Schedules a bounded delay before retrying endpoint resolution.
+    ScheduleEndpointRefreshRetry {
+        /// Connection generation whose address pass was exhausted.
+        failed_epoch: ConnectionEpoch,
+        /// Timer identity reserved for this refresh retry.
+        timer_id: TimerId,
+        /// Absolute driver-relative retry deadline.
+        at: Moment,
+    },
     /// Cancels a reconnect timer because shutdown won ownership.
     CancelReconnect {
         /// Timer identity whose ownership is ending.
+        timer_id: TimerId,
+    },
+    /// Cancels an endpoint-refresh timer because shutdown won ownership.
+    CancelEndpointRefreshRetry {
+        /// Timer identity whose refresh ownership is ending.
         timer_id: TimerId,
     },
     /// Asks the current connection child to drain and close.

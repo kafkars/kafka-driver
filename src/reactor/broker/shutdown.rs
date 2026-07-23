@@ -14,6 +14,9 @@ impl SingleBroker {
     ) -> Result<(), BrokerError> {
         let transition = self.broker.apply(BrokerInput::BeginDrain);
         self.interpret_broker_effects(poller, transition.into_effects(), now)?;
+        if self.broker.state().phase() == BrokerPhase::Closed {
+            self.address_refresh = None;
+        }
         self.reconcile_connection(poller, now)
     }
 

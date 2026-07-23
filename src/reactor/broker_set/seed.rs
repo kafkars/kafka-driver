@@ -55,10 +55,11 @@ impl BrokerSet {
 
     pub(in crate::reactor) fn take_seed_address_refresh(
         &mut self,
-    ) -> Option<kafka_driver_core::BrokerEndpoint> {
-        self.seed
-            .as_mut()
-            .and_then(SingleBroker::take_address_refresh)
+    ) -> Result<Option<kafka_driver_core::BrokerEndpoint>, BrokerSetError> {
+        let Some(seed) = self.seed.as_mut() else {
+            return Ok(None);
+        };
+        seed.take_address_refresh().map_err(BrokerSetError::Broker)
     }
 
     pub(in crate::reactor) fn restore_seed_address_refresh(

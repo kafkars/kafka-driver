@@ -159,6 +159,9 @@ fn draining() -> RequestError {
 }
 
 fn terminal(reason: BrokerCloseReason) -> RequestError {
+    if let BrokerCloseReason::EndpointResolutionFailed(failure) = reason {
+        return RequestError::NameResolutionFailed { failure };
+    }
     let failure = match reason {
         BrokerCloseReason::AuthenticationFailed(failure) => CallFailure::ConnectionClosed {
             reason: CloseReason::AuthenticationFailed(failure),
@@ -167,6 +170,9 @@ fn terminal(reason: BrokerCloseReason) -> RequestError {
         BrokerCloseReason::EpochExhausted
         | BrokerCloseReason::RetryExhausted
         | BrokerCloseReason::ClockOverflow => CallFailure::Closed,
+        BrokerCloseReason::EndpointResolutionFailed(_) => {
+            unreachable!("endpoint resolution returned above")
+        }
     };
     RequestError::Rejected {
         failure,
