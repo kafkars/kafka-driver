@@ -1,4 +1,4 @@
-//! Bounded FIFO ownership paired with exact earliest-deadline lookup.
+//! Bounded admission order, explicit tail rotation, and exact deadline lookup.
 
 use std::{collections::BTreeMap, num::NonZeroUsize};
 
@@ -22,6 +22,15 @@ impl<T> WaitQueue<T> {
     }
 
     pub(in crate::reactor) fn push(&mut self, value: T, deadline: Moment) -> Result<(), T> {
+        self.insert_back(value, deadline)
+    }
+
+    /// Requeues one examined survivor behind entries not yet examined.
+    pub(in crate::reactor) fn rotate_back(&mut self, value: T, deadline: Moment) -> Result<(), T> {
+        self.insert_back(value, deadline)
+    }
+
+    fn insert_back(&mut self, value: T, deadline: Moment) -> Result<(), T> {
         if self.entries.len() == self.capacity {
             return Err(value);
         }

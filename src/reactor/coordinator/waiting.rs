@@ -1,4 +1,4 @@
-//! Bounded ownership for calls awaiting one coordinator discovery.
+//! Bounded round-robin scans for calls awaiting coordinator discoveries.
 
 use std::num::NonZeroUsize;
 
@@ -117,7 +117,7 @@ impl CoordinatorWaiters {
 
     pub(super) fn retain(&mut self, waiting: WaitingCoordinatorCall, deadline: Moment) -> bool {
         let bytes = waiting.bytes;
-        if let Err(waiting) = self.calls.push(waiting, deadline) {
+        if let Err(waiting) = self.calls.rotate_back(waiting, deadline) {
             self.reject_capacity(waiting.request);
             return false;
         }

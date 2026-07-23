@@ -1,4 +1,4 @@
-//! FIFO, deadline ordering, capacity, and index-removal wait-queue scenarios.
+//! Admission order, tail rotation, deadlines, and capacity wait-queue scenarios.
 
 use std::num::NonZeroUsize;
 
@@ -27,6 +27,21 @@ fn equal_deadlines_expire_in_fifo_sequence() {
 
     assert_eq!(waiting.take_due(moment(10)), Some(("first", moment(10))));
     assert_eq!(waiting.take_due(moment(10)), Some(("second", moment(10))));
+}
+
+#[test]
+fn examined_survivor_rotates_behind_unexamined_admissions() {
+    let mut waiting = WaitQueue::new(nonzero(2));
+    assert!(waiting.push("first", moment(20)).is_ok());
+    assert!(waiting.push("second", moment(10)).is_ok());
+    let Some((first, deadline)) = waiting.pop_front() else {
+        panic!("first admission must be available for examination");
+    };
+
+    assert!(waiting.rotate_back(first, deadline).is_ok());
+
+    assert_eq!(waiting.pop_front(), Some(("second", moment(10))));
+    assert_eq!(waiting.pop_front(), Some(("first", moment(20))));
 }
 
 #[test]

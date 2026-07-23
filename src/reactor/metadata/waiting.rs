@@ -1,4 +1,4 @@
-//! Bounded ownership for calls awaiting one exact topic-partition leader fact.
+//! Bounded round-robin scans for calls awaiting exact partition-leader facts.
 
 use std::num::NonZeroUsize;
 
@@ -141,7 +141,7 @@ impl PartitionWaiters {
                 continue;
             }
             let bytes = waiting.bytes;
-            if let Err(waiting) = self.calls.push(waiting, deadline) {
+            if let Err(waiting) = self.calls.rotate_back(waiting, deadline) {
                 self.reject_capacity(waiting.request);
                 progress.settled += 1;
                 continue;
