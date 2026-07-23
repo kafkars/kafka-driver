@@ -1,6 +1,8 @@
 //! Dedicated-host lifetime and generated-RPC qualification facade.
 
 mod api_versions;
+#[cfg(test)]
+mod api_versions_test;
 mod observation;
 mod owner;
 mod tracked;

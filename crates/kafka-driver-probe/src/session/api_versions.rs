@@ -30,6 +30,15 @@ impl ProbeSession {
         )
     }
 
+    pub(crate) fn await_seed_after_refusal(&self) -> Result<(), ProbeError> {
+        self.request_api_versions(
+            TrafficClass::Interactive,
+            &Route::AnyBroker,
+            "dead-first any-broker route",
+            Readiness::AddressRotation,
+        )
+    }
+
     pub(crate) fn await_controller(&self) -> Result<(), ProbeError> {
         self.await_route(&Route::Controller, "controller route")
     }
@@ -127,6 +136,7 @@ pub(super) fn api_versions_request() -> ApiVersionsRequest {
 #[derive(Clone, Copy)]
 enum Readiness {
     Seed,
+    AddressRotation,
     SemanticRoute,
 }
 
@@ -134,16 +144,31 @@ impl Readiness {
     fn accepts(self, error: &RequestError) -> bool {
         match (self, error) {
             (
-                Self::Seed | Self::SemanticRoute,
+                Self::Seed | Self::AddressRotation | Self::SemanticRoute,
                 RequestError::Rejected {
                     failure: CallFailure::NotReady | CallFailure::Closed,
                     delivery: Delivery::NotSent,
                 },
             )
             | (Self::SemanticRoute, RequestError::RouteUnavailable) => true,
+            (Self::AddressRotation, error) => address_rotation_transient(error),
             (Self::Seed | Self::SemanticRoute, _) => false,
         }
     }
+}
+
+pub(super) fn address_rotation_transient(error: &RequestError) -> bool {
+    matches!(
+        error,
+        RequestError::Rejected {
+            failure: CallFailure::ConnectionClosed {
+                reason: kafka_driver::ConnectionCloseReason::OpenFailed(
+                    kafka_driver::TransportFailure::Refused
+                ),
+            },
+            delivery: Delivery::NotSent,
+        }
+    )
 }
 
 enum RequestAttempt {

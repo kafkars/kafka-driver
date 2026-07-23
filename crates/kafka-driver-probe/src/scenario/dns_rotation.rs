@@ -5,7 +5,7 @@ use kafka_driver::{ConnectionCloseReason, TransportFailure};
 use crate::{error::ProbeError, session::ProbeSession};
 
 pub(super) fn run(session: &ProbeSession) -> Result<(), ProbeError> {
-    session.await_seed()?;
+    session.await_seed_after_refusal()?;
     let snapshot = session.snapshot()?;
     let observed = snapshot.seed().and_then(|seed| seed.last_close_reason());
     require_refused_candidate(observed)?;
