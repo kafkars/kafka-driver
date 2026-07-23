@@ -75,7 +75,10 @@ impl SingleBroker {
         now: Moment,
     ) -> Result<(), BrokerError> {
         let failed_epoch = self.refresh_epoch()?;
-        let retry = self.reserve_endpoint_refresh(now)?;
+        let retry = match failure {
+            DnsFailure::NoUsableAddress => None,
+            DnsFailure::NameNotFound | DnsFailure::Temporary => self.reserve_endpoint_refresh(now),
+        };
         let transition = self.broker.apply(BrokerInput::EndpointRefreshFailed {
             failed_epoch,
             failure,
@@ -185,15 +188,9 @@ impl SingleBroker {
         self.interpret_broker_effects(poller, transition.into_effects(), now)
     }
 
-    fn reserve_endpoint_refresh(
-        &mut self,
-        now: Moment,
-    ) -> Result<EndpointRefreshSchedule, BrokerError> {
-        let timer_id = self
-            .ids
-            .reserve_policy_timer()
-            .ok_or(BrokerError::IdentityExhausted)?;
-        Ok(EndpointRefreshSchedule::new(
+    fn reserve_endpoint_refresh(&mut self, now: Moment) -> Option<EndpointRefreshSchedule> {
+        let timer_id = self.ids.reserve_policy_timer()?;
+        Some(EndpointRefreshSchedule::new(
             timer_id,
             now,
             self.entropy.next_sample(),

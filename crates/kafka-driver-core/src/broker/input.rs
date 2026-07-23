@@ -85,8 +85,8 @@ pub enum BrokerInput {
         /// Sanitized resolver failure classification.
         failure: DnsFailure,
 
-        /// External identities, time, and entropy available for retry.
-        retry: EndpointRefreshSchedule,
+        /// External resources available only when this failure may retry.
+        retry: Option<EndpointRefreshSchedule>,
     },
     /// Reports one endpoint-refresh retry timer firing.
     EndpointRefreshRetryElapsed {

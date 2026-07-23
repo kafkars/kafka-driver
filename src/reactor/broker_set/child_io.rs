@@ -169,6 +169,7 @@ fn terminal(reason: BrokerCloseReason) -> RequestError {
         BrokerCloseReason::Requested => CallFailure::Draining,
         BrokerCloseReason::EpochExhausted
         | BrokerCloseReason::RetryExhausted
+        | BrokerCloseReason::RetryResourcesUnavailable
         | BrokerCloseReason::ClockOverflow => CallFailure::Closed,
         BrokerCloseReason::EndpointResolutionFailed(_) => {
             unreachable!("endpoint resolution returned above")

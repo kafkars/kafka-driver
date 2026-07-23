@@ -70,7 +70,7 @@ impl BrokerMachine {
         &mut self,
         failed_epoch: ConnectionEpoch,
         failure: DnsFailure,
-        schedule: EndpointRefreshSchedule,
+        schedule: Option<EndpointRefreshSchedule>,
     ) -> BrokerTransition {
         let BrokerState::Refreshing {
             failed_epoch: expected,
@@ -89,6 +89,9 @@ impl BrokerMachine {
         if failure == DnsFailure::NoUsableAddress {
             return self.close(BrokerCloseReason::EndpointResolutionFailed(failure));
         }
+        let Some(schedule) = schedule else {
+            return self.close(BrokerCloseReason::RetryResourcesUnavailable);
+        };
         let Some(retry) =
             last_retry.map_or_else(|| Some(RetryOrdinal::first()), RetryOrdinal::next)
         else {

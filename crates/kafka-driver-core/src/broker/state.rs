@@ -32,6 +32,8 @@ pub enum BrokerCloseReason {
     EpochExhausted,
     /// No further retry ordinal could be represented.
     RetryExhausted,
+    /// External timer identity or entropy resources were unavailable for retry.
+    RetryResourcesUnavailable,
     /// The reconnect deadline exceeded driver-relative time.
     ClockOverflow,
     /// Broker authentication failed permanently for this configuration.

@@ -21,7 +21,7 @@ fn temporary_failure_waits_for_a_capped_jittered_retry_deadline() {
     let failed = machine.apply(BrokerInput::EndpointRefreshFailed {
         failed_epoch: FAILED_EPOCH,
         failure: DnsFailure::Temporary,
-        retry: refresh_schedule(REFRESH_TIMER, 2_000),
+        retry: Some(refresh_schedule(REFRESH_TIMER, 2_000)),
     });
 
     assert_eq!(
@@ -70,7 +70,7 @@ fn retry_timer_is_identity_fenced_and_cannot_fire_before_its_deadline() {
         BrokerInput::EndpointRefreshFailed {
             failed_epoch: FAILED_EPOCH,
             failure: DnsFailure::Temporary,
-            retry: refresh_schedule(REFRESH_TIMER, 2_000),
+            retry: Some(refresh_schedule(REFRESH_TIMER, 2_000)),
         },
     );
 
@@ -109,7 +109,7 @@ fn refresh_failure_classification_distinguishes_retryable_names_from_unusable_an
     let retryable = missing.apply(BrokerInput::EndpointRefreshFailed {
         failed_epoch: FAILED_EPOCH,
         failure: DnsFailure::NameNotFound,
-        retry: refresh_schedule(REFRESH_TIMER, 2_000),
+        retry: Some(refresh_schedule(REFRESH_TIMER, 2_000)),
     });
     assert!(matches!(
         retryable.effects(),
@@ -120,7 +120,7 @@ fn refresh_failure_classification_distinguishes_retryable_names_from_unusable_an
     let terminal = unusable.apply(BrokerInput::EndpointRefreshFailed {
         failed_epoch: FAILED_EPOCH,
         failure: DnsFailure::NoUsableAddress,
-        retry: refresh_schedule(REFRESH_TIMER, 2_000),
+        retry: None,
     });
 
     assert!(terminal.effects().is_empty());
@@ -133,6 +133,25 @@ fn refresh_failure_classification_distinguishes_retryable_names_from_unusable_an
 }
 
 #[test]
+fn retryable_failure_without_external_schedule_closes_explicitly() {
+    let mut machine = resolving_machine();
+
+    let failure = machine.apply(BrokerInput::EndpointRefreshFailed {
+        failed_epoch: FAILED_EPOCH,
+        failure: DnsFailure::Temporary,
+        retry: None,
+    });
+
+    assert!(failure.effects().is_empty());
+    assert_eq!(
+        machine.state(),
+        BrokerState::Closed {
+            reason: BrokerCloseReason::RetryResourcesUnavailable,
+        }
+    );
+}
+
+#[test]
 fn shutdown_cancels_an_owned_endpoint_refresh_timer() {
     let mut machine = resolving_machine();
     apply(
@@ -140,7 +159,7 @@ fn shutdown_cancels_an_owned_endpoint_refresh_timer() {
         BrokerInput::EndpointRefreshFailed {
             failed_epoch: FAILED_EPOCH,
             failure: DnsFailure::Temporary,
-            retry: refresh_schedule(REFRESH_TIMER, 2_000),
+            retry: Some(refresh_schedule(REFRESH_TIMER, 2_000)),
         },
     );
 
