@@ -26,6 +26,8 @@ mod owner_test;
 #[cfg(test)]
 mod routing_test;
 #[cfg(test)]
+mod slots_test;
+#[cfg(test)]
 mod terminal_test;
 #[cfg(test)]
 mod waiting_test;

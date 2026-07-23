@@ -85,9 +85,9 @@ impl BrokerSet {
             if self.lane_slots.remove(&lane) != Some(index) {
                 return Err(BrokerSetError::UnknownBrokerChild);
             }
-            self.active_slots.remove(position);
-            if position < self.admission_cursor {
-                self.admission_cursor -= 1;
+            self.active_slots.swap_remove(position);
+            if position <= self.admission_cursor {
+                self.admission_cursor = position;
             }
             self.free_slots.push(index);
             reclaimed = true;
