@@ -2,16 +2,16 @@
 
 use kafka_driver::{CallFailure, ConnectionCloseReason, Delivery, RequestError, TransportFailure};
 
-use super::api_versions::address_rotation_transient;
+use super::api_versions::refused_open_transient;
 
 #[test]
-fn refused_unsent_open_is_retryable_for_address_rotation() {
+fn refused_unsent_open_is_a_seed_readiness_transient() {
     let error = rejected(
         ConnectionCloseReason::OpenFailed(TransportFailure::Refused),
         Delivery::NotSent,
     );
 
-    assert!(address_rotation_transient(&error));
+    assert!(refused_open_transient(&error));
 }
 
 #[test]
@@ -25,8 +25,8 @@ fn possible_delivery_and_established_transport_loss_remain_terminal() {
         Delivery::NotSent,
     );
 
-    assert!(!address_rotation_transient(&possibly_sent));
-    assert!(!address_rotation_transient(&established_loss));
+    assert!(!refused_open_transient(&possibly_sent));
+    assert!(!refused_open_transient(&established_loss));
 }
 
 fn rejected(reason: ConnectionCloseReason, delivery: Delivery) -> RequestError {

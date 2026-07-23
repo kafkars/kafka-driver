@@ -151,13 +151,13 @@ impl Readiness {
                 },
             )
             | (Self::SemanticRoute, RequestError::RouteUnavailable) => true,
-            (Self::AddressRotation, error) => address_rotation_transient(error),
-            (Self::Seed | Self::SemanticRoute, _) => false,
+            (Self::Seed | Self::AddressRotation, error) => refused_open_transient(error),
+            (Self::SemanticRoute, _) => false,
         }
     }
 }
 
-pub(super) fn address_rotation_transient(error: &RequestError) -> bool {
+pub(super) fn refused_open_transient(error: &RequestError) -> bool {
     matches!(
         error,
         RequestError::Rejected {
