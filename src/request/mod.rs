@@ -20,7 +20,8 @@ pub(crate) use completion::RequestCompletion;
 #[cfg(test)]
 pub(crate) use construct::erased_request;
 pub(crate) use construct::{
-    erased_request_in, observed_request, observed_request_in, observed_routed_request_in,
+    erased_request_in, observed_request, observed_request_in, observed_request_until_in,
+    observed_routed_request_in, observed_routed_request_until_in,
 };
 pub(crate) use deadline::RequestDeadline;
 pub(crate) use erased::ErasedRequest;

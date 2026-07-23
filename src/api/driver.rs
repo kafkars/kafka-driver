@@ -24,8 +24,8 @@ use super::{
 pub struct Driver {
     pub(super) commands: MailboxSender<Command>,
     shutdown: ShutdownRequester,
-    call_ids: Arc<CallIds>,
-    observation: Arc<Observation>,
+    pub(super) call_ids: Arc<CallIds>,
+    pub(super) observation: Arc<Observation>,
     pub(super) identity: DriverIdentity,
 }
 

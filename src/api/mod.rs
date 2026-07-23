@@ -8,6 +8,7 @@ mod identity;
 mod invalidation;
 mod observation;
 mod protocol;
+mod request_options;
 mod route;
 mod submission;
 mod tracked;
@@ -32,6 +33,7 @@ pub use observation::{
     SeedSnapshot, SnapshotError, WriteQueueSnapshot,
 };
 pub use protocol::RequestResponsePair;
+pub use request_options::RequestOptions;
 pub use route::Route;
 pub use submission::SubmitError;
 pub use tracked::{RouteFailureToken, RouteKind, RoutedCall, RoutedOutcome};

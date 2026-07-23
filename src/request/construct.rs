@@ -1,6 +1,6 @@
 //! Typed request construction with optional public lifecycle observation.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use kafka_driver_core::CallId;
 use kafka_wire::RequestResponsePair;
@@ -113,6 +113,55 @@ where
         traffic_class,
         request,
         RequestDeadline::new(timeout),
+        RequestCompletion::routed(completion, driver),
+        RequestLifecycle::observed(timeline),
+    );
+    (RoutedCall::new(Call::new(receiver)), Box::new(request))
+}
+
+pub(crate) fn observed_request_until_in<R>(
+    call_id: CallId,
+    traffic_class: TrafficClass,
+    request: R,
+    deadline: Instant,
+    submitted_at: Instant,
+    timeline: CallTimeline,
+) -> ErasedRequestPair<R::Response>
+where
+    R: RequestResponsePair + Send + 'static,
+    R::Response: Send + 'static,
+{
+    let (receiver, completion) = completion_pair();
+    let request = TypedRequest::new(
+        call_id,
+        traffic_class,
+        request,
+        RequestDeadline::until(deadline, submitted_at),
+        RequestCompletion::plain(completion),
+        RequestLifecycle::observed(timeline),
+    );
+    (Call::new(receiver), Box::new(request))
+}
+
+pub(crate) fn observed_routed_request_until_in<R>(
+    call_id: CallId,
+    traffic_class: TrafficClass,
+    request: R,
+    deadline: Instant,
+    submitted_at: Instant,
+    timeline: CallTimeline,
+    driver: DriverIdentity,
+) -> RoutedRequestPair<R::Response>
+where
+    R: RequestResponsePair + Send + 'static,
+    R::Response: Send + 'static,
+{
+    let (receiver, completion) = completion_pair();
+    let request = TypedRequest::new(
+        call_id,
+        traffic_class,
+        request,
+        RequestDeadline::until(deadline, submitted_at),
         RequestCompletion::routed(completion, driver),
         RequestLifecycle::observed(timeline),
     );

@@ -36,6 +36,22 @@ impl CallTimeline {
         }
     }
 
+    pub(crate) fn until(
+        observation: Arc<Observation>,
+        submitted: Instant,
+        deadline: Instant,
+    ) -> Self {
+        Self {
+            observation,
+            submitted,
+            deadline: Some(deadline),
+            reactor: None,
+            routed: None,
+            prepared: None,
+            writer: None,
+        }
+    }
+
     pub(crate) fn mark_reactor(&mut self, at: Instant) {
         if self.reactor.is_none() {
             self.observation.admit();
