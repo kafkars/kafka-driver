@@ -24,3 +24,13 @@ pub(crate) enum Command {
         completion: CompletionSender<()>,
     },
 }
+
+impl Command {
+    pub(crate) fn retained_bytes(&self) -> usize {
+        let payload = match self {
+            Self::Submit { request, .. } => request.retained_bytes(),
+            Self::Invalidate { .. } | Self::Snapshot { .. } | Self::Shutdown { .. } => 0,
+        };
+        size_of::<Self>().saturating_add(payload)
+    }
+}

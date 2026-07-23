@@ -1,33 +1,34 @@
 //! Bounded multi-producer, single-consumer storage for reactor commands.
 
+mod observation;
+mod ownership;
+
 use std::{
-    collections::VecDeque,
     fmt,
     num::NonZeroUsize,
-    sync::{
-        Arc, Mutex, MutexGuard,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, atomic::AtomicU64},
 };
 
 use super::WakeHandle;
+use ownership::{MailboxLane, Shared, State, increment};
 
 pub(crate) fn mailbox<T>(
     capacity: NonZeroUsize,
+    byte_capacity: NonZeroUsize,
+    weight: fn(&T) -> usize,
     wake: WakeHandle,
 ) -> (MailboxSender<T>, MailboxReceiver<T>) {
     let shared = Arc::new(Shared {
         capacity: capacity.get(),
-        state: Mutex::new(State {
-            controls: VecDeque::with_capacity(capacity.get()),
-            queue: VecDeque::with_capacity(capacity.get()),
-            receiver_alive: true,
-            senders: 1,
-        }),
+        byte_capacity: byte_capacity.get(),
+        state: std::sync::Mutex::new(State::new(capacity)),
         work_full: AtomicU64::new(0),
+        work_byte_full: AtomicU64::new(0),
         control_full: AtomicU64::new(0),
+        control_byte_full: AtomicU64::new(0),
         closed_rejections: AtomicU64::new(0),
         wake_failures: AtomicU64::new(0),
+        weight,
         wake,
     });
     (
@@ -78,11 +79,20 @@ impl<T> MailboxSender<T> {
             increment(&self.shared.closed_rejections);
             return Err(TrySendError::Closed(command));
         }
-        if state.queue(lane).len() >= self.shared.capacity {
+        if state.queued(lane) >= self.shared.capacity {
             increment(match lane {
                 MailboxLane::Control => &self.shared.control_full,
                 MailboxLane::Work => &self.shared.work_full,
             });
+            return Err(TrySendError::Full(command));
+        }
+        let command_bytes = (self.shared.weight)(&command);
+        let Some(queued_bytes) = state.queued_bytes(lane).checked_add(command_bytes) else {
+            increment(self.shared.byte_full(lane));
+            return Err(TrySendError::Full(command));
+        };
+        if queued_bytes > self.shared.byte_capacity {
+            increment(self.shared.byte_full(lane));
             return Err(TrySendError::Full(command));
         }
         // The state lock prevents the reactor from observing this wake until
@@ -91,7 +101,7 @@ impl<T> MailboxSender<T> {
             increment(&self.shared.wake_failures);
             return Err(TrySendError::Wake { command, source });
         }
-        state.queue_mut(lane).push_back(command);
+        state.admit(lane, command, queued_bytes);
         Ok(())
     }
 }
@@ -101,6 +111,7 @@ impl<T> fmt::Debug for MailboxSender<T> {
         formatter
             .debug_struct("MailboxSender")
             .field("capacity", &self.shared.capacity)
+            .field("byte_capacity", &self.shared.byte_capacity)
             .finish_non_exhaustive()
     }
 }
@@ -112,10 +123,15 @@ pub(crate) struct MailboxReceiver<T> {
 impl<T> MailboxReceiver<T> {
     pub(crate) fn drain_into(&self, destination: &mut Vec<T>, limit: NonZeroUsize) -> DrainStatus {
         let mut state = self.shared.lock();
-        let controls = limit.get().min(state.controls.len());
-        destination.extend(state.controls.drain(..controls));
-        let work = (limit.get() - controls).min(state.queue.len());
-        destination.extend(state.queue.drain(..work));
+        let controls = limit.get().min(state.queued(MailboxLane::Control));
+        state.drain_into(
+            MailboxLane::Control,
+            controls,
+            self.shared.weight,
+            destination,
+        );
+        let work = (limit.get() - controls).min(state.queued(MailboxLane::Work));
+        state.drain_into(MailboxLane::Work, work, self.shared.weight, destination);
         if state.is_empty() && state.senders == 0 {
             self.shared.wake.acknowledge();
             DrainStatus::Closed
@@ -135,22 +151,11 @@ impl<T> MailboxReceiver<T> {
         let mut state = self.shared.lock();
         state.receiver_alive = false;
         self.shared.wake.acknowledge();
-        let mut commands: Vec<T> = state.controls.drain(..).collect();
-        commands.extend(state.queue.drain(..));
+        let mut commands = Vec::with_capacity(
+            state.queued(MailboxLane::Control) + state.queued(MailboxLane::Work),
+        );
+        state.drain_all(self.shared.weight, &mut commands);
         commands
-    }
-
-    pub(crate) fn snapshot(&self) -> crate::MailboxSnapshot {
-        let state = self.shared.lock();
-        crate::MailboxSnapshot::new(
-            self.shared.capacity,
-            state.queue.len(),
-            state.controls.len(),
-            self.shared.work_full.load(Ordering::Relaxed),
-            self.shared.control_full.load(Ordering::Relaxed),
-            self.shared.closed_rejections.load(Ordering::Relaxed),
-            self.shared.wake_failures.load(Ordering::Relaxed),
-        )
     }
 }
 
@@ -171,61 +176,4 @@ pub(crate) enum DrainStatus {
     Idle,
     MorePending,
     Closed,
-}
-
-struct Shared<T> {
-    capacity: usize,
-    state: Mutex<State<T>>,
-    work_full: AtomicU64,
-    control_full: AtomicU64,
-    closed_rejections: AtomicU64,
-    wake_failures: AtomicU64,
-    wake: WakeHandle,
-}
-
-impl<T> Shared<T> {
-    fn lock(&self) -> MutexGuard<'_, State<T>> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-}
-
-struct State<T> {
-    controls: VecDeque<T>,
-    queue: VecDeque<T>,
-    receiver_alive: bool,
-    senders: usize,
-}
-
-impl<T> State<T> {
-    fn queue(&self, lane: MailboxLane) -> &VecDeque<T> {
-        match lane {
-            MailboxLane::Control => &self.controls,
-            MailboxLane::Work => &self.queue,
-        }
-    }
-
-    fn queue_mut(&mut self, lane: MailboxLane) -> &mut VecDeque<T> {
-        match lane {
-            MailboxLane::Control => &mut self.controls,
-            MailboxLane::Work => &mut self.queue,
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.controls.is_empty() && self.queue.is_empty()
-    }
-}
-
-#[derive(Clone, Copy)]
-enum MailboxLane {
-    Control,
-    Work,
-}
-
-fn increment(counter: &AtomicU64) {
-    let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-        Some(value.saturating_add(1))
-    });
 }

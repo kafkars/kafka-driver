@@ -92,7 +92,12 @@ impl Reactor {
     ) -> std::io::Result<(MailboxSender<Command>, Self)> {
         let poller = Poller::new(limits.poll_event_budget())?;
         let wake = WakeHandle::new(poller.wake_handle());
-        let (sender, commands) = mailbox(limits.mailbox_capacity(), wake.clone());
+        let (sender, commands) = mailbox(
+            limits.mailbox_capacity(),
+            limits.mailbox_byte_capacity(),
+            Command::retained_bytes,
+            wake.clone(),
+        );
         let clock = ReactorClock::new();
         let now = clock.now().map_err(std::io::Error::other)?;
         let broker_template = match &target {
