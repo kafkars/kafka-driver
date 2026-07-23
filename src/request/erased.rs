@@ -22,7 +22,7 @@ pub(crate) trait ErasedRequest: Send {
     /// Establishes the absolute deadline once, or returns the existing deadline.
     fn establish_deadline(&mut self, start: Moment) -> Result<Moment, RequestError>;
 
-    /// Returns the current conservative retained-byte weight for bounded queues.
+    /// Returns the current deep admission weight for bounded queues.
     fn retained_bytes(&self) -> usize;
 
     /// Records first reactor ownership for public lifecycle observation.

@@ -5,38 +5,61 @@ use kafka_wire::{
     RequestResponsePair, RetainedFootprint, RetainedSize,
 };
 use kafka_wire_core::{
-    ApiKey, ApiVersion, DecodeError, Decoder, EncodeError, EncodeTarget, Encoder, KafkaDecode,
-    KafkaEncode, VersionRange,
+    ApiKey, ApiVersion, Bytes, DecodeError, Decoder, EncodeError, EncodeTarget, Encoder,
+    KafkaDecode, KafkaEncode, VersionRange,
 };
 
 use crate::{RequestError, completion::completion_pair};
 
 use super::{
     RequestCompletion,
-    footprint::{maximum_encoded_bytes, retained_bytes},
+    footprint::{
+        ALLOCATION_ALLOWANCE_BYTES, BASE_OWNER_ALLOCATIONS, maximum_encoded_bytes, retained_bytes,
+    },
     typed::TypedRequest,
 };
 
 #[test]
 fn request_weight_uses_the_largest_successful_supported_encoding() {
-    assert_eq!(maximum_encoded_bytes(&VariableRequest), Some(64));
+    assert_eq!(maximum_encoded_bytes(&VariableRequest::empty()), Some(64));
 }
 
 #[test]
-fn request_weight_includes_typed_and_completion_ownership() {
+fn request_weight_includes_nested_capacity_and_allocation_allowances() {
+    let request = VariableRequest::with_nested_capacity();
     let (_receiver, sender) = completion_pair::<Result<VariableResponse, RequestError>>();
     let completion = RequestCompletion::plain(sender);
-    let owner_and_body = size_of::<TypedRequest<VariableRequest>>() + 64;
+    let retained = request.retained_size();
+    let expected = 64
+        + size_of::<TypedRequest<VariableRequest>>()
+        + completion.retained_state_bytes()
+        + retained.heap_bytes()
+        + (retained.allocations() + BASE_OWNER_ALLOCATIONS) * ALLOCATION_ALLOWANCE_BYTES;
 
-    assert!(retained_bytes(&VariableRequest, &completion) > owner_and_body);
+    assert_eq!(retained_bytes(&request, &completion), expected);
 }
 
-struct VariableRequest;
+struct VariableRequest {
+    nested: Vec<Option<Bytes>>,
+}
+
 struct VariableResponse;
+
+impl VariableRequest {
+    fn empty() -> Self {
+        Self { nested: Vec::new() }
+    }
+
+    fn with_nested_capacity() -> Self {
+        let mut nested = Vec::with_capacity(8);
+        nested.push(Some(Bytes::from_static(b"abc")));
+        Self { nested }
+    }
+}
 
 impl RetainedSize for VariableRequest {
     fn retained_size(&self) -> RetainedFootprint {
-        RetainedFootprint::EMPTY
+        self.nested.retained_size()
     }
 }
 
@@ -90,7 +113,7 @@ impl KafkaEncode for VariableRequest {
 
 impl KafkaDecode for VariableRequest {
     fn decode(_decoder: &mut Decoder, _version: ApiVersion) -> Result<Self, DecodeError> {
-        Ok(Self)
+        Ok(Self::empty())
     }
 }
 
