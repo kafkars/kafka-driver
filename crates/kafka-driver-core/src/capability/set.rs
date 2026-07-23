@@ -42,10 +42,15 @@ impl NegotiatedCapabilities {
 
     /// Returns the selected version for `api_key`, if the broker and driver overlap.
     pub fn version(&self, api_key: ApiKey) -> Option<ApiVersion> {
+        self.api(api_key).map(NegotiatedApi::version)
+    }
+
+    /// Returns the negotiated range for `api_key`, if the broker and driver overlap.
+    pub fn api(&self, api_key: ApiKey) -> Option<NegotiatedApi> {
         self.apis
             .binary_search_by_key(&api_key, |api| api.api_key())
             .ok()
-            .map(|index| self.apis[index].version())
+            .map(|index| self.apis[index])
     }
 
     /// Returns the number of retained mutually supported APIs.

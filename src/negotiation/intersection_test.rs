@@ -7,7 +7,7 @@ use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsResponse, INIT_PRODUCER_ID_API_DESCRIPTOR,
     PRODUCE_API_DESCRIPTOR, api_versions_response::ApiVersion as AdvertisedApi,
 };
-use kafka_wire_core::{ApiKey, ApiVersion};
+use kafka_wire_core::{ApiKey, ApiVersion, VersionRange};
 
 use super::{NegotiationError, NegotiationLimits, negotiate};
 
@@ -29,6 +29,12 @@ fn given_broker_ranges_when_negotiated_then_highest_stable_overlap_is_selected()
     assert_eq!(
         capabilities.version(PRODUCE_API_DESCRIPTOR.api_key),
         Some(ApiVersion::new(8))
+    );
+    assert_eq!(
+        capabilities
+            .api(PRODUCE_API_DESCRIPTOR.api_key)
+            .map(NegotiatedApi::versions),
+        Some(VersionRange::new(3, 8))
     );
     assert_eq!(
         capabilities.version(INIT_PRODUCER_ID_API_DESCRIPTOR.api_key),
@@ -154,7 +160,8 @@ fn given_more_overlap_than_retained_capacity_then_the_exact_api_is_rejected() {
     let result = negotiate(response, limits(2, 1));
 
     // Then
-    let rejected = NegotiatedApi::new(API_VERSIONS_API_DESCRIPTOR.api_key, ApiVersion::new(1));
+    let rejected =
+        NegotiatedApi::with_range(API_VERSIONS_API_DESCRIPTOR.api_key, VersionRange::new(0, 1));
     assert_eq!(
         result,
         Err(NegotiationError::Capability(

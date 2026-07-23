@@ -2,7 +2,7 @@
 
 use kafka_wire_core::{ApiKey, ApiVersion};
 
-use crate::{ConnectionEpoch, NegotiatedCapabilities, TransportId};
+use crate::{ConnectionEpoch, NegotiatedApi, NegotiatedCapabilities, TransportId};
 
 use super::{ConnectionLimits, CorrelationAllocator, PendingCall, PendingQueue};
 
@@ -42,5 +42,9 @@ impl ActiveConnection {
 
     pub(super) fn negotiated_version(&self, api_key: ApiKey) -> Option<ApiVersion> {
         self.capabilities.version(api_key)
+    }
+
+    pub(super) fn negotiated_api(&self, api_key: ApiKey) -> Option<NegotiatedApi> {
+        self.capabilities.api(api_key)
     }
 }

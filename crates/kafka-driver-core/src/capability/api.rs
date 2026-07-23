@@ -1,18 +1,26 @@
-//! One broker-supported API version selected by local negotiation policy.
+//! One broker-and-driver API version overlap retained for request selection.
 
-use kafka_wire_core::{ApiKey, ApiVersion};
+use kafka_wire_core::{ApiKey, ApiVersion, VersionRange};
 
-/// One API version usable for the lifetime of a connection epoch.
+/// One API version range usable for the lifetime of a connection epoch.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct NegotiatedApi {
     api_key: ApiKey,
-    version: ApiVersion,
+    versions: VersionRange,
 }
 
 impl NegotiatedApi {
-    /// Creates one negotiated API entry from protocol-owned numeric vocabulary.
+    /// Creates an exact negotiated API entry for fixtures and fixed-version APIs.
     pub const fn new(api_key: ApiKey, version: ApiVersion) -> Self {
-        Self { api_key, version }
+        Self {
+            api_key,
+            versions: VersionRange::new(version.value(), version.value()),
+        }
+    }
+
+    /// Creates one negotiated API entry from an already validated overlap.
+    pub const fn with_range(api_key: ApiKey, versions: VersionRange) -> Self {
+        Self { api_key, versions }
     }
 
     /// Returns the Kafka API key.
@@ -20,8 +28,24 @@ impl NegotiatedApi {
         self.api_key
     }
 
-    /// Returns the mutually supported version selected for this epoch.
+    /// Returns the mutually supported version range for this epoch.
+    pub const fn versions(self) -> VersionRange {
+        self.versions
+    }
+
+    /// Returns the highest mutually supported version for this epoch.
     pub const fn version(self) -> ApiVersion {
-        self.version
+        self.versions.max()
+    }
+
+    /// Selects the highest negotiated version no greater than `maximum`.
+    pub const fn highest_at_most(self, maximum: ApiVersion) -> Option<ApiVersion> {
+        if maximum.value() < self.versions.min().value() {
+            return None;
+        }
+        if maximum.value() < self.versions.max().value() {
+            return Some(maximum);
+        }
+        Some(self.versions.max())
     }
 }

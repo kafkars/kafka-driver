@@ -2,7 +2,7 @@
 
 use kafka_driver_core::{NegotiatedApi, NegotiatedCapabilities};
 use kafka_wire::{API_DESCRIPTORS, ApiDescriptor, ApiVersionsResponse};
-use kafka_wire_core::{ApiKey, ApiVersion};
+use kafka_wire_core::{ApiKey, VersionRange};
 
 use super::{NegotiationError, NegotiationLimits};
 
@@ -38,10 +38,10 @@ pub(crate) fn negotiate(
         }
         previous = Some(api_key);
         if let Some(api) = local_descriptor(api_key)
-            && let Some(version) =
-                highest_stable_overlap(*api, advertised.min_version, advertised.max_version)
+            && let Some(versions) =
+                stable_overlap(*api, advertised.min_version, advertised.max_version)
         {
-            selected.push(NegotiatedApi::new(api_key, version));
+            selected.push(NegotiatedApi::with_range(api_key, versions));
         }
     }
 
@@ -56,13 +56,9 @@ fn local_descriptor(api_key: ApiKey) -> Option<&'static ApiDescriptor> {
         .map(|index| &API_DESCRIPTORS[index])
 }
 
-fn highest_stable_overlap(
-    local: ApiDescriptor,
-    broker_min: i16,
-    broker_max: i16,
-) -> Option<ApiVersion> {
+fn stable_overlap(local: ApiDescriptor, broker_min: i16, broker_max: i16) -> Option<VersionRange> {
     let local_max = local.latest_stable_version()?.value();
     let overlap_min = local.supported_versions.min().value().max(broker_min);
     let overlap_max = local_max.min(broker_max);
-    (overlap_min <= overlap_max).then(|| ApiVersion::new(overlap_max))
+    VersionRange::try_new(overlap_min, overlap_max)
 }

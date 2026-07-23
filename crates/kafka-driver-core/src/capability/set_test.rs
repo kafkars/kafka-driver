@@ -2,7 +2,7 @@
 
 use std::num::NonZeroUsize;
 
-use kafka_wire_core::{ApiKey, ApiVersion};
+use kafka_wire_core::{ApiKey, ApiVersion, VersionRange};
 
 use super::{CapabilityError, NegotiatedApi, NegotiatedCapabilities};
 
@@ -21,6 +21,21 @@ fn given_sorted_entries_when_built_then_versions_are_found_by_api_key() {
     assert_eq!(capabilities.version(ApiKey::new(18)), Some(version(4)));
     assert_eq!(capabilities.version(ApiKey::new(19)), None);
     assert_eq!(capabilities.iter().collect::<Vec<_>>(), entries);
+}
+
+#[test]
+fn given_a_negotiated_range_when_capped_then_the_highest_usable_version_is_selected() {
+    // Given
+    let ranged = NegotiatedApi::with_range(ApiKey::new(18), VersionRange::new(2, 4));
+    let Ok(capabilities) = NegotiatedCapabilities::try_from_iter([ranged], capacity(1)) else {
+        panic!("one negotiated range must fit");
+    };
+
+    // When / Then
+    assert_eq!(capabilities.api(ApiKey::new(18)), Some(ranged));
+    assert_eq!(ranged.highest_at_most(version(3)), Some(version(3)));
+    assert_eq!(ranged.highest_at_most(version(5)), Some(version(4)));
+    assert_eq!(ranged.highest_at_most(version(1)), None);
 }
 
 #[test]

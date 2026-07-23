@@ -111,6 +111,12 @@ impl ConnectionMachine {
             .and_then(|connection| connection.negotiated_version(api_key))
     }
 
+    /// Returns the usable API version overlap for the active epoch, if negotiated.
+    pub fn negotiated_api(&self, api_key: ApiKey) -> Option<crate::NegotiatedApi> {
+        self.active()
+            .and_then(|connection| connection.negotiated_api(api_key))
+    }
+
     /// Iterates retained transition records from oldest to newest.
     pub fn recent_transitions(&self) -> impl ExactSizeIterator<Item = &TransitionRecord> {
         self.trace.iter()
