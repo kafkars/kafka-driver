@@ -131,6 +131,9 @@ impl MetadataMachine {
         observed_at: OutcomeStamp,
         operation_id: OperationId,
     ) -> MetadataTransition {
+        if !self.revocations.controller_requires(route, observed_at) {
+            return coalesced();
+        }
         let transition = self.refresh(MetadataQuery::Cluster, operation_id);
         if transition.disposition() != MetadataDisposition::QueryCapacityReached {
             self.revocations.revoke_controller(route, observed_at);
@@ -147,6 +150,9 @@ impl MetadataMachine {
         observed_at: OutcomeStamp,
         operation_id: OperationId,
     ) -> MetadataTransition {
+        if !self.revocations.partition_requires(route, observed_at) {
+            return coalesced();
+        }
         let transition = self.refresh(MetadataQuery::Topic(route.topic().clone()), operation_id);
         if transition.disposition() != MetadataDisposition::QueryCapacityReached {
             self.revocations.revoke_partition(route, observed_at);

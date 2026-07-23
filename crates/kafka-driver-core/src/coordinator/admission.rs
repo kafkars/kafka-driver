@@ -51,10 +51,14 @@ impl CoordinatorMachine {
             .as_ref()
             .is_some_and(|revocation| revocation.matches(route))
         {
-            self.revocation
+            let raised = self
+                .revocation
                 .as_mut()
                 .unwrap_or_else(|| unreachable!("revocation existence checked above"))
                 .observe(observed_at);
+            if !raised {
+                return coalesced();
+            }
             return self.refresh(operation_id);
         }
         match &mut self.state {

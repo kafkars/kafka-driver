@@ -82,10 +82,30 @@ impl MetadataRevocations {
             .is_some_and(|revocation| revocation.route.is_same_broker(route))
     }
 
+    pub(super) fn controller_requires(
+        &self,
+        route: BrokerRoute,
+        observed_at: OutcomeStamp,
+    ) -> bool {
+        self.controller.as_ref().is_some_and(|revocation| {
+            revocation.route.is_same_broker(route) && observed_at > revocation.required_after
+        })
+    }
+
     pub(super) fn partition_pending(&self, route: &PartitionRoute) -> bool {
         self.partitions
             .iter()
             .any(|revocation| revocation.route.is_same_assignment(route))
+    }
+
+    pub(super) fn partition_requires(
+        &self,
+        route: &PartitionRoute,
+        observed_at: OutcomeStamp,
+    ) -> bool {
+        self.partitions.iter().any(|revocation| {
+            revocation.route.is_same_assignment(route) && observed_at > revocation.required_after
+        })
     }
 }
 

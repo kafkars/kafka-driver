@@ -1,6 +1,6 @@
 //! One bounded public invalidation barrier per coordinator key.
 
-use kafka_driver_core::{CoordinatorRoute, CoordinatorState, OutcomeStamp};
+use kafka_driver_core::{CoordinatorRoute, CoordinatorState};
 
 use crate::{
     InvalidationDisposition, completion::CompletionSender, reactor::InvalidationSubscribers,
@@ -10,33 +10,25 @@ use super::CoordinatorOwner;
 
 pub(super) struct CoordinatorInvalidation {
     target: CoordinatorRoute,
-    observed_at: OutcomeStamp,
     subscribers: InvalidationSubscribers,
 }
 
 impl CoordinatorInvalidation {
     pub(super) fn new(
         target: CoordinatorRoute,
-        observed_at: OutcomeStamp,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Self {
         Self {
             target,
-            observed_at,
             subscribers: InvalidationSubscribers::new(completion),
         }
     }
 
     pub(super) fn matches(&self, route: &CoordinatorRoute) -> bool {
-        self.target == *route
+        self.target.is_same_target(route)
     }
 
-    pub(super) fn subscribe(
-        &mut self,
-        observed_at: OutcomeStamp,
-        completion: CompletionSender<InvalidationDisposition>,
-    ) {
-        self.observed_at = self.observed_at.max(observed_at);
+    pub(super) fn subscribe(&mut self, completion: CompletionSender<InvalidationDisposition>) {
         self.subscribers.subscribe(completion);
     }
 
@@ -49,18 +41,17 @@ impl CoordinatorInvalidation {
         owner: &CoordinatorOwner,
         index: usize,
     ) -> Option<InvalidationDisposition> {
-        match owner.entries[index].machine.current() {
-            Some(route) if route.evidence_stamp().is_after(self.observed_at) => {
-                Some(InvalidationDisposition::Applied)
-            }
-            _ if matches!(
-                owner.entries[index].machine.state(),
-                CoordinatorState::Unknown { .. }
-            ) =>
-            {
-                Some(InvalidationDisposition::Unavailable)
-            }
-            _ => None,
+        let machine = &owner.entries[index].machine;
+        if machine.revocation_pending(&self.target) {
+            return None;
+        }
+        if matches!(
+            owner.entries[index].machine.state(),
+            CoordinatorState::Unknown { .. }
+        ) {
+            Some(InvalidationDisposition::Unavailable)
+        } else {
+            Some(InvalidationDisposition::Applied)
         }
     }
 

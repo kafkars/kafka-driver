@@ -21,19 +21,19 @@ fn duplicate_subscribers_share_terminal_outcome_with_exact_global_capacity() {
     let mut invalidations = MetadataInvalidations::new(nonzero(2));
 
     assert!(invalidations.has_capacity());
-    invalidations.push_controller(route, OutcomeStamp::from_raw(1), first_sender);
+    invalidations.push_controller(route, first_sender);
     assert!(matches!(
-        invalidations.join_controller(route, OutcomeStamp::from_raw(1), second_sender),
+        invalidations.join_controller(route, second_sender),
         InvalidationJoin::Joined
     ));
 
     assert!(!invalidations.has_capacity());
     let InvalidationJoin::Full(overflow_sender) =
-        invalidations.join_controller(route, OutcomeStamp::from_raw(1), overflow_sender)
+        invalidations.join_controller(route, overflow_sender)
     else {
         panic!("exact subscriber capacity must reject one more duplicate");
     };
-    let _ = overflow_sender.complete(InvalidationDisposition::Unavailable);
+    let _ = overflow_sender.complete(InvalidationDisposition::CapacityReached);
     assert!(first.try_result().is_none());
     assert!(second.try_result().is_none());
 
@@ -46,29 +46,63 @@ fn duplicate_subscribers_share_terminal_outcome_with_exact_global_capacity() {
     assert!(progress.made_progress());
     assert!(!progress.more_work());
     assert!(invalidations.has_capacity());
-    assert_eq!(first.wait(), Ok(InvalidationDisposition::Unavailable));
-    assert_eq!(second.wait(), Ok(InvalidationDisposition::Unavailable));
-    assert_eq!(overflow.wait(), Ok(InvalidationDisposition::Unavailable));
+    assert_eq!(first.wait(), Ok(InvalidationDisposition::Applied));
+    assert_eq!(second.wait(), Ok(InvalidationDisposition::Applied));
+    assert_eq!(
+        overflow.wait(),
+        Ok(InvalidationDisposition::CapacityReached)
+    );
 }
 
 #[test]
-fn later_duplicate_raises_the_shared_causal_watermark() {
-    let route = broker_route();
+fn subscribers_mirror_policy_after_the_latest_watermark() {
+    let mut machine = ready_machine(1);
+    let route = machine
+        .current()
+        .and_then(MetadataSnapshot::controller_route)
+        .unwrap_or_else(|| panic!("ready controller route"));
+    let _ = machine.apply(MetadataInput::InvalidateBrokerRoute {
+        route,
+        observed_at: OutcomeStamp::from_raw(10),
+        operation_id: OperationId::from_raw(2),
+    });
+    let _ = machine.apply(MetadataInput::InvalidateBrokerRoute {
+        route,
+        observed_at: OutcomeStamp::from_raw(20),
+        operation_id: OperationId::from_raw(3),
+    });
     let (first, first_sender) = completion_pair();
     let (second, second_sender) = completion_pair();
     let mut invalidations = MetadataInvalidations::new(nonzero(2));
-    invalidations.push_controller(route, OutcomeStamp::from_raw(1), first_sender);
+    invalidations.push_controller(route, first_sender);
     assert!(matches!(
-        invalidations.join_controller(route, OutcomeStamp::from_raw(3), second_sender),
+        invalidations.join_controller(route, second_sender),
         InvalidationJoin::Joined
     ));
 
+    let q1 = machine.apply(MetadataInput::RefreshSucceeded {
+        operation_id: OperationId::from_raw(2),
+        snapshot: snapshot(2, 11),
+        followup_operation_id: OperationId::from_raw(4),
+    });
+    assert!(!q1.effects().is_empty());
     invalidations.begin_scan();
-    let progress = invalidations.scan(&ready_machine(2), nonzero(1));
-
+    let progress = invalidations.scan(&machine, nonzero(1));
     assert!(progress.made_progress());
-    assert_eq!(first.wait(), Ok(InvalidationDisposition::Unavailable));
-    assert_eq!(second.wait(), Ok(InvalidationDisposition::Unavailable));
+    assert!(first.try_result().is_none());
+    assert!(second.try_result().is_none());
+
+    let q2 = machine.apply(MetadataInput::RefreshSucceeded {
+        operation_id: OperationId::from_raw(4),
+        snapshot: snapshot(3, 21),
+        followup_operation_id: OperationId::from_raw(5),
+    });
+    assert!(q2.effects().is_empty());
+    invalidations.begin_scan();
+    let progress = invalidations.scan(&machine, nonzero(1));
+    assert!(progress.made_progress());
+    assert_eq!(first.wait(), Ok(InvalidationDisposition::Applied));
+    assert_eq!(second.wait(), Ok(InvalidationDisposition::Applied));
 }
 
 fn broker_route() -> kafka_driver_core::BrokerRoute {
@@ -85,24 +119,32 @@ fn ready_machine(raw_evidence: u64) -> MetadataMachine {
     });
     let installed = machine.apply(MetadataInput::RefreshSucceeded {
         operation_id: OperationId::from_raw(1),
-        snapshot: MetadataSnapshot::try_new(
-            directory(EvidenceStamp::from_raw(raw_evidence)),
-            Some(broker_id()),
-        )
-        .unwrap_or_else(|error| panic!("valid metadata snapshot: {error}")),
+        snapshot: snapshot(1, raw_evidence),
         followup_operation_id: OperationId::from_raw(2),
     });
     assert!(installed.effects().is_empty());
     machine
 }
 
+fn snapshot(raw_generation: u64, raw_evidence: u64) -> MetadataSnapshot {
+    MetadataSnapshot::try_new(
+        directory_at(raw_generation, EvidenceStamp::from_raw(raw_evidence)),
+        Some(broker_id()),
+    )
+    .unwrap_or_else(|error| panic!("valid metadata snapshot: {error}"))
+}
+
 fn directory(evidence: EvidenceStamp) -> BrokerDirectory {
+    directory_at(1, evidence)
+}
+
+fn directory_at(raw_generation: u64, evidence: EvidenceStamp) -> BrokerDirectory {
     let endpoint = BrokerEndpoint::new(
         HostName::new("broker.test").unwrap_or_else(|error| panic!("valid host: {error}")),
         port(),
     );
     BrokerDirectory::try_from_iter_with_evidence(
-        MetadataGeneration::from_raw(1),
+        MetadataGeneration::from_raw(raw_generation),
         evidence,
         [BrokerDirectoryEntry::new(broker_id(), endpoint)],
         BrokerDirectoryLimits::new(nonzero(1)),

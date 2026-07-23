@@ -12,8 +12,10 @@ pub enum InvalidationDisposition {
     Applied,
     /// The receipt names a generation or epoch older than current ownership.
     IgnoredStale,
-    /// Newer evidence could not be obtained or barrier capacity was unavailable.
+    /// Newer evidence could not be obtained.
     Unavailable,
+    /// The bounded public invalidation subscriber capacity was unavailable.
+    CapacityReached,
 }
 
 impl Driver {

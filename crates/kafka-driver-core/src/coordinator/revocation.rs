@@ -20,8 +20,12 @@ impl CoordinatorRevocation {
         self.target.is_same_target(route)
     }
 
-    pub(super) fn observe(&mut self, observed_at: OutcomeStamp) {
+    pub(super) fn observe(&mut self, observed_at: OutcomeStamp) -> bool {
+        if observed_at <= self.required_after {
+            return false;
+        }
         self.required_after = self.required_after.max(observed_at);
+        true
     }
 
     pub(super) fn accepts(&self, route: &CoordinatorRoute) -> bool {

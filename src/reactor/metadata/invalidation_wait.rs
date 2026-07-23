@@ -2,7 +2,7 @@
 
 use std::{collections::VecDeque, num::NonZeroUsize};
 
-use kafka_driver_core::{BrokerRoute, MetadataMachine, OutcomeStamp, PartitionRoute};
+use kafka_driver_core::{BrokerRoute, MetadataMachine, PartitionRoute};
 
 use crate::{
     InvalidationDisposition, completion::CompletionSender, reactor::InvalidationSubscribers,
@@ -30,7 +30,6 @@ impl MetadataInvalidations {
     pub(super) fn join_controller(
         &mut self,
         route: BrokerRoute,
-        observed_at: OutcomeStamp,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> InvalidationJoin {
         let Some(index) = self
@@ -44,7 +43,6 @@ impl MetadataInvalidations {
             return InvalidationJoin::Full(completion);
         }
         let pending = &mut self.pending[index];
-        pending.target.observe(observed_at);
         pending.subscribers.subscribe(completion);
         self.subscriber_count += 1;
         InvalidationJoin::Joined
@@ -53,7 +51,6 @@ impl MetadataInvalidations {
     pub(super) fn join_partition(
         &mut self,
         route: &PartitionRoute,
-        observed_at: OutcomeStamp,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> InvalidationJoin {
         let Some(index) = self
@@ -67,7 +64,6 @@ impl MetadataInvalidations {
             return InvalidationJoin::Full(completion);
         }
         let pending = &mut self.pending[index];
-        pending.target.observe(observed_at);
         pending.subscribers.subscribe(completion);
         self.subscriber_count += 1;
         InvalidationJoin::Joined
@@ -80,11 +76,10 @@ impl MetadataInvalidations {
     pub(super) fn push_controller(
         &mut self,
         route: BrokerRoute,
-        observed_at: OutcomeStamp,
         completion: CompletionSender<InvalidationDisposition>,
     ) {
         self.pending.push_back(PendingInvalidation {
-            target: InvalidationTarget::controller(route, observed_at),
+            target: InvalidationTarget::controller(route),
             subscribers: InvalidationSubscribers::new(completion),
         });
         self.subscriber_count += 1;
@@ -93,11 +88,10 @@ impl MetadataInvalidations {
     pub(super) fn push_partition(
         &mut self,
         route: PartitionRoute,
-        observed_at: OutcomeStamp,
         completion: CompletionSender<InvalidationDisposition>,
     ) {
         self.pending.push_back(PendingInvalidation {
-            target: InvalidationTarget::partition(route, observed_at),
+            target: InvalidationTarget::partition(route),
             subscribers: InvalidationSubscribers::new(completion),
         });
         self.subscriber_count += 1;

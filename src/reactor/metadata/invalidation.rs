@@ -23,21 +23,6 @@ impl MetadataOwner {
         evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
         let (route, observed_at, completion) = invalidation.into_parts();
-        let completion = match self
-            .invalidations
-            .join_controller(route, observed_at, completion)
-        {
-            InvalidationJoin::Joined => return Ok(()),
-            InvalidationJoin::Full(completion) => {
-                let _ = completion.complete(InvalidationDisposition::Unavailable);
-                return Ok(());
-            }
-            InvalidationJoin::Missing(completion) => completion,
-        };
-        if !self.invalidations.has_capacity() {
-            let _ = completion.complete(InvalidationDisposition::Unavailable);
-            return Ok(());
-        }
         let operation_id = self.reserve_operation()?;
         let transition = self.machine.apply(MetadataInput::InvalidateBrokerRoute {
             route,
@@ -46,8 +31,19 @@ impl MetadataOwner {
         });
         let disposition = transition.disposition();
         if waits_for_evidence(disposition) {
-            self.invalidations
-                .push_controller(route, observed_at, completion);
+            match self.invalidations.join_controller(route, completion) {
+                InvalidationJoin::Joined => {}
+                InvalidationJoin::Full(completion) => {
+                    let _ = completion.complete(InvalidationDisposition::CapacityReached);
+                }
+                InvalidationJoin::Missing(completion) => {
+                    if self.invalidations.has_capacity() {
+                        self.invalidations.push_controller(route, completion);
+                    } else {
+                        let _ = completion.complete(InvalidationDisposition::CapacityReached);
+                    }
+                }
+            }
         } else {
             let _ = completion.complete(immediate_disposition(disposition));
         }
@@ -65,21 +61,6 @@ impl MetadataOwner {
         evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
         let (route, observed_at, completion) = invalidation.into_parts();
-        let completion = match self
-            .invalidations
-            .join_partition(&route, observed_at, completion)
-        {
-            InvalidationJoin::Joined => return Ok(()),
-            InvalidationJoin::Full(completion) => {
-                let _ = completion.complete(InvalidationDisposition::Unavailable);
-                return Ok(());
-            }
-            InvalidationJoin::Missing(completion) => completion,
-        };
-        if !self.invalidations.has_capacity() {
-            let _ = completion.complete(InvalidationDisposition::Unavailable);
-            return Ok(());
-        }
         let operation_id = self.reserve_operation()?;
         let barrier = route.clone();
         let transition = self.machine.apply(MetadataInput::InvalidatePartitionRoute {
@@ -89,8 +70,19 @@ impl MetadataOwner {
         });
         let disposition = transition.disposition();
         if waits_for_evidence(disposition) {
-            self.invalidations
-                .push_partition(barrier, observed_at, completion);
+            match self.invalidations.join_partition(&barrier, completion) {
+                InvalidationJoin::Joined => {}
+                InvalidationJoin::Full(completion) => {
+                    let _ = completion.complete(InvalidationDisposition::CapacityReached);
+                }
+                InvalidationJoin::Missing(completion) => {
+                    if self.invalidations.has_capacity() {
+                        self.invalidations.push_partition(barrier, completion);
+                    } else {
+                        let _ = completion.complete(InvalidationDisposition::CapacityReached);
+                    }
+                }
+            }
         } else {
             let _ = completion.complete(immediate_disposition(disposition));
         }

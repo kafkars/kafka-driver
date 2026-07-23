@@ -30,29 +30,13 @@ impl CoordinatorOwner {
             let _ = completion.complete(InvalidationDisposition::IgnoredStale);
             return Ok(());
         };
-        if self.entries[index].invalidation.is_some() {
-            if !self.entries[index]
+        if self.entries[index].invalidation.is_some()
+            && !self.entries[index]
                 .invalidation
                 .as_ref()
                 .is_some_and(|pending| pending.matches(&route))
-            {
-                let _ = completion.complete(InvalidationDisposition::IgnoredStale);
-                return Ok(());
-            }
-            if !self.has_invalidation_capacity() {
-                let _ = completion.complete(InvalidationDisposition::Unavailable);
-                return Ok(());
-            }
-            self.entries[index]
-                .invalidation
-                .as_mut()
-                .unwrap_or_else(|| unreachable!("invalidation existence checked above"))
-                .subscribe(observed_at, completion);
-            self.retain_invalidation_subscriber();
-            return Ok(());
-        }
-        if !self.has_invalidation_capacity() {
-            let _ = completion.complete(InvalidationDisposition::Unavailable);
+        {
+            let _ = completion.complete(InvalidationDisposition::IgnoredStale);
             return Ok(());
         }
         let barrier = route.clone();
@@ -66,12 +50,16 @@ impl CoordinatorOwner {
             });
         let disposition = transition.disposition();
         if waits_for_evidence(disposition) {
-            self.entries[index].invalidation = Some(CoordinatorInvalidation::new(
-                barrier,
-                observed_at,
-                completion,
-            ));
-            self.retain_invalidation_subscriber();
+            if !self.has_invalidation_capacity() {
+                let _ = completion.complete(InvalidationDisposition::CapacityReached);
+            } else if let Some(pending) = &mut self.entries[index].invalidation {
+                pending.subscribe(completion);
+                self.retain_invalidation_subscriber();
+            } else {
+                self.entries[index].invalidation =
+                    Some(CoordinatorInvalidation::new(barrier, completion));
+                self.retain_invalidation_subscriber();
+            }
         } else {
             let _ = completion.complete(immediate_disposition(disposition));
         }
