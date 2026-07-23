@@ -38,10 +38,12 @@ impl BrokerSet {
         let Some(index) = owner.checked_sub(1) else {
             return Ok(false);
         };
-        let progress = self
-            .children
-            .get_mut(index)
-            .map_or(Ok(false), |child| child.observe(poller, event, now))?;
+        let Some(child) = self.children.get_mut(index) else {
+            return Ok(false);
+        };
+        let lane = child.lane();
+        let progress = child.observe(poller, event, now)?;
+        self.sync_address_refresh(lane)?;
         Ok(progress | self.reclaim_reusable_children()?)
     }
 
@@ -60,7 +62,9 @@ impl BrokerSet {
                 .children
                 .get_mut(index)
                 .ok_or(BrokerSetError::UnknownBrokerChild)?;
+            let lane = child.lane();
             progress |= child.continue_io(poller, now)?;
+            self.sync_address_refresh(lane)?;
             position += 1;
         }
         progress |= self.activate_pending(poller, now)?;
@@ -86,7 +90,9 @@ impl BrokerSet {
                 .children
                 .get_mut(index)
                 .ok_or(BrokerSetError::UnknownBrokerChild)?;
+            let lane = child.lane();
             progress = progress.merge(child.fire_due(poller, now)?);
+            self.sync_address_refresh(lane)?;
             position += 1;
         }
         progress = progress.merge(DeadlineProgress::from_work(

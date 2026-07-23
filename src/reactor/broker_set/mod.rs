@@ -6,11 +6,13 @@ mod child_resolution;
 mod error;
 mod io;
 mod lane;
+mod lane_queue;
 mod observation;
 mod owner;
 mod proof;
 mod replacement;
 mod routing;
+mod scheduling;
 mod seed;
 mod slots;
 mod waiting;
@@ -19,6 +21,8 @@ mod waiting;
 mod address_refresh_test;
 #[cfg(test)]
 mod deadline_test;
+#[cfg(test)]
+mod lane_queue_test;
 #[cfg(test)]
 mod lane_test;
 #[cfg(test)]

@@ -37,9 +37,11 @@ impl BrokerSet {
             }
             Err(error) => return Err(error),
         };
-        child
+        let result = child
             .submit(poller, route, &endpoint, effect_id, request, now)
-            .map(|request| request.map(|request| (lane, request)))
+            .map(|request| request.map(|request| (lane, request)));
+        self.sync_address_refresh(lane)?;
+        result
     }
 
     pub(in crate::reactor) fn complete_resolution(
@@ -58,6 +60,7 @@ impl BrokerSet {
             .ok_or(BrokerSetError::UnknownBrokerChild)?
             .complete(outcome)?;
         let ChildResolution::Resolved(pending) = action else {
+            self.sync_address_refresh(lane)?;
             return Ok(!matches!(action, ChildResolution::Ignored));
         };
         let child = self
@@ -65,7 +68,9 @@ impl BrokerSet {
             .get_mut(index)
             .ok_or(BrokerSetError::UnknownBrokerChild)?;
         child.stage(pending);
-        self.activate_child(index, poller, now).map(|_| true)
+        self.activate_child(index, poller, now)?;
+        self.sync_address_refresh(lane)?;
+        Ok(true)
     }
 
     pub(super) fn activate_pending(
@@ -82,12 +87,17 @@ impl BrokerSet {
         Ok(progress)
     }
 
-    pub(in crate::reactor) fn next_address_refresh(&self) -> Option<BrokerLane> {
-        self.active_slots
-            .iter()
-            .filter_map(|index| self.children.get(*index))
-            .find(|child| child.needs_address_refresh())
-            .map(|child| child.lane())
+    pub(in crate::reactor) fn take_address_refresh(&mut self) -> Option<BrokerLane> {
+        while let Some(lane) = self.address_refreshes.pop() {
+            let still_needed = self
+                .child_index(lane)
+                .and_then(|index| self.children.get(index))
+                .is_some_and(|child| child.needs_address_refresh());
+            if still_needed {
+                return Some(lane);
+            }
+        }
+        None
     }
 
     pub(in crate::reactor) fn start_address_refresh(
@@ -95,8 +105,11 @@ impl BrokerSet {
         lane: BrokerLane,
         effect_id: EffectId,
     ) -> Result<DnsRequest, BrokerSetError> {
-        self.child_mut_for_lane(lane)?
-            .start_address_refresh(effect_id)
+        let request = self
+            .child_mut_for_lane(lane)?
+            .start_address_refresh(effect_id)?;
+        self.sync_address_refresh(lane)?;
+        Ok(request)
     }
 
     fn activate_child(

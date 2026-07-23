@@ -40,13 +40,16 @@ impl BrokerSet {
         let Some(index) = owner.checked_sub(1) else {
             return Ok(false);
         };
-        self.children
-            .get_mut(index)
-            .and_then(|child| child.connection.as_mut())
-            .map_or(Ok(false), |connection| {
-                connection
-                    .complete_scram_proof(poller, proof)
-                    .map_err(BrokerSetError::Broker)
-            })
+        let Some(child) = self.children.get_mut(index) else {
+            return Ok(false);
+        };
+        let lane = child.lane();
+        let progress = child.connection.as_mut().map_or(Ok(false), |connection| {
+            connection
+                .complete_scram_proof(poller, proof)
+                .map_err(BrokerSetError::Broker)
+        })?;
+        self.sync_address_refresh(lane)?;
+        Ok(progress)
     }
 }

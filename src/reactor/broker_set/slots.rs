@@ -82,6 +82,7 @@ impl BrokerSet {
                 continue;
             }
             let lane = child.lane();
+            self.remove_lane_indexes(lane);
             if self.lane_slots.remove(&lane) != Some(index) {
                 return Err(BrokerSetError::UnknownBrokerChild);
             }

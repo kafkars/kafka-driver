@@ -11,7 +11,7 @@ use crate::{
     reactor::scram_proof::ScramProofSender,
 };
 
-use super::{BrokerSetError, child::BrokerChild};
+use super::{BrokerSetError, child::BrokerChild, lane_queue::LaneQueue};
 
 /// Shard-local owner of a seed connection and disjoint broker token namespaces.
 pub(in crate::reactor) struct BrokerSet {
@@ -29,6 +29,7 @@ pub(in crate::reactor) struct BrokerSet {
     pub(super) active_slots: Vec<usize>,
     pub(super) free_slots: Vec<usize>,
     pub(super) lane_slots: BTreeMap<super::BrokerLane, usize>,
+    pub(super) address_refreshes: LaneQueue,
     pub(super) broker_template: Option<BrokerTemplate>,
     pub(super) scram_proof: Option<ScramProofSender>,
     pub(super) waiting_calls: NonZeroUsize,
@@ -80,6 +81,7 @@ impl BrokerSet {
             active_slots: Vec::new(),
             free_slots: Vec::new(),
             lane_slots: BTreeMap::new(),
+            address_refreshes: LaneQueue::new(lane_capacity),
             broker_template,
             scram_proof,
             waiting_calls: metadata_limits.waiting_calls(),
@@ -103,19 +105,26 @@ impl BrokerSet {
         if self.directory_generation() == Some(directory.generation()) {
             return Ok(false);
         }
-        for &index in &self.active_slots {
-            let child = self
-                .children
-                .get_mut(index)
-                .ok_or(BrokerSetError::UnknownBrokerChild)?;
-            let Some(route) = directory.route_to(child.broker_id()) else {
-                child.retire();
-                continue;
+        let mut position = 0;
+        while let Some(index) = self.active_slots.get(position).copied() {
+            let lane = {
+                let child = self
+                    .children
+                    .get_mut(index)
+                    .ok_or(BrokerSetError::UnknownBrokerChild)?;
+                let lane = child.lane();
+                if let Some(route) = directory.route_to(child.broker_id()) {
+                    let entry = directory
+                        .resolve(route)
+                        .map_err(|_| BrokerSetError::UnexpectedResolutionEffect)?;
+                    child.retain_route(route, entry.endpoint());
+                } else {
+                    child.retire();
+                }
+                lane
             };
-            let entry = directory
-                .resolve(route)
-                .map_err(|_| BrokerSetError::UnexpectedResolutionEffect)?;
-            child.retain_route(route, entry.endpoint());
+            self.sync_address_refresh(lane)?;
+            position += 1;
         }
         self.directory = Some(directory.clone());
         self.reclaim_reusable_children()?;

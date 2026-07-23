@@ -10,6 +10,7 @@ pub(in crate::reactor) enum BrokerSetError {
     DirectoryCapacity { observed: usize, limit: usize },
     NamespaceUnavailable,
     ChildCapacityReached,
+    SchedulerCapacityReached,
     UnknownBrokerChild,
     BrokerTemplateMissing,
     ConnectionEpochExhausted,
@@ -34,6 +35,9 @@ impl fmt::Display for BrokerSetError {
             }
             Self::ChildCapacityReached => {
                 formatter.write_str("discovered broker child capacity reached")
+            }
+            Self::SchedulerCapacityReached => {
+                formatter.write_str("broker runnable index capacity reached")
             }
             Self::UnknownBrokerChild => {
                 formatter.write_str("resolver outcome named an unknown broker child")
@@ -64,6 +68,7 @@ impl Error for BrokerSetError {
             | Self::DirectoryCapacity { .. }
             | Self::NamespaceUnavailable
             | Self::ChildCapacityReached
+            | Self::SchedulerCapacityReached
             | Self::UnknownBrokerChild
             | Self::BrokerTemplateMissing
             | Self::ConnectionEpochExhausted

@@ -68,9 +68,11 @@ fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
     let BrokerState::Backoff { deadline, .. } = connection(&brokers, lane).broker_state() else {
         panic!("refused candidate must enter backoff");
     };
+    assert_eq!(brokers.address_refreshes.len(), 1);
 
     // When
-    assert_eq!(brokers.next_address_refresh(), Some(lane));
+    assert_eq!(brokers.take_address_refresh(), Some(lane));
+    assert_eq!(brokers.address_refreshes.len(), 0);
     let refresh = brokers
         .start_address_refresh(lane, EffectId::from_raw(2))
         .unwrap_or_else(|error| panic!("start address refresh: {error}"));
@@ -93,6 +95,9 @@ fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
         .accept()
         .unwrap_or_else(|error| panic!("accept refreshed broker: {error}"));
     complete_negotiation(&mut poller, connection_mut(&mut brokers, lane), &mut peer);
+    brokers
+        .sync_address_refresh(lane)
+        .unwrap_or_else(|error| panic!("sync refreshed broker lane: {error}"));
 
     // Then
     assert_eq!(

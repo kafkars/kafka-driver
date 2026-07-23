@@ -21,7 +21,7 @@ impl Reactor {
                 }
             }
         }
-        let Some(lane) = self.brokers.next_address_refresh() else {
+        let Some(lane) = self.brokers.take_address_refresh() else {
             return Ok(scheduled);
         };
         let effect_id = resolution
