@@ -51,8 +51,18 @@ fn snapshot_reports_terminal_public_call_outcomes_and_stage_boundaries() {
     assert_eq!(snapshot.latency().end_to_end().samples(), 1);
     assert_eq!(snapshot.latency().deadline_lateness().samples(), 0);
     assert_eq!(snapshot.mailbox().queued_work(), 0);
+    assert_eq!(snapshot.mailbox().queued_work_bytes(), 0);
     assert_eq!(snapshot.mailbox().queued_control(), 0);
+    assert_eq!(snapshot.mailbox().queued_control_bytes(), 0);
+    assert!(snapshot.mailbox().byte_capacity_per_lane() > 0);
     assert!(snapshot.seed().is_some());
+    assert_eq!(snapshot.bootstrap().last_dns_failure(), None);
+    let seed = snapshot
+        .seed()
+        .unwrap_or_else(|| panic!("direct target must own a seed snapshot"));
+    assert_eq!(seed.last_close_reason(), None);
+    assert_eq!(seed.write_queue().queued_frames(), 0);
+    assert_eq!(seed.write_queue().retained_bytes(), 0);
     assert!(snapshot.metadata_generation().is_none());
     assert!(snapshot.lanes().is_empty());
 }

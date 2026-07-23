@@ -69,6 +69,13 @@ fn snapshot_reports_one_success_across_every_completed_lifecycle_stage() {
     assert_eq!(snapshot.latency().in_flight().samples(), 1);
     assert_eq!(snapshot.latency().end_to_end().samples(), 1);
     assert_eq!(snapshot.latency().deadline_lateness().samples(), 0);
+    let seed = snapshot
+        .seed()
+        .unwrap_or_else(|| panic!("successful direct call must retain its seed"));
+    assert_eq!(seed.write_queue().queued_frames(), 0);
+    assert_eq!(seed.write_queue().retained_bytes(), 0);
+    assert_eq!(seed.write_queue().frame_capacity_rejections(), 0);
+    assert_eq!(seed.write_queue().byte_capacity_rejections(), 0);
 }
 
 fn assert_progress(outcome: &Result<TurnOutcome, kafka_driver::ReactorError>, commands: usize) {
