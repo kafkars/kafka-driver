@@ -27,6 +27,8 @@ mod wake;
 #[cfg(test)]
 mod clock_test;
 #[cfg(test)]
+mod command_test;
+#[cfg(test)]
 mod entropy_test;
 #[cfg(test)]
 mod mailbox_test;

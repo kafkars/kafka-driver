@@ -85,6 +85,19 @@ impl<T> RoutedCall<T> {
     }
 }
 
+impl RouteReceipt {
+    pub(crate) fn heap_bytes(&self) -> usize {
+        match self {
+            Self::Controller { .. } => 0,
+            Self::Coordinator { route } => route
+                .key()
+                .heap_bytes()
+                .saturating_add(route.endpoint().heap_bytes()),
+            Self::PartitionLeader { route } => route.topic().heap_bytes(),
+        }
+    }
+}
+
 impl<T> Future for RoutedCall<T> {
     type Output = Result<RoutedOutcome<T>, CompletionError>;
 

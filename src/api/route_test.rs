@@ -28,3 +28,17 @@ fn coordinator_route_owns_its_validated_namespace_and_key() {
 
     assert_eq!(route, Route::Coordinator { key });
 }
+
+#[test]
+fn route_weight_includes_reserved_semantic_key_bytes() {
+    let mut topic = String::with_capacity(64);
+    topic.push_str("payments");
+    let reserved = topic.capacity();
+    let topic =
+        TopicName::new(topic).unwrap_or_else(|error| panic!("valid topic rejected: {error}"));
+    let partition =
+        PartitionId::new(7).unwrap_or_else(|error| panic!("valid partition rejected: {error}"));
+    let route = Route::PartitionLeader { topic, partition };
+
+    assert_eq!(route.heap_bytes(), reserved);
+}

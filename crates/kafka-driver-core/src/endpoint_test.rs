@@ -57,6 +57,17 @@ fn configured_and_resolved_endpoints_retain_explicit_ports() {
 }
 
 #[test]
+fn endpoint_reports_the_owned_host_buffer_capacity() {
+    let mut source = String::with_capacity(64);
+    source.push_str("broker.test");
+    let reserved = source.capacity();
+    let host = HostName::new(source).unwrap_or_else(|error| panic!("nonempty test host: {error}"));
+    let endpoint = BrokerEndpoint::new(host, port());
+
+    assert_eq!(endpoint.heap_bytes(), reserved);
+}
+
+#[test]
 fn resolved_ipv6_retains_flow_and_interface_scope_for_connection() {
     let octets = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
     let address = ResolvedAddress::ipv6(octets, port(), 7, 11);

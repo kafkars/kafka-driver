@@ -51,6 +51,11 @@ impl CoordinatorKey {
     pub fn as_str(&self) -> &str {
         &self.value
     }
+
+    /// Returns bytes reserved by the owned coordinator-key buffer.
+    pub fn heap_bytes(&self) -> usize {
+        self.value.capacity()
+    }
 }
 
 /// Why a coordinator key was rejected before persistent ownership.

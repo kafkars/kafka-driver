@@ -14,7 +14,7 @@ use crate::{
     response::{ResponseAdmissionError, ResponseRegistry},
 };
 
-use super::{ErasedRequest, construct::retained_bytes};
+use super::{ErasedRequest, footprint::retained_bytes};
 
 pub(super) struct TypedRequest<R>
 where
@@ -57,7 +57,7 @@ where
         completion: RequestCompletion<R::Response>,
         lifecycle: RequestLifecycle,
     ) -> Self {
-        let retained_bytes = retained_bytes(&request);
+        let retained_bytes = retained_bytes(&request, &completion);
         Self {
             call_id,
             traffic_class,
@@ -96,6 +96,7 @@ where
 
     fn retained_bytes(&self) -> usize {
         self.retained_bytes
+            .saturating_add(self.completion.route_heap_bytes())
     }
 
     fn mark_reactor(&mut self, at: Instant) {

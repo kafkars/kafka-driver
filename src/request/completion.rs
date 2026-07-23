@@ -36,6 +36,23 @@ impl<T> RequestCompletion<T> {
         Ok(())
     }
 
+    pub(crate) fn retained_state_bytes(&self) -> usize {
+        match self {
+            Self::Plain(_) => CompletionSender::<Result<T, RequestError>>::retained_state_bytes(),
+            Self::Routed { .. } => CompletionSender::<RoutedOutcome<T>>::retained_state_bytes(),
+        }
+    }
+
+    pub(crate) fn route_heap_bytes(&self) -> usize {
+        match self {
+            Self::Plain(_) | Self::Routed { receipt: None, .. } => 0,
+            Self::Routed {
+                receipt: Some(receipt),
+                ..
+            } => receipt.heap_bytes(),
+        }
+    }
+
     pub(crate) fn complete(self, result: Result<T, RequestError>) -> bool {
         match self {
             Self::Plain(completion) => completion.complete(result).is_ok(),

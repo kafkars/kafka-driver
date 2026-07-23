@@ -29,6 +29,11 @@ impl TopicName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Returns bytes reserved by the owned topic-name buffer.
+    pub fn heap_bytes(&self) -> usize {
+        self.0.capacity()
+    }
 }
 
 impl fmt::Display for TopicName {

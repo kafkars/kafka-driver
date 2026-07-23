@@ -4,12 +4,15 @@ mod completion;
 mod construct;
 mod deadline;
 mod erased;
+mod footprint;
 mod typed;
 
 #[cfg(test)]
 mod completion_test;
 #[cfg(test)]
 mod deadline_test;
+#[cfg(test)]
+mod footprint_test;
 #[cfg(test)]
 mod typed_test;
 

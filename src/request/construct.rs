@@ -117,18 +117,3 @@ where
     );
     (RoutedCall::new(Call::new(receiver)), Box::new(request))
 }
-
-pub(super) fn retained_bytes<R>(request: &R) -> usize
-where
-    R: RequestResponsePair,
-{
-    let descriptor = R::API_DESCRIPTOR;
-    let version = descriptor
-        .latest_stable_version()
-        .unwrap_or(descriptor.supported_versions.max());
-    request
-        .encoded_len(version)
-        .ok()
-        .and_then(|encoded| encoded.checked_add(size_of::<TypedRequest<R>>()))
-        .unwrap_or(usize::MAX)
-}

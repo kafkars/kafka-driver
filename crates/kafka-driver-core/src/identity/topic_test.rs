@@ -20,3 +20,14 @@ fn topic_names_are_nonempty_and_bounded_by_utf8_bytes() {
         })
     );
 }
+
+#[test]
+fn topic_name_reports_its_owned_buffer_capacity() {
+    let mut source = String::with_capacity(64);
+    source.push_str("payments");
+    let reserved = source.capacity();
+    let topic =
+        TopicName::new(source).unwrap_or_else(|error| panic!("valid topic rejected: {error}"));
+
+    assert_eq!(topic.heap_bytes(), reserved);
+}

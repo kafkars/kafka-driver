@@ -26,8 +26,16 @@ pub(crate) enum Command {
 impl Command {
     pub(crate) fn retained_bytes(&self) -> usize {
         let payload = match self {
-            Self::Submit { request, .. } => request.retained_bytes(),
-            Self::Invalidate { .. } | Self::Snapshot { .. } | Self::Shutdown => 0,
+            Self::Submit { route, request, .. } => {
+                route.heap_bytes().saturating_add(request.retained_bytes())
+            }
+            Self::Invalidate { receipt, .. } => receipt.heap_bytes().saturating_add(
+                CompletionSender::<InvalidationDisposition>::retained_state_bytes(),
+            ),
+            Self::Snapshot { .. } => {
+                CompletionSender::<Result<DriverSnapshot, SnapshotError>>::retained_state_bytes()
+            }
+            Self::Shutdown => 0,
         };
         size_of::<Self>().saturating_add(payload)
     }

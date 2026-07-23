@@ -12,6 +12,17 @@ fn key_retains_its_namespace_and_exact_validated_text() {
 }
 
 #[test]
+fn key_reports_its_owned_buffer_capacity() {
+    let mut source = String::with_capacity(64);
+    source.push_str("orders-writer");
+    let reserved = source.capacity();
+    let key = CoordinatorKey::new(CoordinatorKind::Transaction, source)
+        .unwrap_or_else(|error| panic!("valid coordinator key rejected: {error}"));
+
+    assert_eq!(key.heap_bytes(), reserved);
+}
+
+#[test]
 fn empty_and_oversized_keys_are_rejected_without_retaining_text() {
     assert_eq!(
         CoordinatorKey::new(CoordinatorKind::Group, ""),

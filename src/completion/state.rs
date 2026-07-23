@@ -63,6 +63,10 @@ impl<T> Shared<T> {
         outcome
     }
 
+    pub(super) const fn retained_state_bytes() -> usize {
+        size_of::<Inner<T>>()
+    }
+
     pub(super) fn close_sender(&self) {
         let mut state = self.lock();
         let previous = mem::replace(&mut *state, State::Consumed);

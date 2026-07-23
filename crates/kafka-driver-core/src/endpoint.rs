@@ -32,6 +32,11 @@ impl HostName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Returns bytes reserved by the owned host-name buffer.
+    pub fn heap_bytes(&self) -> usize {
+        self.0.capacity()
+    }
 }
 
 impl fmt::Display for HostName {
@@ -61,6 +66,11 @@ impl BrokerEndpoint {
     /// Returns the broker TCP port.
     pub const fn port(&self) -> NonZeroU16 {
         self.port
+    }
+
+    /// Returns bytes reserved by the owned logical host.
+    pub fn heap_bytes(&self) -> usize {
+        self.host.heap_bytes()
     }
 }
 

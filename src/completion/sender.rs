@@ -20,6 +20,10 @@ impl<T> CompletionSender<T> {
         self.settled = true;
         outcome
     }
+
+    pub(crate) const fn retained_state_bytes() -> usize {
+        Shared::<T>::retained_state_bytes()
+    }
 }
 
 impl<T> Drop for CompletionSender<T> {

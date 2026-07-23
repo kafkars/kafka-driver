@@ -27,3 +27,13 @@ pub enum Route {
         partition: PartitionId,
     },
 }
+
+impl Route {
+    pub(crate) fn heap_bytes(&self) -> usize {
+        match self {
+            Self::AnyBroker | Self::Controller => 0,
+            Self::Coordinator { key } => key.heap_bytes(),
+            Self::PartitionLeader { topic, .. } => topic.heap_bytes(),
+        }
+    }
+}
