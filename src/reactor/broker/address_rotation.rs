@@ -6,7 +6,10 @@ use kafka_driver_core::{
     BrokerEndpoint, EndpointDialer, EndpointDialerEffect, EndpointDialerInput, ResolvedAddressSet,
 };
 
-use crate::{config::BrokerAddresses, reactor::resolver::socket_address};
+use crate::{
+    config::BrokerAddresses,
+    reactor::{entropy::JitterEntropy, resolver::socket_address},
+};
 
 /// Reactor-local adapter over one direct address or deterministic DNS policy.
 #[derive(Debug)]
@@ -16,6 +19,13 @@ pub(super) enum AddressRotation {
 }
 
 impl AddressRotation {
+    pub(super) fn entropy_for(addresses: &BrokerAddresses) -> JitterEntropy {
+        match addresses {
+            BrokerAddresses::Direct(address) => JitterEntropy::for_value(address),
+            BrokerAddresses::Resolved { endpoint, .. } => JitterEntropy::for_value(endpoint),
+        }
+    }
+
     pub(super) fn new(addresses: BrokerAddresses) -> Self {
         match addresses {
             BrokerAddresses::Direct(address) => Self::Direct(address),

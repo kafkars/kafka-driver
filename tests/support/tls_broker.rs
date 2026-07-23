@@ -2,7 +2,7 @@
 
 use std::{
     io::{Read, Write},
-    net::{SocketAddr, TcpListener},
+    net::{SocketAddr, TcpListener, TcpStream},
     sync::{Arc, mpsc},
     thread,
     time::Duration,
@@ -22,11 +22,28 @@ use rustls::{
 
 const CERTIFICATE: &[u8] = include_bytes!("../fixtures/tls/localhost-cert.pem");
 const PRIVATE_KEY: &[u8] = include_bytes!("../fixtures/tls/localhost-key.pem");
+const LOOPBACK_IP_CERTIFICATE: &[u8] = include_bytes!("../fixtures/tls/loopback-ip-cert.pem");
+const LOOPBACK_IP_PRIVATE_KEY: &[u8] = include_bytes!("../fixtures/tls/loopback-ip-key.pem");
 
+#[allow(
+    dead_code,
+    reason = "fixture steps are selected by separate TLS integration scenarios"
+)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BrokerStep {
+    NegotiationRejected,
     NegotiationResponded,
     CallResponded,
+}
+
+#[allow(
+    dead_code,
+    reason = "fixture identities are selected by separate TLS integration scenarios"
+)]
+#[derive(Clone, Copy)]
+enum TlsIdentity {
+    Localhost,
+    LoopbackIp,
 }
 
 pub(crate) struct TlsBroker {
@@ -37,14 +54,27 @@ pub(crate) struct TlsBroker {
 
 impl TlsBroker {
     pub(crate) fn bind() -> Self {
+        Self::bind_with(TlsIdentity::Localhost)
+    }
+
+    #[allow(
+        dead_code,
+        reason = "shared fixture method is selected by the bootstrap-rotation TLS scenario"
+    )]
+    pub(crate) fn bind_loopback_ip() -> Self {
+        Self::bind_with(TlsIdentity::LoopbackIp)
+    }
+
+    fn bind_with(identity: TlsIdentity) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0")
             .unwrap_or_else(|error| panic!("bind TLS loopback broker: {error}"));
-        let certificate = certificate();
         let provider = Arc::new(rustls::crypto::ring::default_provider());
         let mut roots = RootCertStore::empty();
-        roots
-            .add(certificate.clone())
-            .unwrap_or_else(|error| panic!("trust TLS test certificate: {error}"));
+        for certificate in [certificate(), loopback_ip_certificate()] {
+            roots
+                .add(certificate)
+                .unwrap_or_else(|error| panic!("trust TLS test certificate: {error}"));
+        }
         let client = ClientConfig::builder_with_provider(Arc::clone(&provider))
             .with_safe_default_protocol_versions()
             .unwrap_or_else(|error| panic!("select TLS client versions: {error}"))
@@ -54,7 +84,7 @@ impl TlsBroker {
             .with_safe_default_protocol_versions()
             .unwrap_or_else(|error| panic!("select TLS server versions: {error}"))
             .with_no_client_auth()
-            .with_single_cert(vec![certificate], private_key())
+            .with_single_cert(vec![identity.certificate()], identity.private_key())
             .unwrap_or_else(|error| panic!("configure TLS test identity: {error}"));
         Self {
             listener,
@@ -93,20 +123,20 @@ impl TlsBroker {
         (receiver, owner)
     }
 
+    #[allow(
+        dead_code,
+        reason = "shared fixture method is selected by the bootstrap-rotation TLS scenario"
+    )]
+    pub(crate) fn spawn_rejecting_negotiation(
+        self,
+    ) -> (mpsc::Receiver<BrokerStep>, thread::JoinHandle<()>) {
+        let (sender, receiver) = mpsc::channel();
+        let owner = thread::spawn(move || self.reject_negotiation(&sender));
+        (receiver, owner)
+    }
+
     fn serve(self, steps: &mpsc::Sender<BrokerStep>) {
-        let (socket, _) = self
-            .listener
-            .accept()
-            .unwrap_or_else(|error| panic!("accept TLS driver connection: {error}"));
-        socket
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap_or_else(|error| panic!("bound TLS broker read: {error}"));
-        socket
-            .set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap_or_else(|error| panic!("bound TLS broker write: {error}"));
-        let session = ServerConnection::new(self.server)
-            .unwrap_or_else(|error| panic!("start TLS server session: {error}"));
-        let mut stream = StreamOwned::new(session, socket);
+        let mut stream = self.accept_stream();
 
         read_frame(&mut stream);
         stream
@@ -130,6 +160,56 @@ impl TlsBroker {
             .send(BrokerStep::CallResponded)
             .unwrap_or_else(|error| panic!("report TLS call response: {error}"));
     }
+
+    #[allow(
+        dead_code,
+        reason = "shared fixture branch is selected by the bootstrap-rotation TLS scenario"
+    )]
+    fn reject_negotiation(self, steps: &mpsc::Sender<BrokerStep>) {
+        let mut stream = self.accept_stream();
+        read_frame(&mut stream);
+        stream
+            .write_all(&0_i32.to_be_bytes())
+            .unwrap_or_else(|error| panic!("write rejected TLS negotiation: {error}"));
+        stream
+            .flush()
+            .unwrap_or_else(|error| panic!("flush rejected TLS negotiation: {error}"));
+        steps
+            .send(BrokerStep::NegotiationRejected)
+            .unwrap_or_else(|error| panic!("report rejected TLS negotiation: {error}"));
+    }
+
+    fn accept_stream(self) -> StreamOwned<ServerConnection, TcpStream> {
+        let (socket, _) = self
+            .listener
+            .accept()
+            .unwrap_or_else(|error| panic!("accept TLS driver connection: {error}"));
+        socket
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap_or_else(|error| panic!("bound TLS broker read: {error}"));
+        socket
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .unwrap_or_else(|error| panic!("bound TLS broker write: {error}"));
+        let session = ServerConnection::new(self.server)
+            .unwrap_or_else(|error| panic!("start TLS server session: {error}"));
+        StreamOwned::new(session, socket)
+    }
+}
+
+impl TlsIdentity {
+    fn certificate(self) -> CertificateDer<'static> {
+        match self {
+            Self::Localhost => certificate(),
+            Self::LoopbackIp => loopback_ip_certificate(),
+        }
+    }
+
+    fn private_key(self) -> PrivateKeyDer<'static> {
+        match self {
+            Self::Localhost => private_key(),
+            Self::LoopbackIp => loopback_ip_private_key(),
+        }
+    }
 }
 
 fn certificate() -> CertificateDer<'static> {
@@ -140,6 +220,16 @@ fn certificate() -> CertificateDer<'static> {
 fn private_key() -> PrivateKeyDer<'static> {
     PrivateKeyDer::from_pem_slice(PRIVATE_KEY)
         .unwrap_or_else(|error| panic!("parse TLS test private key: {error}"))
+}
+
+fn loopback_ip_certificate() -> CertificateDer<'static> {
+    CertificateDer::from_pem_slice(LOOPBACK_IP_CERTIFICATE)
+        .unwrap_or_else(|error| panic!("parse loopback-IP TLS test certificate: {error}"))
+}
+
+fn loopback_ip_private_key() -> PrivateKeyDer<'static> {
+    PrivateKeyDer::from_pem_slice(LOOPBACK_IP_PRIVATE_KEY)
+        .unwrap_or_else(|error| panic!("parse loopback-IP TLS test private key: {error}"))
 }
 
 fn read_frame(stream: &mut impl Read) {

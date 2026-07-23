@@ -3,7 +3,7 @@
 use kafka_driver_core::{BrokerState, ConnectionState, Moment};
 
 use crate::{
-    config::{BrokerAddresses, BrokerConfig},
+    config::BrokerConfig,
     reactor::{Poller, broker::SingleBroker, resource::ResourceNamespace},
     request::ErasedRequest,
 };
@@ -58,22 +58,20 @@ impl BrokerSet {
         }
     }
 
-    pub(in crate::reactor) fn refresh_seed_addresses(
+    pub(in crate::reactor) fn replace_seed_endpoint(
         &mut self,
         config: BrokerConfig,
+        poller: &Poller,
+        now: Moment,
     ) -> Result<(), BrokerSetError> {
         let Some(seed) = &mut self.seed else {
             return Err(BrokerSetError::SeedMissing);
         };
-        let BrokerAddresses::Resolved {
-            endpoint,
-            addresses,
-        } = config.into_addresses()
-        else {
+        if !config.is_resolved() {
             return Err(BrokerSetError::UnexpectedResolutionEffect);
-        };
-        seed.replace_resolved_addresses(endpoint, addresses);
-        Ok(())
+        }
+        seed.replace_exhausted_endpoint(config, poller, now)
+            .map_err(BrokerSetError::Broker)
     }
 
     pub(in crate::reactor) fn submit_seed(

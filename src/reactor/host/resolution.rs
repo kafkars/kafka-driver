@@ -200,7 +200,7 @@ impl Reactor {
             more_work: progress.more_work,
         };
         if let Some(config) = progress.broker {
-            self.install_broker(config)?;
+            self.install_broker(config, now)?;
         }
         for completed in self.broker_dns_outcomes.drain(..) {
             self.brokers
@@ -210,14 +210,13 @@ impl Reactor {
         Ok(turn)
     }
 
-    fn install_broker(&mut self, config: BrokerConfig) -> Result<(), ReactorError> {
+    fn install_broker(&mut self, config: BrokerConfig, now: Moment) -> Result<(), ReactorError> {
         if self.brokers.has_seed() {
             return self
                 .brokers
-                .refresh_seed_addresses(config)
+                .replace_seed_endpoint(config, &self.poller, now)
                 .map_err(ReactorError::broker_set);
         }
-        let now = self.clock.now().map_err(ReactorError::clock)?;
         self.brokers
             .install_seed(config, &self.poller, now)
             .map_err(ReactorError::broker_set)

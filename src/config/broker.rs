@@ -44,8 +44,8 @@ impl BrokerConfig {
         (self.addresses, self.security, self.sasl)
     }
 
-    pub(crate) fn into_addresses(self) -> BrokerAddresses {
-        self.addresses
+    pub(crate) const fn is_resolved(&self) -> bool {
+        matches!(self.addresses, BrokerAddresses::Resolved { .. })
     }
 
     pub(crate) fn requires_proof_worker(&self) -> bool {
