@@ -7,6 +7,7 @@ use kafka_driver_core::{
     HostName, LeaderEpoch, MetadataGeneration, MetadataSnapshot, OutcomeStamp, PartitionId,
     PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet, TopicName,
 };
+use kafka_wire_core::ApiVersion;
 
 use crate::completion::completion_pair;
 use crate::{
@@ -34,12 +35,13 @@ fn unobserved_failure_issues_no_route_failure_token() {
     let mut completion = RequestCompletion::<()>::routed(sender, driver());
     assert!(completion.record_route(route).is_ok());
 
-    assert!(completion.complete_unobserved(Err(RequestError::RouteUnavailable)));
+    assert!(completion.complete_unobserved(Err(RequestError::RouteUnavailable), None));
 
     let outcome = receiver
         .wait()
         .unwrap_or_else(|error| panic!("completion must remain observable: {error}"));
     assert_eq!(outcome.result(), &Err(RequestError::RouteUnavailable));
+    assert_eq!(outcome.selected_version(), None);
     assert!(outcome.route_failure_token().is_none());
 }
 
@@ -51,7 +53,7 @@ fn observed_response_pairs_the_route_fact_with_its_outcome_stamp() {
     let mut completion = RequestCompletion::<()>::routed(sender, driver);
     assert!(completion.record_route(route).is_ok());
 
-    assert!(completion.complete_observed(Ok(()), OutcomeStamp::from_raw(11)));
+    assert!(completion.complete_observed(Ok(()), ApiVersion::new(4), OutcomeStamp::from_raw(11)));
 
     let outcome = receiver
         .wait()
@@ -61,6 +63,7 @@ fn observed_response_pairs_the_route_fact_with_its_outcome_stamp() {
         .unwrap_or_else(|| panic!("observed route must issue a token"));
     assert!(token.belongs_to(driver));
     assert_eq!(token.kind(), crate::RouteKind::Controller);
+    assert_eq!(outcome.selected_version(), Some(ApiVersion::new(4)));
 }
 
 #[test]

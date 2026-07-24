@@ -96,13 +96,14 @@ where
         });
         match decoded {
             Ok(response) => {
-                let delivered = completion.complete_observed(Ok(response), observed_at);
+                let delivered = completion.complete_observed(Ok(response), version, observed_at);
                 finish(timeline, CallOutcome::Succeeded, delivered);
                 Ok(disposition(delivered))
             }
             Err(error) => {
                 let failure = ResponseFailure::Decode(error.clone());
-                let delivered = completion.complete_observed(Err(failure.clone()), observed_at);
+                let delivered =
+                    completion.complete_observed(Err(failure.clone()), version, observed_at);
                 finish(timeline, CallOutcome::Failed(&failure), delivered);
                 Err(SlotDecodeError {
                     error,
@@ -113,7 +114,9 @@ where
     }
 
     fn fail(self: Box<Self>, failure: RequestError) -> CompletionDisposition {
-        let delivered = self.completion.complete_unobserved(Err(failure.clone()));
+        let delivered = self
+            .completion
+            .complete_unobserved(Err(failure.clone()), Some(self.version));
         finish(self.timeline, CallOutcome::Failed(&failure), delivered);
         disposition(delivered)
     }

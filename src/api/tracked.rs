@@ -8,6 +8,7 @@ use std::{
 };
 
 use kafka_driver_core::{BrokerRoute, CoordinatorRoute, OutcomeStamp, PartitionRoute};
+use kafka_wire_core::ApiVersion;
 
 use super::{Call, CompletionError, RequestError};
 use crate::api::identity::DriverIdentity;
@@ -46,15 +47,21 @@ pub(crate) enum RouteFact {
 #[derive(Debug)]
 pub struct RoutedOutcome<T> {
     result: Result<T, RequestError>,
+    selected_version: Option<ApiVersion>,
     token: Option<RouteFailureToken>,
 }
 
 impl<T> RoutedOutcome<T> {
     pub(crate) const fn new(
         result: Result<T, RequestError>,
+        selected_version: Option<ApiVersion>,
         token: Option<RouteFailureToken>,
     ) -> Self {
-        Self { result, token }
+        Self {
+            result,
+            selected_version,
+            token,
+        }
     }
 
     /// Borrows the ordinary generated request result.
@@ -62,14 +69,29 @@ impl<T> RoutedOutcome<T> {
         &self.result
     }
 
+    /// Returns the exact Kafka API version selected before terminal settlement.
+    ///
+    /// `None` means the request failed before version selection. A local or
+    /// transport failure after selection retains `Some` even when no broker
+    /// response was observed.
+    pub const fn selected_version(&self) -> Option<ApiVersion> {
+        self.selected_version
+    }
+
     /// Borrows the opaque invalidation capability for an observed broker response.
     pub const fn route_failure_token(&self) -> Option<&RouteFailureToken> {
         self.token.as_ref()
     }
 
-    /// Transfers the ordinary result and optional invalidation capability.
-    pub fn into_parts(self) -> (Result<T, RequestError>, Option<RouteFailureToken>) {
-        (self.result, self.token)
+    /// Transfers the ordinary result, selected version, and invalidation capability.
+    pub fn into_parts(
+        self,
+    ) -> (
+        Result<T, RequestError>,
+        Option<ApiVersion>,
+        Option<RouteFailureToken>,
+    ) {
+        (self.result, self.selected_version, self.token)
     }
 }
 

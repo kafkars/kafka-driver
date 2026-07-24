@@ -10,6 +10,7 @@ use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
     HostName, MetadataGeneration, OutcomeStamp,
 };
+use kafka_wire_core::ApiVersion;
 
 use crate::{Call, SubmitError, TurnOutcome, completion::completion_pair};
 
@@ -22,7 +23,11 @@ fn completed_request_returns_the_exact_route_published_before_it() {
     let call = RoutedCall::new(Call::new(receiver));
     assert!(
         completion
-            .complete(RoutedOutcome::new(Ok("response"), Some(token)))
+            .complete(RoutedOutcome::new(
+                Ok("response"),
+                Some(ApiVersion::new(3)),
+                Some(token),
+            ))
             .is_ok()
     );
 
@@ -31,6 +36,7 @@ fn completed_request_returns_the_exact_route_published_before_it() {
         .unwrap_or_else(|error| panic!("routed result must complete: {error}"));
 
     assert_eq!(outcome.result(), &Ok("response"));
+    assert_eq!(outcome.selected_version(), Some(ApiVersion::new(3)));
     assert_eq!(
         outcome
             .route_failure_token()
@@ -47,13 +53,18 @@ fn routed_result_can_be_extracted_without_blocking() {
     assert!(call.try_result().is_none());
     assert!(
         completion
-            .complete(RoutedOutcome::new(Ok("response"), None))
+            .complete(RoutedOutcome::new(
+                Ok("response"),
+                Some(ApiVersion::new(2)),
+                None,
+            ))
             .is_ok()
     );
     let Some(Ok(outcome)) = call.try_result() else {
         panic!("ready routed result must be extracted");
     };
     assert_eq!(outcome.result(), &Ok("response"));
+    assert_eq!(outcome.selected_version(), Some(ApiVersion::new(2)));
     assert!(matches!(
         call.try_result(),
         Some(Err(crate::CompletionError::Consumed))

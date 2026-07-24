@@ -25,6 +25,7 @@ where
     traffic_class: TrafficClass,
     request: R,
     policy: RequestPolicy,
+    selected_version: Option<ApiVersion>,
     retained_bytes: usize,
     completion: RequestCompletion<R::Response>,
     lifecycle: RequestLifecycle,
@@ -64,6 +65,7 @@ where
             traffic_class,
             request,
             policy,
+            selected_version: None,
             retained_bytes,
             completion,
             lifecycle,
@@ -89,10 +91,12 @@ where
     }
 
     fn select_version(
-        &self,
+        &mut self,
         negotiated: kafka_driver_core::NegotiatedApi,
     ) -> Result<ApiVersion, RequestError> {
-        self.policy.select_version(negotiated)
+        let version = self.policy.select_version(negotiated)?;
+        self.selected_version = Some(version);
+        Ok(version)
     }
 
     fn establish_deadline(
@@ -143,7 +147,12 @@ where
             match responses.validate_admission::<R>(call_id, correlation_id, version) {
                 Ok(header_version) => header_version,
                 Err(source) => {
-                    return fail(completion, timeline, admission_failure(source));
+                    return fail(
+                        completion,
+                        timeline,
+                        admission_failure(source),
+                        Some(version),
+                    );
                 }
             };
         let mut frame = BytesMut::new();
@@ -155,7 +164,12 @@ where
             version,
             outbound_limits,
         ) {
-            return fail(completion, timeline, RequestError::Encode(source));
+            return fail(
+                completion,
+                timeline,
+                RequestError::Encode(source),
+                Some(version),
+            );
         }
         if let Some(timeline) = &mut timeline {
             timeline.mark_prepared(Instant::now());
@@ -172,7 +186,9 @@ where
     }
 
     fn fail(self: Box<Self>, failure: RequestError) {
-        let delivered = self.completion.complete_unobserved(Err(failure.clone()));
+        let delivered = self
+            .completion
+            .complete_unobserved(Err(failure.clone()), self.selected_version);
         if let Some(timeline) = self.lifecycle.timeline {
             timeline.finish(CallOutcome::Failed(&failure), delivered);
         }
@@ -183,8 +199,9 @@ fn fail<T>(
     completion: RequestCompletion<T>,
     timeline: Option<CallTimeline>,
     failure: RequestError,
+    selected_version: Option<ApiVersion>,
 ) -> Result<Bytes, RequestError> {
-    let delivered = completion.complete_unobserved(Err(failure.clone()));
+    let delivered = completion.complete_unobserved(Err(failure.clone()), selected_version);
     if let Some(timeline) = timeline {
         timeline.finish(CallOutcome::Failed(&failure), delivered);
     }

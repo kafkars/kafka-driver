@@ -30,20 +30,26 @@ impl ProbeSession {
                 ProbeError::stage("wait for tracked generated response", source)
             })?;
             match outcome.into_parts() {
-                (Ok(response), Some(token)) => {
+                (Ok(response), Some(_), Some(token)) => {
                     validate(&response, label)?;
                     return Ok(token);
                 }
-                (Ok(_), None) => {
+                (Ok(_), _, None) => {
                     return Err(ProbeError::stage(
                         "observe tracked route token",
                         std::io::Error::other("successful semantic route omitted its token"),
                     ));
                 }
-                (Err(error), _) if movement_transient(&error) => {
+                (Ok(_), None, Some(_)) => {
+                    return Err(ProbeError::stage(
+                        "observe tracked API version",
+                        std::io::Error::other("successful semantic route omitted its API version"),
+                    ));
+                }
+                (Err(error), _, _) if movement_transient(&error) => {
                     thread::sleep(RETRY_INTERVAL);
                 }
-                (Err(source), _) => {
+                (Err(source), _, _) => {
                     return Err(ProbeError::stage(
                         "complete tracked generated response",
                         source,

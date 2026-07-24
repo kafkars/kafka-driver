@@ -109,7 +109,7 @@ fn partition_route_fetches_and_invalidates_only_its_exact_topic() {
         .wait()
         .unwrap_or_else(|error| panic!("observe tracked partition call: {error}"));
     assert_eq!(outcome.result(), &Ok(response));
-    let (_, token) = outcome.into_parts();
+    let (_, _, token) = outcome.into_parts();
     let token = token.unwrap_or_else(|| panic!("partition call must publish its route token"));
     assert_exact_topic_invalidation(
         &driver,

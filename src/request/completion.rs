@@ -1,6 +1,7 @@
 //! Plain and route-tracked completion ownership for one typed request.
 
 use kafka_driver_core::OutcomeStamp;
+use kafka_wire_core::ApiVersion;
 
 use crate::{
     RequestError, RoutedOutcome,
@@ -60,19 +61,29 @@ impl<T> RequestCompletion<T> {
         }
     }
 
-    pub(crate) fn complete_unobserved(self, result: Result<T, RequestError>) -> bool {
-        self.complete(result, None)
+    pub(crate) fn complete_unobserved(
+        self,
+        result: Result<T, RequestError>,
+        selected_version: Option<ApiVersion>,
+    ) -> bool {
+        self.complete(result, selected_version, None)
     }
 
     pub(crate) fn complete_observed(
         self,
         result: Result<T, RequestError>,
+        selected_version: ApiVersion,
         observed_at: OutcomeStamp,
     ) -> bool {
-        self.complete(result, Some(observed_at))
+        self.complete(result, Some(selected_version), Some(observed_at))
     }
 
-    fn complete(self, result: Result<T, RequestError>, observed_at: Option<OutcomeStamp>) -> bool {
+    fn complete(
+        self,
+        result: Result<T, RequestError>,
+        selected_version: Option<ApiVersion>,
+        observed_at: Option<OutcomeStamp>,
+    ) -> bool {
         match self {
             Self::Plain(completion) => completion.complete(result).is_ok(),
             Self::Routed {
@@ -82,6 +93,7 @@ impl<T> RequestCompletion<T> {
             } => completion
                 .complete(RoutedOutcome::new(
                     result,
+                    selected_version,
                     route
                         .zip(observed_at)
                         .map(|(route, at)| route.observe(driver, at)),

@@ -22,6 +22,8 @@ mod dispatch_test;
 mod end_to_end_test;
 #[cfg(test)]
 mod local_rejection_test;
+#[cfg(test)]
+mod routed_version_test;
 
 pub(crate) use envelope::ResponseEnvelope;
 pub(crate) use error::{

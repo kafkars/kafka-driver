@@ -20,7 +20,7 @@ pub(crate) trait ErasedRequest: Send {
     fn traffic_class(&self) -> TrafficClass;
 
     /// Selects this request's version within the active negotiated overlap.
-    fn select_version(&self, negotiated: NegotiatedApi) -> Result<ApiVersion, RequestError>;
+    fn select_version(&mut self, negotiated: NegotiatedApi) -> Result<ApiVersion, RequestError>;
 
     /// Establishes the absolute deadline once, or returns the existing deadline.
     fn establish_deadline(&mut self, start: Moment) -> Result<Moment, RequestError>;

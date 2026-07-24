@@ -162,7 +162,7 @@ fn exact_coordinator_token_refreshes_once() {
     let outcome = call
         .wait()
         .unwrap_or_else(|error| panic!("observe tracked coordinator call: {error}"));
-    let (_, token) = outcome.into_parts();
+    let (_, _, token) = outcome.into_parts();
     let token = token.unwrap_or_else(|| panic!("coordinator call must retain its route token"));
 
     let invalidation = driver

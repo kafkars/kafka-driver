@@ -82,7 +82,7 @@ fn tracked_controller_call(
         .wait()
         .unwrap_or_else(|error| panic!("observe tracked controller call: {error}"));
     assert_eq!(outcome.result(), &Ok(response));
-    let (_, token) = outcome.into_parts();
+    let (_, _, token) = outcome.into_parts();
     let token = token.unwrap_or_else(|| panic!("controller call must retain its route token"));
     (token, controller)
 }
