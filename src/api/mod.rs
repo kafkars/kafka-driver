@@ -17,6 +17,8 @@ mod traffic;
 #[cfg(test)]
 mod call_test;
 #[cfg(test)]
+mod request_options_test;
+#[cfg(test)]
 mod route_test;
 #[cfg(test)]
 mod tracked_test;

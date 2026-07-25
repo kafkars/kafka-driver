@@ -12,7 +12,8 @@ impl Observation {
         match failure {
             RequestError::NameResolutionFailed { .. } => increment(&self.dns),
             RequestError::ResponseCapacityReached { .. } => increment(&self.response_capacity),
-            RequestError::NameResolutionCapacityReached { .. } => {
+            RequestError::NameResolutionCapacityReached { .. }
+            | RequestError::VersionBoundsInvalid { .. } => {
                 increment(&self.local_rejection);
             }
             RequestError::RouteCapacityReached { .. }
@@ -28,7 +29,6 @@ impl Observation {
             | RequestError::ApiUnavailable { .. }
             | RequestError::VersionLimitUnavailable { .. }
             | RequestError::VersionFloorUnavailable { .. }
-            | RequestError::VersionBoundsInvalid { .. }
             | RequestError::IdentityConflict
             | RequestError::DeadlineOverflow
             | RequestError::RouteUnavailable => {}

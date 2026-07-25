@@ -4,6 +4,8 @@ use kafka_driver_core::{
     AuthenticationFailure, CallFailure, CloseReason, Delivery, DnsFailure, NegotiationFailure,
     TransportFailure,
 };
+use kafka_wire::PRODUCE_API_DESCRIPTOR;
+use kafka_wire_core::ApiVersion;
 
 use crate::{RequestError, ResponseCloseReason};
 
@@ -49,6 +51,29 @@ fn failure_classes_and_delivery_certainty_are_counted_independently() {
     assert_eq!(snapshot.failures.transport(), 1);
     assert_eq!(snapshot.calls.not_sent(), 6);
     assert_eq!(snapshot.calls.possibly_sent(), 1);
+}
+
+#[test]
+fn defensive_reversed_bounds_are_local_but_negotiated_floor_failure_is_not() {
+    // Given: one caller-invalid window and one ordinary negotiation mismatch.
+    let observation = Observation::default();
+
+    // When: defensive request failures reach observation classification.
+    observation.classify_failure(&RequestError::VersionBoundsInvalid {
+        api_key: PRODUCE_API_DESCRIPTOR.api_key,
+        minimum: ApiVersion::new(12),
+        maximum: ApiVersion::new(9),
+    });
+    observation.classify_failure(&RequestError::VersionFloorUnavailable {
+        api_key: PRODUCE_API_DESCRIPTOR.api_key,
+        minimum: ApiVersion::new(12),
+        negotiated_maximum: ApiVersion::new(11),
+    });
+    let snapshot = observation.snapshot();
+
+    // Then: only contradictory caller input is a local rejection.
+    assert_eq!(snapshot.failures.local_rejection(), 1);
+    assert_eq!(snapshot.calls.not_sent(), 2);
 }
 
 fn rejected(reason: CloseReason) -> RequestError {

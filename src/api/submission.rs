@@ -2,12 +2,17 @@
 
 use std::{fmt, io};
 
+use kafka_wire_core::{ApiKey, ApiVersion};
+
 use crate::{
     completion::ShutdownSubscribeError,
     reactor::{Command, TrySendError},
 };
 
 /// Why work could not enter a bounded driver admission point.
+///
+/// When returned by request admission, every variant leaves that request
+/// definitely unsent because no command entered reactor ownership.
 #[derive(Debug)]
 pub enum SubmitError {
     /// A command lane or the shutdown barrier has reached its configured capacity.
@@ -20,6 +25,15 @@ pub enum SubmitError {
     IdentityExhausted,
     /// An invalidation token was issued by another driver instance.
     ForeignDriver,
+    /// A request supplied a minimum API version above its maximum.
+    VersionBoundsInvalid {
+        /// Generated Kafka API key requested by the call.
+        api_key: ApiKey,
+        /// Least version the caller permits for this request.
+        minimum: ApiVersion,
+        /// Greatest version the caller permits for this request.
+        maximum: ApiVersion,
+    },
 }
 
 impl fmt::Display for SubmitError {
@@ -34,6 +48,14 @@ impl fmt::Display for SubmitError {
             Self::ForeignDriver => {
                 formatter.write_str("the route failure token belongs to another driver")
             }
+            Self::VersionBoundsInvalid {
+                api_key,
+                minimum,
+                maximum,
+            } => write!(
+                formatter,
+                "Kafka API {api_key} request minimum {minimum} exceeds request maximum {maximum}"
+            ),
         }
     }
 }
@@ -42,7 +64,11 @@ impl std::error::Error for SubmitError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Wake(source) => Some(source),
-            Self::Full | Self::Closed | Self::IdentityExhausted | Self::ForeignDriver => None,
+            Self::Full
+            | Self::Closed
+            | Self::IdentityExhausted
+            | Self::ForeignDriver
+            | Self::VersionBoundsInvalid { .. } => None,
         }
     }
 }

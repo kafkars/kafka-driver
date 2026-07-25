@@ -75,6 +75,22 @@ impl RequestOptions {
     pub const fn maximum_version(self) -> Option<ApiVersion> {
         self.maximum_version
     }
+
+    fn validate_for<R>(self) -> Result<Self, SubmitError>
+    where
+        R: RequestResponsePair,
+    {
+        if let (Some(minimum), Some(maximum)) = (self.minimum_version, self.maximum_version)
+            && minimum.value() > maximum.value()
+        {
+            return Err(SubmitError::VersionBoundsInvalid {
+                api_key: R::API_KEY,
+                minimum,
+                maximum,
+            });
+        }
+        Ok(self)
+    }
 }
 
 impl Driver {
@@ -89,6 +105,7 @@ impl Driver {
         R: RequestResponsePair + Send + 'static,
         R::Response: Send + 'static,
     {
+        let options = options.validate_for::<R>()?;
         let Some(call_id) = self.call_ids.allocate() else {
             return Err(SubmitError::IdentityExhausted);
         };
@@ -123,6 +140,7 @@ impl Driver {
         R: RequestResponsePair + Send + 'static,
         R::Response: Send + 'static,
     {
+        let options = options.validate_for::<R>()?;
         let Some(call_id) = self.call_ids.allocate() else {
             return Err(SubmitError::IdentityExhausted);
         };

@@ -102,7 +102,7 @@ impl FailureCounters {
     pub const fn deadline(self) -> u64 {
         self.deadline
     }
-    /// Returns definitely-unsent local preparation or writer rejections.
+    /// Returns definitely-unsent local validation, preparation, or writer rejections.
     pub const fn local_rejection(self) -> u64 {
         self.local_rejection
     }
