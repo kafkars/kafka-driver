@@ -27,6 +27,8 @@ impl Observation {
             | RequestError::UnsupportedVersion { .. }
             | RequestError::ApiUnavailable { .. }
             | RequestError::VersionLimitUnavailable { .. }
+            | RequestError::VersionFloorUnavailable { .. }
+            | RequestError::VersionBoundsInvalid { .. }
             | RequestError::IdentityConflict
             | RequestError::DeadlineOverflow
             | RequestError::RouteUnavailable => {}

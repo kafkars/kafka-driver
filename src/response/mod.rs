@@ -1,6 +1,7 @@
 //! Typed response ownership between frame decoding and public completion.
 
 mod delivery;
+mod diagnostic;
 mod envelope;
 mod error;
 mod local_rejection;

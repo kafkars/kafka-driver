@@ -25,11 +25,12 @@ impl RequestPolicy {
     pub(crate) const fn until(
         deadline: Instant,
         submitted_at: Instant,
+        minimum_version: Option<ApiVersion>,
         maximum_version: Option<ApiVersion>,
     ) -> Self {
         Self {
             deadline: RequestDeadline::until(deadline, submitted_at),
-            version: VersionSelection::from_maximum(maximum_version),
+            version: VersionSelection::from_bounds(minimum_version, maximum_version),
         }
     }
 

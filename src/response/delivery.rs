@@ -17,6 +17,8 @@ impl RequestError {
             | Self::UnsupportedVersion { .. }
             | Self::ApiUnavailable { .. }
             | Self::VersionLimitUnavailable { .. }
+            | Self::VersionFloorUnavailable { .. }
+            | Self::VersionBoundsInvalid { .. }
             | Self::ResponseCapacityReached { .. }
             | Self::IdentityConflict
             | Self::DeadlineOverflow

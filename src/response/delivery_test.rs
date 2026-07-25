@@ -27,6 +27,17 @@ fn pre_writer_version_rejection_is_authoritatively_not_sent() {
 }
 
 #[test]
+fn pre_writer_version_floor_rejection_is_authoritatively_not_sent() {
+    let failure = RequestError::VersionFloorUnavailable {
+        api_key: ApiKey::new(8),
+        minimum: ApiVersion::new(9),
+        negotiated_maximum: ApiVersion::new(8),
+    };
+
+    assert_eq!(failure.delivery(), Delivery::NotSent);
+}
+
+#[test]
 fn connection_close_without_finer_evidence_is_conservatively_possibly_sent() {
     let failure = RequestError::ConnectionClosed(ResponseCloseReason::TransportClosed);
 

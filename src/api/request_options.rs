@@ -20,6 +20,7 @@ use super::{Call, Driver, RequestError, Route, RoutedCall, SubmitError, TrafficC
 pub struct RequestOptions {
     deadline: Instant,
     traffic_class: TrafficClass,
+    minimum_version: Option<ApiVersion>,
     maximum_version: Option<ApiVersion>,
 }
 
@@ -29,6 +30,7 @@ impl RequestOptions {
         Self {
             deadline,
             traffic_class: TrafficClass::Interactive,
+            minimum_version: None,
             maximum_version: None,
         }
     }
@@ -37,6 +39,13 @@ impl RequestOptions {
     #[must_use]
     pub const fn with_traffic_class(mut self, traffic_class: TrafficClass) -> Self {
         self.traffic_class = traffic_class;
+        self
+    }
+
+    /// Sets the least Kafka API version this request may use.
+    #[must_use]
+    pub const fn with_minimum_version(mut self, minimum_version: ApiVersion) -> Self {
+        self.minimum_version = Some(minimum_version);
         self
     }
 
@@ -55,6 +64,11 @@ impl RequestOptions {
     /// Returns the selected connection-isolation lane.
     pub const fn traffic_class(self) -> TrafficClass {
         self.traffic_class
+    }
+
+    /// Returns the caller's optional per-request API version floor.
+    pub const fn minimum_version(self) -> Option<ApiVersion> {
+        self.minimum_version
     }
 
     /// Returns the caller's optional per-request API version ceiling.
@@ -143,5 +157,10 @@ fn absolute_timeline(
 }
 
 const fn request_policy(options: RequestOptions, submitted_at: Instant) -> RequestPolicy {
-    RequestPolicy::until(options.deadline, submitted_at, options.maximum_version)
+    RequestPolicy::until(
+        options.deadline,
+        submitted_at,
+        options.minimum_version,
+        options.maximum_version,
+    )
 }
