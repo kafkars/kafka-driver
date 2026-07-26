@@ -1,5 +1,6 @@
 //! Bounded multi-producer, single-consumer storage for reactor commands.
 
+mod invalidation_admission;
 mod observation;
 mod ownership;
 
@@ -81,17 +82,6 @@ impl<T> MailboxSender<T> {
             |command| (self.shared.weight)(command),
             std::convert::identity,
         )
-    }
-
-    pub(crate) fn try_send_materialized<U>(
-        &self,
-        owner: U,
-        retained_bytes: impl FnOnce(&U) -> usize,
-        materialize: impl FnOnce(U) -> T,
-    ) -> Result<(), TrySendError<U>> {
-        // Keep the typed owner recoverable until bounded admission and wake
-        // succeed; only then erase it into the reactor command.
-        self.try_send_owner_to(MailboxLane::Work, owner, retained_bytes, materialize)
     }
 
     fn try_send_owner_to<U>(

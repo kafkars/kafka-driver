@@ -76,6 +76,42 @@ fn full_mailbox_rejection_returns_the_unadmitted_token() {
 }
 
 #[test]
+fn byte_capacity_rejection_returns_token_without_materializing_a_command() {
+    let preview = controller_token(
+        7,
+        DriverIdentity::allocate().unwrap_or_else(|| panic!("preview driver identity")),
+    );
+    let Some(byte_capacity) =
+        NonZeroUsize::new(Command::invalidation_retained_bytes(&preview).saturating_sub(1))
+    else {
+        panic!("an invalidation command retains more than one byte");
+    };
+    let limits =
+        DriverLimits::new(nonzero(2), NonZeroUsize::MIN).with_mailbox_byte_capacity(byte_capacity);
+    let (driver, mut reactor) = super::Driver::builder()
+        .limits(limits)
+        .broker(address(9092))
+        .build_reactor()
+        .unwrap_or_else(|error| panic!("driver: {error}"));
+
+    let Err(rejection) = driver.invalidate(controller_token(7, driver.identity)) else {
+        panic!("underweight byte capacity must reject invalidation");
+    };
+
+    assert!(matches!(rejection.reason(), SubmitError::Full));
+    let (_reason, recovered) = rejection.into_parts();
+    assert_eq!(recovered.kind(), RouteKind::Controller);
+    let turn = reactor
+        .turn(Duration::ZERO)
+        .unwrap_or_else(|error| panic!("empty byte-rejection turn: {error}"));
+    assert!(!matches!(
+        turn,
+        TurnOutcome::Progress { commands, .. } | TurnOutcome::Shutdown { commands }
+            if commands != 0
+    ));
+}
+
+#[test]
 fn closed_mailbox_rejection_returns_the_unadmitted_token() {
     let (driver, reactor) = super::Driver::builder()
         .broker(address(9092))
@@ -153,4 +189,8 @@ fn controller_token(raw_generation: u64, driver: DriverIdentity) -> super::Route
 
 const fn address(port: u16) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+}
+
+fn nonzero(value: usize) -> NonZeroUsize {
+    NonZeroUsize::new(value).unwrap_or_else(|| panic!("test value must be nonzero"))
 }

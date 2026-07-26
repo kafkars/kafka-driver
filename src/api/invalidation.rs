@@ -1,9 +1,6 @@
 //! Public command and outcome for generation- or epoch-fenced route invalidation.
 
-use crate::{
-    completion::completion_pair,
-    reactor::{Command, TrySendError},
-};
+use crate::{completion::completion_pair, reactor::TrySendError};
 
 use super::{Call, Driver, InvalidationSubmitError, RouteFailureToken, SubmitError};
 
@@ -45,12 +42,7 @@ impl Driver {
         }
         let (completion, sender) = completion_pair();
         self.commands
-            .try_send_materialized(token, Command::invalidation_retained_bytes, move |token| {
-                Command::Invalidate {
-                    token,
-                    completion: sender,
-                }
-            })
+            .try_send_invalidation(token, sender)
             .map_err(rejected_admission)?;
         Ok(Call::new(completion))
     }
