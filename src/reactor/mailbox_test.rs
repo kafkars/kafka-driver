@@ -19,6 +19,25 @@ fn capacity_rejection_returns_the_unadmitted_command() {
 }
 
 #[test]
+fn capacity_rejection_returns_owner_without_materializing_a_command() {
+    let (sender, _receiver, _poller) = test_mailbox(NonZeroUsize::MIN);
+    assert!(sender.try_send("admitted").is_ok());
+    let mut materialized = false;
+
+    let result = sender.try_send_materialized(
+        "retained owner",
+        |_| 1,
+        |owner| {
+            materialized = true;
+            owner
+        },
+    );
+
+    assert!(matches!(result, Err(TrySendError::Full("retained owner"))));
+    assert!(!materialized);
+}
+
+#[test]
 fn bounded_drains_preserve_fifo_and_report_remaining_work() {
     let (sender, receiver, _poller) = test_mailbox(nonzero(3));
     assert!(sender.try_send(1).is_ok());

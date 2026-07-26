@@ -66,41 +66,72 @@ impl<T> Drop for MailboxSender<T> {
 
 impl<T> MailboxSender<T> {
     pub(crate) fn try_send(&self, command: T) -> Result<(), TrySendError<T>> {
-        self.try_send_to(MailboxLane::Work, command)
+        self.try_send_owner_to(
+            MailboxLane::Work,
+            command,
+            |command| (self.shared.weight)(command),
+            std::convert::identity,
+        )
     }
 
     pub(crate) fn try_send_control(&self, command: T) -> Result<(), TrySendError<T>> {
-        self.try_send_to(MailboxLane::Control, command)
+        self.try_send_owner_to(
+            MailboxLane::Control,
+            command,
+            |command| (self.shared.weight)(command),
+            std::convert::identity,
+        )
     }
 
-    fn try_send_to(&self, lane: MailboxLane, command: T) -> Result<(), TrySendError<T>> {
+    pub(crate) fn try_send_materialized<U>(
+        &self,
+        owner: U,
+        retained_bytes: impl FnOnce(&U) -> usize,
+        materialize: impl FnOnce(U) -> T,
+    ) -> Result<(), TrySendError<U>> {
+        // Keep the typed owner recoverable until bounded admission and wake
+        // succeed; only then erase it into the reactor command.
+        self.try_send_owner_to(MailboxLane::Work, owner, retained_bytes, materialize)
+    }
+
+    fn try_send_owner_to<U>(
+        &self,
+        lane: MailboxLane,
+        owner: U,
+        retained_bytes: impl FnOnce(&U) -> usize,
+        materialize: impl FnOnce(U) -> T,
+    ) -> Result<(), TrySendError<U>> {
         let mut state = self.shared.lock();
         if !state.receiver_alive {
             increment(&self.shared.closed_rejections);
-            return Err(TrySendError::Closed(command));
+            return Err(TrySendError::Closed(owner));
         }
         if state.queued(lane) >= self.shared.capacity {
             increment(match lane {
                 MailboxLane::Control => &self.shared.control_full,
                 MailboxLane::Work => &self.shared.work_full,
             });
-            return Err(TrySendError::Full(command));
+            return Err(TrySendError::Full(owner));
         }
-        let command_bytes = (self.shared.weight)(&command);
+        let command_bytes = retained_bytes(&owner);
         let Some(queued_bytes) = state.queued_bytes(lane).checked_add(command_bytes) else {
             increment(self.shared.byte_full(lane));
-            return Err(TrySendError::Full(command));
+            return Err(TrySendError::Full(owner));
         };
         if queued_bytes > self.shared.byte_capacity {
             increment(self.shared.byte_full(lane));
-            return Err(TrySendError::Full(command));
+            return Err(TrySendError::Full(owner));
         }
         // The state lock prevents the reactor from observing this wake until
         // publication below either succeeds or the command is returned.
         if let Err(source) = self.shared.wake.wake() {
             increment(&self.shared.wake_failures);
-            return Err(TrySendError::Wake { command, source });
+            return Err(TrySendError::Wake {
+                command: owner,
+                source,
+            });
         }
+        let command = materialize(owner);
         state.admit(lane, command, queued_bytes);
         Ok(())
     }

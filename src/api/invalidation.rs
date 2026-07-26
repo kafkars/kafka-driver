@@ -1,8 +1,11 @@
 //! Public command and outcome for generation- or epoch-fenced route invalidation.
 
-use crate::{completion::completion_pair, reactor::Command};
+use crate::{
+    completion::completion_pair,
+    reactor::{Command, TrySendError},
+};
 
-use super::{Call, Driver, RouteFailureToken, SubmitError};
+use super::{Call, Driver, InvalidationSubmitError, RouteFailureToken, SubmitError};
 
 /// How one opaque route-failure token related to current routing ownership.
 #[non_exhaustive]
@@ -28,21 +31,40 @@ impl Driver {
     /// completes every subscriber as unavailable. A token from older fact
     /// provenance cannot disturb newer routing ownership.
     /// Invalidation is bounded ordinary work and may be rejected by the public
-    /// mailbox before admission.
+    /// mailbox before admission. Every such rejection returns the still-live
+    /// token through [`InvalidationSubmitError`].
     pub fn invalidate(
         &self,
         token: RouteFailureToken,
-    ) -> Result<Call<InvalidationDisposition>, SubmitError> {
+    ) -> Result<Call<InvalidationDisposition>, InvalidationSubmitError> {
         if !token.belongs_to(self.identity) {
-            return Err(SubmitError::ForeignDriver);
+            return Err(InvalidationSubmitError::new(
+                SubmitError::ForeignDriver,
+                token,
+            ));
         }
         let (completion, sender) = completion_pair();
         self.commands
-            .try_send(Command::Invalidate {
-                token,
-                completion: sender,
+            .try_send_materialized(token, Command::invalidation_retained_bytes, move |token| {
+                Command::Invalidate {
+                    token,
+                    completion: sender,
+                }
             })
-            .map_err(SubmitError::from)?;
+            .map_err(rejected_admission)?;
         Ok(Call::new(completion))
+    }
+}
+
+pub(super) fn rejected_admission(
+    error: TrySendError<RouteFailureToken>,
+) -> InvalidationSubmitError {
+    match error {
+        TrySendError::Full(token) => InvalidationSubmitError::new(SubmitError::Full, token),
+        TrySendError::Closed(token) => InvalidationSubmitError::new(SubmitError::Closed, token),
+        TrySendError::Wake {
+            command: token,
+            source,
+        } => InvalidationSubmitError::new(SubmitError::Wake(source), token),
     }
 }

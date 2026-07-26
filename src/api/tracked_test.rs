@@ -1,10 +1,6 @@
 //! Scenarios for exact route publication and routed result observation.
 
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    num::{NonZeroU16, NonZeroUsize},
-    time::Duration,
-};
+use std::num::{NonZeroU16, NonZeroUsize};
 
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
@@ -12,7 +8,7 @@ use kafka_driver_core::{
 };
 use kafka_wire_core::ApiVersion;
 
-use crate::{Call, SubmitError, TurnOutcome, completion::completion_pair};
+use crate::{Call, completion::completion_pair};
 
 use super::{RouteFact, RouteKind, RoutedCall, RoutedOutcome, identity::DriverIdentity};
 
@@ -71,32 +67,6 @@ fn routed_result_can_be_extracted_without_blocking() {
     ));
 }
 
-#[test]
-fn foreign_driver_rejects_token_before_mailbox_admission() {
-    let (issuing, _issuing_reactor) = super::Driver::builder()
-        .broker(address(9092))
-        .build_reactor()
-        .unwrap_or_else(|error| panic!("issuing driver: {error}"));
-    let (foreign, mut foreign_reactor) = super::Driver::builder()
-        .broker(address(9093))
-        .build_reactor()
-        .unwrap_or_else(|error| panic!("foreign driver: {error}"));
-    let token = controller_token_for(7, issuing.identity);
-
-    assert!(matches!(
-        foreign.invalidate(token),
-        Err(SubmitError::ForeignDriver)
-    ));
-    let turn = foreign_reactor
-        .turn(Duration::ZERO)
-        .unwrap_or_else(|error| panic!("empty foreign turn: {error}"));
-    assert!(!matches!(
-        turn,
-        TurnOutcome::Progress { commands, .. } | TurnOutcome::Shutdown { commands }
-            if commands != 0
-    ));
-}
-
 fn controller_token(raw_generation: u64) -> super::RouteFailureToken {
     controller_token_for(
         raw_generation,
@@ -124,8 +94,4 @@ fn controller_token_for(raw_generation: u64, driver: DriverIdentity) -> super::R
             .unwrap_or_else(|| panic!("directory must issue broker route")),
     )
     .observe(driver, OutcomeStamp::from_raw(9))
-}
-
-const fn address(port: u16) -> SocketAddr {
-    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
 }

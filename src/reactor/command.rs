@@ -7,6 +7,8 @@ use crate::{
     completion::CompletionSender, request::ErasedRequest,
 };
 
+type SnapshotCompletion = CompletionSender<Result<DriverSnapshot, SnapshotError>>;
+
 pub(crate) enum Command {
     Submit {
         route: Route,
@@ -25,18 +27,22 @@ pub(crate) enum Command {
 
 impl Command {
     pub(crate) fn retained_bytes(&self) -> usize {
-        let payload = match self {
-            Self::Submit { route, request, .. } => {
-                route.heap_bytes().saturating_add(request.retained_bytes())
+        match self {
+            Self::Submit { route, request, .. } => size_of::<Self>()
+                .saturating_add(route.heap_bytes().saturating_add(request.retained_bytes())),
+            Self::Invalidate { token, .. } => Self::invalidation_retained_bytes(token),
+            Self::Snapshot { .. } => {
+                size_of::<Self>().saturating_add(SnapshotCompletion::retained_state_bytes())
             }
-            Self::Invalidate { token, .. } => token.heap_bytes().saturating_add(
+            Self::Shutdown => size_of::<Self>(),
+        }
+    }
+
+    pub(crate) fn invalidation_retained_bytes(token: &RouteFailureToken) -> usize {
+        size_of::<Self>().saturating_add(
+            token.heap_bytes().saturating_add(
                 CompletionSender::<InvalidationDisposition>::retained_state_bytes(),
             ),
-            Self::Snapshot { .. } => {
-                CompletionSender::<Result<DriverSnapshot, SnapshotError>>::retained_state_bytes()
-            }
-            Self::Shutdown => 0,
-        };
-        size_of::<Self>().saturating_add(payload)
+        )
     }
 }

@@ -6,6 +6,7 @@ mod call;
 mod driver;
 mod identity;
 mod invalidation;
+mod invalidation_submission;
 mod observation;
 mod protocol;
 mod request_options;
@@ -16,6 +17,8 @@ mod traffic;
 
 #[cfg(test)]
 mod call_test;
+#[cfg(test)]
+mod invalidation_test;
 #[cfg(test)]
 mod request_options_test;
 #[cfg(test)]
@@ -30,6 +33,7 @@ pub use builder::DriverBuilder;
 pub use call::Call;
 pub use driver::Driver;
 pub use invalidation::InvalidationDisposition;
+pub use invalidation_submission::InvalidationSubmitError;
 pub use kafka_driver_core::Delivery;
 pub use observation::{
     BootstrapSnapshot, BrokerLaneLoadSnapshot, BrokerLanePhase, BrokerLaneSnapshot, CallCounters,
