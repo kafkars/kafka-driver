@@ -76,12 +76,8 @@ fn numeric_bootstrap_resolves_off_shard_and_installs_a_ready_broker() {
     let outcome = reactor
         .turn(Duration::ZERO)
         .unwrap_or_else(|error| panic!("submit request to bootstrapped broker: {error}"));
-    let write = reactor
-        .turn(Duration::from_secs(1))
-        .unwrap_or_else(|error| panic!("write request to bootstrapped broker: {error}"));
 
     assert!(matches!(outcome, TurnOutcome::Progress { commands: 1, .. }));
-    assert!(matches!(write, TurnOutcome::Progress { commands: 0, .. }));
     let user = read_request_header(&mut peer);
     assert_eq!(user.api_key, API_VERSIONS_API_DESCRIPTOR.api_key.value());
     drop(call);

@@ -1,8 +1,13 @@
 //! Real-loop scenarios for machine-owned call admission into bounded I/O state.
 
-use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
+use std::{
+    io::Read,
+    net::{TcpListener, TcpStream},
+    num::NonZeroUsize,
+    time::Duration,
+};
 
-use kafka_driver_core::{CallFailure, CallId, ConnectionState, Delivery, Moment};
+use kafka_driver_core::{CallFailure, CallId, ConnectionState, Delivery, Moment, OutcomeStamp};
 use kafka_driver_transport::{FrameLimits, WriteQueueLimits};
 use kafka_wire::{ApiVersionsRequest, MetadataRequest};
 use kafka_wire_core::ApiKey;
@@ -51,6 +56,44 @@ fn given_a_ready_broker_when_a_generated_call_is_admitted_then_all_owners_align(
     ));
     assert_eq!(broker.admitted_counts(), (1, 1, 1));
     drop(call);
+}
+
+#[test]
+fn accepted_write_is_locally_runnable_without_another_readiness_edge() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read loopback broker address: {error}"));
+    let mut poller = Poller::new(NonZeroUsize::MIN)
+        .unwrap_or_else(|error| panic!("create broker poller: {error}"));
+    let mut broker = SingleBroker::new(address, BrokerLimits::default());
+    broker
+        .start(&poller, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("start broker connection: {error}"));
+    let (mut peer, _) = listener
+        .accept()
+        .unwrap_or_else(|error| panic!("accept broker connection: {error}"));
+    complete_negotiation(&mut poller, &mut broker, &mut peer);
+    let (_call, request) = erased_request(
+        CallId::from_raw(7),
+        ApiVersionsRequest::default(),
+        Duration::from_secs(1),
+    );
+    broker
+        .submit(&poller, request, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("admit generated request: {error}"));
+
+    let progressed = broker
+        .continue_io(&poller, Moment::ORIGIN, OutcomeStamp::ORIGIN)
+        .unwrap_or_else(|error| panic!("continue admitted write: {error}"));
+
+    assert!(progressed);
+    assert_eq!(broker.write_queue_snapshot().queued_frames(), 0);
+    assert_eq!(
+        read_request_api_key(&mut peer),
+        kafka_wire::API_VERSIONS_API_DESCRIPTOR.api_key.value()
+    );
 }
 
 #[test]
@@ -161,4 +204,22 @@ fn one_write_limits() -> BrokerLimits {
 
 fn nonzero(value: usize) -> NonZeroUsize {
     NonZeroUsize::new(value).unwrap_or_else(|| panic!("test bound must be nonzero"))
+}
+
+fn read_request_api_key(peer: &mut TcpStream) -> i16 {
+    peer.set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap_or_else(|error| panic!("bound request read: {error}"));
+    let mut prefix = [0; size_of::<i32>()];
+    peer.read_exact(&mut prefix)
+        .unwrap_or_else(|error| panic!("read request length: {error}"));
+    let length = usize::try_from(i32::from_be_bytes(prefix))
+        .unwrap_or_else(|error| panic!("validate request length: {error}"));
+    let mut frame = vec![0; length];
+    peer.read_exact(&mut frame)
+        .unwrap_or_else(|error| panic!("read request frame: {error}"));
+    i16::from_be_bytes(
+        frame[0..size_of::<i16>()]
+            .try_into()
+            .unwrap_or_else(|_| panic!("request frame must contain an API key")),
+    )
 }

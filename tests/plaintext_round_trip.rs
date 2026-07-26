@@ -39,11 +39,10 @@ fn generated_call_round_trips_through_the_public_embedded_host() {
 
     // When
     assert_progress(&reactor.turn(Duration::ZERO), 1);
-    assert_progress(&reactor.turn(Duration::from_secs(1)), 0);
     read_request_frame(&mut peer);
     peer.write_all(&encoded_response(&response))
         .unwrap_or_else(|error| panic!("write generated broker response: {error}"));
-    assert_progress(&reactor.turn(Duration::from_secs(1)), 0);
+    drive_io_progress(&mut reactor);
 
     // Then
     assert_eq!(call.wait(), Ok(Ok(response)));
@@ -57,6 +56,17 @@ fn assert_progress(outcome: &Result<TurnOutcome, kafka_driver::ReactorError>, co
             ..
         }) if *observed == commands
     ));
+}
+
+fn drive_io_progress(reactor: &mut kafka_driver::Reactor) {
+    for _ in 0..3 {
+        let outcome = reactor.turn(Duration::from_secs(1));
+        if matches!(outcome, Ok(TurnOutcome::Progress { commands: 0, .. })) {
+            return;
+        }
+        assert!(matches!(outcome, Ok(TurnOutcome::Idle)));
+    }
+    panic!("response readiness must progress within the bounded drive attempts");
 }
 
 fn read_request_frame(peer: &mut TcpStream) {

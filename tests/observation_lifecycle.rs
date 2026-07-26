@@ -40,11 +40,10 @@ fn snapshot_reports_one_success_across_every_completed_lifecycle_stage() {
 
     // When: writer admission and the matching FIFO response both complete.
     assert_progress(&reactor.turn(Duration::ZERO), 1);
-    assert_progress(&reactor.turn(Duration::from_secs(1)), 0);
     read_request_frame(&mut peer);
     peer.write_all(&encoded_response(&response))
         .unwrap_or_else(|error| panic!("write observed response: {error}"));
-    assert_progress(&reactor.turn(Duration::from_secs(1)), 0);
+    drive_io_progress(&mut reactor);
     assert_eq!(call.wait(), Ok(Ok(response)));
     let snapshot = driver
         .snapshot()
@@ -79,13 +78,27 @@ fn snapshot_reports_one_success_across_every_completed_lifecycle_stage() {
 }
 
 fn assert_progress(outcome: &Result<TurnOutcome, kafka_driver::ReactorError>, commands: usize) {
-    assert!(matches!(
-        outcome,
-        Ok(TurnOutcome::Progress {
-            commands: observed,
-            ..
-        }) if *observed == commands
-    ));
+    assert!(
+        matches!(
+            outcome,
+            Ok(TurnOutcome::Progress {
+                commands: observed,
+                ..
+            }) if *observed == commands
+        ),
+        "expected progress with {commands} commands, observed {outcome:?}"
+    );
+}
+
+fn drive_io_progress(reactor: &mut kafka_driver::Reactor) {
+    for _ in 0..3 {
+        let outcome = reactor.turn(Duration::from_secs(1));
+        if matches!(outcome, Ok(TurnOutcome::Progress { commands: 0, .. })) {
+            return;
+        }
+        assert!(matches!(outcome, Ok(TurnOutcome::Idle)));
+    }
+    panic!("response readiness must progress within the bounded drive attempts");
 }
 
 fn read_request_frame(peer: &mut TcpStream) {

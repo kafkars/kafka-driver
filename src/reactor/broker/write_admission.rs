@@ -97,6 +97,8 @@ impl SingleBroker {
             effect_id,
         })?;
         expect_no_effects(&transition.into_effects())?;
+        // Admission is local work; the socket's prior writable edge may already be consumed.
+        self.retry_write = true;
         Ok(WriteRequestOutcome::Accepted)
     }
 }

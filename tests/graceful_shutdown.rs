@@ -41,7 +41,6 @@ fn shutdown_waits_for_an_in_flight_call_and_closes_after_its_response() {
         panic!("admit generated call command");
     };
     drive_progress(&mut reactor, Duration::ZERO, 1);
-    drive_progress(&mut reactor, Duration::from_secs(1), 0);
     read_request_frame(&mut peer);
     let Ok(mut shutdown) = driver.shutdown() else {
         panic!("admit shutdown command");
