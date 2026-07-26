@@ -1,6 +1,6 @@
 //! Seed-connection installation, submission, and diagnostics.
 
-use kafka_driver_core::{BrokerState, ConnectionState, Moment};
+use kafka_driver_core::{BrokerPhase, BrokerState, ConnectionPhase, ConnectionState, Moment};
 
 use crate::{
     config::BrokerConfig,
@@ -8,7 +8,7 @@ use crate::{
     request::ErasedRequest,
 };
 
-use super::{BrokerSet, BrokerSetError};
+use super::{BrokerSet, BrokerSetError, waiting::WaitingCallOutcome};
 
 impl BrokerSet {
     pub(in crate::reactor) fn install_seed(
@@ -105,11 +105,53 @@ impl BrokerSet {
         request: Box<dyn ErasedRequest>,
         now: Moment,
     ) -> Result<(), BrokerSetError> {
-        let Some(seed) = &mut self.seed else {
-            return Err(BrokerSetError::SeedMissing);
-        };
-        seed.submit(poller, request, now)
-            .map_err(BrokerSetError::Broker)
+        if self.seed_is_ready() {
+            let Some(seed) = &mut self.seed else {
+                return Err(BrokerSetError::SeedMissing);
+            };
+            return seed
+                .submit(poller, request, now)
+                .map_err(BrokerSetError::Broker);
+        }
+        self.seed_waiting.admit(request, now);
+        Ok(())
+    }
+
+    pub(super) fn admit_seed_waiting(
+        &mut self,
+        poller: &Poller,
+        now: Moment,
+    ) -> Result<bool, BrokerSetError> {
+        if !self.seed_is_ready() {
+            return Ok(false);
+        }
+        let mut progress = false;
+        for _admission in 0..self.admission_budget.get() {
+            match self.seed_waiting.pop(now) {
+                WaitingCallOutcome::Empty => break,
+                WaitingCallOutcome::Settled => progress = true,
+                WaitingCallOutcome::Ready(request) => {
+                    let Some(seed) = &mut self.seed else {
+                        return Err(BrokerSetError::SeedMissing);
+                    };
+                    seed.submit(poller, request, now)
+                        .map_err(BrokerSetError::Broker)?;
+                    progress = true;
+                }
+            }
+        }
+        Ok(progress)
+    }
+
+    pub(super) fn seed_waiting_has_local_work(&self) -> bool {
+        self.seed_is_ready() && !self.seed_waiting.is_empty()
+    }
+
+    fn seed_is_ready(&self) -> bool {
+        self.seed.as_ref().is_some_and(|seed| {
+            seed.state().phase() == ConnectionPhase::Ready
+                && seed.broker_state().phase() == BrokerPhase::Available
+        })
     }
 
     pub(in crate::reactor) fn seed_broker_state(&self) -> Option<BrokerState> {

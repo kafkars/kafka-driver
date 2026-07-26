@@ -2,21 +2,25 @@
 
 use std::{net::TcpListener, time::Duration};
 
-use kafka_driver::{CallFailure, Delivery, Driver, Reactor, RequestError, TurnOutcome};
+use kafka_driver::{CallFailure, Delivery, Driver, Reactor, RequestError, Route, TurnOutcome};
 use kafka_wire::ApiVersionsRequest;
 
 #[test]
 fn snapshot_reports_terminal_public_call_outcomes_and_stage_boundaries() {
-    // Given: a direct seed is still opening when one public call is admitted.
+    // Given: a controller-routed call enters a direct driver without cluster metadata.
     let (driver, mut reactor, _listener) = opening_reactor();
     let call = driver
-        .call(ApiVersionsRequest::default(), Duration::from_secs(1))
+        .request(
+            Route::Controller,
+            ApiVersionsRequest::default(),
+            Duration::from_secs(1),
+        )
         .unwrap_or_else(|error| panic!("admit observed request: {error}"));
     let snapshot = driver
         .snapshot()
         .unwrap_or_else(|error| panic!("admit snapshot command: {error}"));
 
-    // When: FIFO command processing rejects the call before preparation.
+    // When: FIFO command processing finds no controller route owner.
     let turn = reactor
         .turn(Duration::ZERO)
         .unwrap_or_else(|error| panic!("interpret request and snapshot: {error}"));
@@ -30,13 +34,7 @@ fn snapshot_reports_terminal_public_call_outcomes_and_stage_boundaries() {
 
     // Then: outcomes and only the lifecycle stages actually crossed are counted.
     assert!(matches!(turn, TurnOutcome::Progress { commands: 2, .. }));
-    assert_eq!(
-        failure,
-        Err(RequestError::Rejected {
-            failure: CallFailure::NotReady,
-            delivery: Delivery::NotSent,
-        })
-    );
+    assert_eq!(failure, Err(RequestError::RouteUnavailable));
     assert_eq!(snapshot.calls().admitted(), 1);
     assert_eq!(snapshot.calls().failed(), 1);
     assert_eq!(snapshot.calls().succeeded(), 0);
@@ -44,7 +42,7 @@ fn snapshot_reports_terminal_public_call_outcomes_and_stage_boundaries() {
     assert_eq!(snapshot.calls().not_sent(), 1);
     assert_eq!(snapshot.calls().possibly_sent(), 0);
     assert_eq!(snapshot.latency().mailbox().samples(), 1);
-    assert_eq!(snapshot.latency().routing().samples(), 1);
+    assert_eq!(snapshot.latency().routing().samples(), 0);
     assert_eq!(snapshot.latency().preparation().samples(), 0);
     assert_eq!(snapshot.latency().writer_admission().samples(), 0);
     assert_eq!(snapshot.latency().in_flight().samples(), 0);
@@ -69,17 +67,21 @@ fn snapshot_reports_terminal_public_call_outcomes_and_stage_boundaries() {
 
 #[test]
 fn snapshot_counts_a_terminal_value_discarded_after_receiver_abandonment() {
-    // Given: the caller abandons an admitted call before the reactor settles it.
+    // Given: the caller abandons a controller-routed call before local rejection.
     let (driver, mut reactor, _listener) = opening_reactor();
     let call = driver
-        .call(ApiVersionsRequest::default(), Duration::from_secs(1))
+        .request(
+            Route::Controller,
+            ApiVersionsRequest::default(),
+            Duration::from_secs(1),
+        )
         .unwrap_or_else(|error| panic!("admit abandoned request: {error}"));
     drop(call);
     let snapshot = driver
         .snapshot()
         .unwrap_or_else(|error| panic!("admit abandonment snapshot: {error}"));
 
-    // When: the reactor rejects that call while its receiver is gone.
+    // When: the reactor rejects that call without a cluster metadata owner.
     reactor
         .turn(Duration::ZERO)
         .unwrap_or_else(|error| panic!("settle abandoned request: {error}"));

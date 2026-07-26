@@ -21,6 +21,32 @@ use kafka_wire_core::{ApiVersion, KafkaEncode, StrBytes};
 use support::complete_negotiation;
 
 #[test]
+fn any_broker_call_admitted_before_bootstrap_resolution_remains_pending() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read loopback broker address: {error}"));
+    let (driver, mut reactor) = Driver::builder()
+        .bootstrap(bootstrap(address.port()))
+        .build_reactor()
+        .unwrap_or_else(|error| panic!("build bootstrap reactor: {error}"));
+    let call = driver
+        .call(ApiVersionsRequest::default(), Duration::from_secs(1))
+        .unwrap_or_else(|error| panic!("admit pre-bootstrap request: {error}"));
+
+    let outcome = reactor
+        .turn(Duration::ZERO)
+        .unwrap_or_else(|error| panic!("retain request while bootstrap resolves: {error}"));
+
+    assert!(matches!(outcome, TurnOutcome::Progress { commands: 1, .. }));
+    assert!(
+        call.try_result().is_none(),
+        "accepted AnyBroker work must wait for seed readiness"
+    );
+}
+
+#[test]
 fn numeric_bootstrap_resolves_off_shard_and_installs_a_ready_broker() {
     let listener = TcpListener::bind("127.0.0.1:0")
         .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));

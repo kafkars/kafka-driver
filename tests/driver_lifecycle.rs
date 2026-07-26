@@ -180,7 +180,7 @@ fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
 }
 
 #[test]
-fn generated_call_before_broker_readiness_is_not_sent_or_left_pending() {
+fn generated_call_before_broker_readiness_remains_bounded_and_pending() {
     let (driver, mut reactor, _listener) = build_reactor(&DriverLimits::default());
     let call = driver.call(ApiVersionsRequest::default(), Duration::from_secs(1));
     let Ok(call) = call else {
@@ -191,19 +191,10 @@ fn generated_call_before_broker_readiness_is_not_sent_or_left_pending() {
         panic!("reactor turn must succeed");
     };
 
-    assert_eq!(
-        outcome,
-        TurnOutcome::Progress {
-            commands: 1,
-            more_work: false,
-        }
-    );
-    assert_eq!(
-        call.wait(),
-        Ok(Err(RequestError::Rejected {
-            failure: CallFailure::NotReady,
-            delivery: Delivery::NotSent,
-        }))
+    assert!(matches!(outcome, TurnOutcome::Progress { commands: 1, .. }));
+    assert!(
+        call.try_result().is_none(),
+        "accepted call must wait for readiness under its original deadline"
     );
 }
 

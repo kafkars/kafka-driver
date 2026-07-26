@@ -13,12 +13,14 @@ use crate::{
 
 use super::{
     BrokerSetError, child::BrokerChild, deadline_index::DeadlineIndex, lane_queue::LaneQueue,
+    waiting::WaitingCalls,
 };
 
 /// Shard-local owner of a seed connection and disjoint broker token namespaces.
 pub(in crate::reactor) struct BrokerSet {
     pub(super) seed: Option<SingleBroker>,
     pub(super) seed_generation: Option<ConnectionEpoch>,
+    pub(super) seed_waiting: WaitingCalls,
     pub(super) directory: Option<BrokerDirectory>,
     pub(super) broker_limits: BrokerLimits,
     pub(super) broker_capacity: NonZeroUsize,
@@ -80,6 +82,11 @@ impl BrokerSet {
         Ok(Self {
             seed: None,
             seed_generation: None,
+            seed_waiting: WaitingCalls::new(
+                metadata_limits.waiting_calls(),
+                metadata_limits.waiting_bytes(),
+                metadata_limits.admission_budget(),
+            ),
             directory: None,
             broker_limits,
             broker_capacity,
@@ -176,11 +183,13 @@ impl BrokerSet {
     }
 
     pub(in crate::reactor) fn waiting_calls(&self) -> usize {
-        self.active_slots
-            .iter()
-            .filter_map(|index| self.children.get(*index))
-            .map(|child| child.waiting.len())
-            .sum()
+        self.seed_waiting.len()
+            + self
+                .active_slots
+                .iter()
+                .filter_map(|index| self.children.get(*index))
+                .map(|child| child.waiting.len())
+                .sum::<usize>()
     }
 
     #[cfg(test)]

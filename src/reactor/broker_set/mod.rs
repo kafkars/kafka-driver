@@ -42,6 +42,8 @@ mod routing_test;
 #[cfg(test)]
 mod seed_refresh_test;
 #[cfg(test)]
+mod seed_waiting_test;
+#[cfg(test)]
 mod slots_test;
 #[cfg(test)]
 mod terminal_test;

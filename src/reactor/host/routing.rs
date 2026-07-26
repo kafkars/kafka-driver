@@ -3,8 +3,7 @@
 use std::time::Instant;
 
 use kafka_driver_core::{
-    BrokerRoute, CallFailure, CoordinatorKey, CoordinatorRoute, Delivery, Moment, PartitionId,
-    TopicName,
+    BrokerRoute, CoordinatorKey, CoordinatorRoute, Moment, PartitionId, TopicName,
 };
 
 use crate::{
@@ -39,10 +38,6 @@ impl Reactor {
         now: Moment,
     ) -> Result<(), ReactorError> {
         request.mark_routed(Instant::now());
-        if !self.brokers.has_seed() {
-            request.fail(not_ready());
-            return Ok(());
-        }
         self.brokers
             .submit_seed(&self.poller, request, now)
             .map_err(ReactorError::broker_set)
@@ -164,13 +159,6 @@ impl Reactor {
         let route = directory.route_to(coordinator.broker_id())?;
         let entry = directory.resolve(route).ok()?;
         (entry.endpoint() == coordinator.endpoint()).then_some(route)
-    }
-}
-
-fn not_ready() -> RequestError {
-    RequestError::Rejected {
-        failure: CallFailure::NotReady,
-        delivery: Delivery::NotSent,
     }
 }
 

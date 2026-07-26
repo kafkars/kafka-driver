@@ -1,10 +1,13 @@
 //! Poll, timer, continuation, and shutdown delegation across broker owners.
 
-use kafka_driver_core::{Moment, OutcomeStamp};
+use kafka_driver_core::{CallFailure, Delivery, Moment, OutcomeStamp};
 
-use crate::reactor::{
-    PollEvent, Poller,
-    broker::{DeadlineProgress, SingleBroker},
+use crate::{
+    RequestError,
+    reactor::{
+        PollEvent, Poller,
+        broker::{DeadlineProgress, SingleBroker},
+    },
 };
 
 use super::{BrokerSet, BrokerSetError};
@@ -58,6 +61,7 @@ impl BrokerSet {
             seed.continue_io(poller, now, observed_at)
                 .map_err(BrokerSetError::Broker)
         })?;
+        progress |= self.admit_seed_waiting(poller, now)?;
         progress |= self.continue_runnable_lanes(poller, now, observed_at)?;
         Ok(progress)
     }
@@ -67,12 +71,16 @@ impl BrokerSet {
         poller: &Poller,
         now: Moment,
     ) -> Result<DeadlineProgress, BrokerSetError> {
-        let mut progress = self
-            .seed
-            .as_mut()
-            .map_or(Ok(DeadlineProgress::idle()), |seed| {
-                seed.fire_due(poller, now).map_err(BrokerSetError::Broker)
-            })?;
+        let seed_waiting = self.seed_waiting.expire_due(now);
+        let mut progress =
+            DeadlineProgress::from_work(seed_waiting.settled(), seed_waiting.more_due());
+        progress = progress.merge(
+            self.seed
+                .as_mut()
+                .map_or(Ok(DeadlineProgress::idle()), |seed| {
+                    seed.fire_due(poller, now).map_err(BrokerSetError::Broker)
+                })?,
+        );
         let mut progressed_lanes = 0;
         while progressed_lanes < self.lane_turn_budget.get() {
             let Some(lane) = self.deadlines.take_due(now) else {
@@ -98,6 +106,7 @@ impl BrokerSet {
         self.deadlines
             .next_deadline()
             .into_iter()
+            .chain(self.seed_waiting.next_deadline())
             .chain(self.seed.as_ref().and_then(SingleBroker::next_deadline))
             .min()
     }
@@ -107,6 +116,7 @@ impl BrokerSet {
         poller: &Poller,
         now: Moment,
     ) -> Result<(), BrokerSetError> {
+        self.seed_waiting.fail_all(&draining());
         self.seed.as_mut().map_or(Ok(()), |seed| {
             seed.begin_drain(poller, now)
                 .map_err(BrokerSetError::Broker)
@@ -126,7 +136,8 @@ impl BrokerSet {
     }
 
     pub(in crate::reactor) fn is_terminal(&self) -> bool {
-        self.seed.as_ref().is_none_or(SingleBroker::is_terminal)
+        self.seed_waiting.is_empty()
+            && self.seed.as_ref().is_none_or(SingleBroker::is_terminal)
             && self
                 .active_slots
                 .iter()
@@ -136,7 +147,15 @@ impl BrokerSet {
 
     pub(in crate::reactor) fn has_local_io(&self) -> bool {
         self.seed.as_ref().is_some_and(SingleBroker::has_local_io)
+            || self.seed_waiting_has_local_work()
             || !self.address_refreshes.is_empty()
             || !self.runnable_lanes.is_empty()
+    }
+}
+
+fn draining() -> RequestError {
+    RequestError::Rejected {
+        failure: CallFailure::Draining,
+        delivery: Delivery::NotSent,
     }
 }
