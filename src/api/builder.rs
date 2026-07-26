@@ -90,8 +90,18 @@ impl DriverBuilder {
             Arc::clone(&observation),
         )
         .map_err(DriverBuildError::new)?;
+        let topic_view_result_capacity_bytes = crate::TopicView::maximum_available_bytes(
+            self.limits.metadata().partition_leaders().max_partitions(),
+        );
         Ok((
-            Driver::new(commands, shutdown, call_ids, observation, identity),
+            Driver::new(
+                commands,
+                shutdown,
+                call_ids,
+                observation,
+                identity,
+                topic_view_result_capacity_bytes,
+            ),
             reactor,
         ))
     }

@@ -1,11 +1,12 @@
 //! Scenarios for coherent controller membership and generation-safe routing.
 
-use std::num::NonZeroU16;
+use std::num::{NonZeroU16, NonZeroU32};
 
 use crate::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
     BrokerRouteError, EvidenceStamp, HostName, LeaderEpoch, MetadataGeneration, PartitionId,
-    PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet, TopicName,
+    PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet, TopicName, TopicPartitionCount,
+    TopicPartitionCountSet,
 };
 
 use super::{MetadataSnapshot, MetadataSnapshotError};
@@ -130,6 +131,35 @@ fn partition_leader_must_belong_to_the_same_broker_membership() {
     );
 }
 
+#[test]
+fn partition_invalidation_does_not_erase_the_logical_topic_count() {
+    let brokers = broker_directory(7, [entry(1)]);
+    let topic = topic("orders");
+    let leaders = PartitionLeaderSet::try_from_iter(
+        [leader("orders", 0, 1, 11)],
+        PartitionLeaderLimits::default(),
+    )
+    .unwrap_or_else(|error| panic!("valid partition leaders: {error}"));
+    let counts = TopicPartitionCountSet::try_from_iter(
+        [TopicPartitionCount::new(topic.clone(), nonzero_u32(3))],
+        PartitionLeaderLimits::default().max_topics(),
+    )
+    .unwrap_or_else(|error| panic!("valid topic count: {error}"));
+    let mut snapshot = MetadataSnapshot::try_with_topic_counts(brokers, None, leaders, counts)
+        .unwrap_or_else(|error| panic!("coherent snapshot: {error}"));
+
+    snapshot.revoke_partition(&topic, partition(0));
+
+    assert!(snapshot.partition_route(&topic, partition(0)).is_none());
+    assert_eq!(
+        snapshot
+            .topic_partition_counts()
+            .find(&topic)
+            .map(|count| count.count().get()),
+        Some(3)
+    );
+}
+
 fn snapshot<const N: usize>(
     generation: u64,
     entries: [BrokerDirectoryEntry; N],
@@ -191,4 +221,11 @@ const fn port() -> NonZeroU16 {
         panic!("test port must be nonzero");
     };
     port
+}
+
+const fn nonzero_u32(value: u32) -> NonZeroU32 {
+    let Some(value) = NonZeroU32::new(value) else {
+        panic!("test topic count must be nonzero");
+    };
+    value
 }

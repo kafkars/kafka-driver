@@ -110,12 +110,18 @@ pub(super) fn metadata_response(
     response.brokers = vec![broker(1, seed_port), broker(7, leader_port)];
     response.controller_id = 1;
     if let Some((topic, partition)) = assignment {
-        let mut assignment = MetadataResponsePartition::default();
-        assignment.partition_index = partition.get();
-        assignment.leader_id = 7;
         let mut response_topic = MetadataResponseTopic::default();
         response_topic.name = Some(StrBytes::from(topic.as_str()));
-        response_topic.partitions.push(assignment);
+        for partition_index in 0..=partition.get() {
+            let mut assignment = MetadataResponsePartition::default();
+            assignment.partition_index = partition_index;
+            assignment.leader_id = if partition_index == partition.get() {
+                7
+            } else {
+                -1
+            };
+            response_topic.partitions.push(assignment);
+        }
         response.topics.push(response_topic);
     }
     encoded_response::<MetadataRequest, _>(correlation_id, &response, ApiVersion::new(1))

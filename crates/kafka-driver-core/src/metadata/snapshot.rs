@@ -3,6 +3,7 @@
 use crate::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerId, BrokerRoute, BrokerRouteError,
     MetadataGeneration, PartitionId, PartitionLeaderSet, PartitionRoute, TopicName,
+    TopicPartitionCountSet,
 };
 
 use super::MetadataSnapshotError;
@@ -13,6 +14,7 @@ pub struct MetadataSnapshot {
     brokers: BrokerDirectory,
     controller: Option<BrokerRoute>,
     leaders: PartitionLeaderSet,
+    topic_counts: TopicPartitionCountSet,
 }
 
 impl MetadataSnapshot {
@@ -29,6 +31,21 @@ impl MetadataSnapshot {
         brokers: BrokerDirectory,
         controller_id: Option<BrokerId>,
         leaders: PartitionLeaderSet,
+    ) -> Result<Self, MetadataSnapshotError> {
+        Self::try_with_topic_counts(
+            brokers,
+            controller_id,
+            leaders,
+            TopicPartitionCountSet::empty(),
+        )
+    }
+
+    /// Creates a coherent snapshot with independently bounded logical topic counts.
+    pub fn try_with_topic_counts(
+        brokers: BrokerDirectory,
+        controller_id: Option<BrokerId>,
+        leaders: PartitionLeaderSet,
+        topic_counts: TopicPartitionCountSet,
     ) -> Result<Self, MetadataSnapshotError> {
         let controller = controller_id
             .map(|broker_id| {
@@ -49,6 +66,7 @@ impl MetadataSnapshot {
             brokers,
             controller,
             leaders,
+            topic_counts,
         })
     }
 
@@ -70,6 +88,11 @@ impl MetadataSnapshot {
     /// Returns canonical known partition leaders for this generation.
     pub const fn partition_leaders(&self) -> &PartitionLeaderSet {
         &self.leaders
+    }
+
+    /// Returns canonical exact-topic logical partition counts for this generation.
+    pub const fn topic_partition_counts(&self) -> &TopicPartitionCountSet {
+        &self.topic_counts
     }
 
     /// Issues a route with the retained topic revision for this leader fact.

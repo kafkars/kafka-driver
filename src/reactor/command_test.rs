@@ -6,7 +6,7 @@ use kafka_driver_core::{CallId, PartitionId, TopicName};
 use kafka_wire::ApiVersionsRequest;
 
 use crate::{
-    DriverSnapshot, Route, SnapshotError,
+    DriverSnapshot, Route, SnapshotError, TopicView, TopicViewError,
     completion::{CompletionSender, completion_pair},
     request::erased_request,
 };
@@ -50,5 +50,37 @@ fn snapshot_weight_includes_its_completion_state() {
     assert_eq!(
         command.retained_bytes(),
         size_of::<Command>() + completion_bytes
+    );
+}
+
+#[test]
+fn topic_view_command_retains_exact_topic_deadline_and_completion_weight() {
+    let topic = TopicName::new(String::from("orders"))
+        .unwrap_or_else(|error| panic!("valid topic rejected: {error}"));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (_receiver, completion) = completion_pair();
+    let result_capacity_bytes = 4_096;
+    let completion_bytes =
+        CompletionSender::<Result<TopicView, TopicViewError>>::retained_state_bytes();
+    let command = Command::TopicView {
+        topic: topic.clone(),
+        deadline,
+        result_capacity_bytes,
+        completion,
+    };
+
+    let Command::TopicView {
+        topic: retained,
+        deadline: retained_deadline,
+        ..
+    } = &command
+    else {
+        panic!("topic-view command changed variant");
+    };
+    assert_eq!(retained, &topic);
+    assert_eq!(*retained_deadline, deadline);
+    assert_eq!(
+        command.retained_bytes(),
+        size_of::<Command>() + topic.heap_bytes() + completion_bytes + result_capacity_bytes
     );
 }

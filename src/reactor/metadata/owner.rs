@@ -4,12 +4,11 @@ use kafka_driver_core::{
     ConnectionPhase, EvidenceStamp, MetadataEffect, MetadataGeneration, MetadataInput,
     MetadataMachine, MetadataQuery, MetadataTransition, Moment, OperationId,
 };
-use kafka_wire::{METADATA_API_DESCRIPTOR, MetadataResponse};
+use kafka_wire::METADATA_API_DESCRIPTOR;
 
 use crate::{
     MetadataLimits,
     api::CallIds,
-    metadata::{MetadataResponseProvenance, snapshot_from_response},
     reactor::{Poller, broker::SingleBroker},
     request::erased_request_in,
 };
@@ -20,6 +19,7 @@ use super::{
     invalidation_wait::MetadataInvalidations,
     pending::{MetadataFetch, PendingMetadata},
     request::metadata_request,
+    topic_waiting::TopicViewWaiters,
     waiting::PartitionWaiters,
 };
 
@@ -28,8 +28,9 @@ pub(in crate::reactor) struct MetadataOwner {
     pub(super) machine: MetadataMachine,
     pub(super) limits: MetadataLimits,
     operation_ids: MetadataOperationIds,
-    pending: Option<PendingMetadata>,
+    pub(super) pending: Option<PendingMetadata>,
     pub(super) waiters: PartitionWaiters,
+    pub(super) topic_views: TopicViewWaiters,
     pub(super) invalidations: MetadataInvalidations,
     initial_refresh: bool,
 }
@@ -47,6 +48,10 @@ impl MetadataOwner {
             waiters: PartitionWaiters::new(
                 limits.partition_waiting_calls(),
                 limits.partition_waiting_bytes(),
+            ),
+            topic_views: TopicViewWaiters::new(
+                limits.topic_view_waiters(),
+                limits.topic_view_bytes(),
             ),
             invalidations: MetadataInvalidations::new(limits.invalidation_waiters()),
             initial_refresh: true,
@@ -68,6 +73,7 @@ impl MetadataOwner {
         let mut progress = self.observe_completion(broker, poller, now, call_ids, evidence)?;
         if progress {
             self.waiters.begin_scan();
+            self.topic_views.begin_scan();
             self.invalidations.begin_scan();
         }
         if self.initial_refresh && broker.state().phase() == ConnectionPhase::Ready {
@@ -80,72 +86,6 @@ impl MetadataOwner {
             progress |= self.interpret(transition, broker, poller, now, call_ids, evidence)?;
         }
         Ok(progress)
-    }
-
-    fn observe_completion(
-        &mut self,
-        broker: &mut SingleBroker,
-        poller: &Poller,
-        now: Moment,
-        call_ids: &CallIds,
-        evidence: EvidenceStamp,
-    ) -> Result<bool, MetadataOwnerError> {
-        let Some(result) = self
-            .pending
-            .as_ref()
-            .and_then(|pending| pending.call.try_result())
-        else {
-            return Ok(false);
-        };
-        let Some(pending) = self.pending.take() else {
-            return Err(MetadataOwnerError::UnexpectedEffect);
-        };
-        let input = match result {
-            Ok(Ok(response)) => self.success_input(&pending, &response)?,
-            Ok(Err(_)) | Err(_) => self.failure_input(pending.operation_id)?,
-        };
-        let transition = self.machine.apply(input);
-        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
-        Ok(true)
-    }
-
-    fn success_input(
-        &mut self,
-        pending: &PendingMetadata,
-        response: &MetadataResponse,
-    ) -> Result<MetadataInput, MetadataOwnerError> {
-        let Ok(snapshot) = snapshot_from_response(
-            response,
-            MetadataResponseProvenance::new(
-                pending.generation,
-                pending.evidence,
-                pending.operation_id,
-                &pending.query,
-            ),
-            self.machine.current(),
-            self.limits.broker_directory(),
-            self.limits.partition_leaders(),
-        ) else {
-            return Ok(MetadataInput::RefreshFailed {
-                operation_id: pending.operation_id,
-                followup_operation_id: self.reserve_operation()?,
-            });
-        };
-        Ok(MetadataInput::RefreshSucceeded {
-            operation_id: pending.operation_id,
-            snapshot,
-            followup_operation_id: self.reserve_operation()?,
-        })
-    }
-
-    fn failure_input(
-        &mut self,
-        operation_id: OperationId,
-    ) -> Result<MetadataInput, MetadataOwnerError> {
-        Ok(MetadataInput::RefreshFailed {
-            operation_id,
-            followup_operation_id: self.reserve_operation()?,
-        })
     }
 
     pub(super) fn interpret(

@@ -5,6 +5,7 @@ use std::{error::Error, fmt};
 use kafka_driver_core::{
     BrokerDirectoryError, BrokerId, BrokerIdError, HostNameError, LeaderEpochError,
     MetadataSnapshotError, PartitionId, PartitionIdError, PartitionLeaderSetError, TopicNameError,
+    TopicPartitionCountSetError,
 };
 
 /// Why a generated Metadata response could not become immutable driver facts.
@@ -42,6 +43,17 @@ pub(crate) enum MetadataBuildError {
     TopicNameMissing,
     RequestedTopicMismatch,
     TopicName(TopicNameError),
+    TopicPartitionsEmpty,
+    DuplicateTopicPartition {
+        partition: PartitionId,
+    },
+    TopicPartitionMissing {
+        expected: usize,
+        next: PartitionId,
+    },
+    PartitionIndexOverflow {
+        partition: PartitionId,
+    },
     PartitionId(PartitionIdError),
     LeaderId {
         partition: PartitionId,
@@ -52,6 +64,7 @@ pub(crate) enum MetadataBuildError {
         source: LeaderEpochError,
     },
     PartitionLeaders(PartitionLeaderSetError),
+    TopicCounts(TopicPartitionCountSetError),
     Snapshot(MetadataSnapshotError),
 }
 
@@ -100,6 +113,24 @@ impl fmt::Display for MetadataBuildError {
                 formatter.write_str("Metadata response does not match the requested topic")
             }
             Self::TopicName(source) => write!(formatter, "invalid metadata topic name: {source}"),
+            Self::TopicPartitionsEmpty => {
+                formatter.write_str("successful metadata topic has no logical partitions")
+            }
+            Self::DuplicateTopicPartition { partition } => write!(
+                formatter,
+                "metadata topic repeats partition {}",
+                partition.get()
+            ),
+            Self::TopicPartitionMissing { expected, next } => write!(
+                formatter,
+                "metadata topic is missing partition {expected} before {}",
+                next.get()
+            ),
+            Self::PartitionIndexOverflow { partition } => write!(
+                formatter,
+                "metadata partition {} exceeds the local index domain",
+                partition.get()
+            ),
             Self::PartitionId(source) => {
                 write!(formatter, "invalid metadata partition: {source}")
             }
@@ -115,6 +146,9 @@ impl fmt::Display for MetadataBuildError {
             ),
             Self::PartitionLeaders(source) => {
                 write!(formatter, "invalid partition leader index: {source}")
+            }
+            Self::TopicCounts(source) => {
+                write!(formatter, "invalid topic partition-count facts: {source}")
             }
             Self::Snapshot(source) => write!(formatter, "incoherent cluster metadata: {source}"),
         }
@@ -133,6 +167,7 @@ impl Error for MetadataBuildError {
             Self::PartitionId(source) => Some(source),
             Self::LeaderEpoch { source, .. } => Some(source),
             Self::PartitionLeaders(source) => Some(source),
+            Self::TopicCounts(source) => Some(source),
             Self::Snapshot(source) => Some(source),
             Self::Response { .. }
             | Self::BrokerCapacity { .. }
@@ -141,7 +176,11 @@ impl Error for MetadataBuildError {
             | Self::TopicResponseCount { .. }
             | Self::BrokerPort { .. }
             | Self::TopicNameMissing
-            | Self::RequestedTopicMismatch => None,
+            | Self::RequestedTopicMismatch
+            | Self::TopicPartitionsEmpty
+            | Self::DuplicateTopicPartition { .. }
+            | Self::TopicPartitionMissing { .. }
+            | Self::PartitionIndexOverflow { .. } => None,
         }
     }
 }

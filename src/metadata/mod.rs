@@ -9,6 +9,10 @@ mod snapshot;
 mod broker_snapshot_test;
 #[cfg(test)]
 mod partition_snapshot_test;
+#[cfg(test)]
+mod topic_logical_domain_test;
+#[cfg(test)]
+mod topic_response_validation_test;
 
 pub(crate) use error::MetadataBuildError;
 pub(crate) use snapshot::{MetadataResponseProvenance, snapshot_from_response};

@@ -1,8 +1,10 @@
 //! Bounded conversion of generated topic partitions into known leader facts.
 
+use std::num::NonZeroU32;
+
 use kafka_driver_core::{
     BrokerId, EvidenceStamp, LeaderEpoch, MetadataRevision, PartitionId, PartitionLeader,
-    PartitionLeaderLimits, PartitionLeaderSet, TopicName,
+    PartitionLeaderLimits, PartitionLeaderSet, TopicName, TopicPartitionCount,
 };
 use kafka_wire::{
     MetadataResponse,
@@ -11,13 +13,19 @@ use kafka_wire::{
 
 use super::MetadataBuildError;
 
-pub(super) fn partition_leaders_for_topic(
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct TopicPartitionSnapshot {
+    pub(super) leaders: PartitionLeaderSet,
+    pub(super) count: Option<TopicPartitionCount>,
+}
+
+pub(super) fn partition_facts_for_topic(
     response: &MetadataResponse,
     expected: &TopicName,
     revision: MetadataRevision,
     evidence: EvidenceStamp,
     limits: PartitionLeaderLimits,
-) -> Result<PartitionLeaderSet, MetadataBuildError> {
+) -> Result<TopicPartitionSnapshot, MetadataBuildError> {
     enforce_input_bounds(response, limits)?;
     let [topic] = response.topics.as_slice() else {
         return Err(MetadataBuildError::TopicResponseCount {
@@ -32,12 +40,22 @@ pub(super) fn partition_leaders_for_topic(
     if &name != expected {
         return Err(MetadataBuildError::RequestedTopicMismatch);
     }
-    let leaders = if topic.error_code == 0 {
-        topic_leaders(topic, &name, revision, evidence)?
+    let (leaders, count) = if topic.error_code == 0 {
+        validate_logical_range(topic)?;
+        let count = u32::try_from(topic.partitions.len())
+            .ok()
+            .and_then(NonZeroU32::new)
+            .ok_or(MetadataBuildError::TopicPartitionsEmpty)?;
+        (
+            topic_leaders(topic, &name, revision, evidence)?,
+            Some(TopicPartitionCount::new(name, count)),
+        )
     } else {
-        Vec::new()
+        (Vec::new(), None)
     };
-    PartitionLeaderSet::try_from_iter(leaders, limits).map_err(MetadataBuildError::PartitionLeaders)
+    let leaders = PartitionLeaderSet::try_from_iter(leaders, limits)
+        .map_err(MetadataBuildError::PartitionLeaders)?;
+    Ok(TopicPartitionSnapshot { leaders, count })
 }
 
 fn enforce_input_bounds(
@@ -85,6 +103,35 @@ fn topic_leaders(
         }
     }
     Ok(leaders)
+}
+
+fn validate_logical_range(topic: &MetadataResponseTopic) -> Result<(), MetadataBuildError> {
+    if topic.partitions.is_empty() {
+        return Err(MetadataBuildError::TopicPartitionsEmpty);
+    }
+    let mut partitions = Vec::with_capacity(topic.partitions.len());
+    for partition in &topic.partitions {
+        partitions.push(
+            PartitionId::new(partition.partition_index).map_err(MetadataBuildError::PartitionId)?,
+        );
+    }
+    partitions.sort_unstable();
+    if let Some(duplicate) = partitions.windows(2).find(|pair| pair[0] == pair[1]) {
+        return Err(MetadataBuildError::DuplicateTopicPartition {
+            partition: duplicate[0],
+        });
+    }
+    for (expected, actual) in partitions.into_iter().enumerate() {
+        let actual_index = usize::try_from(actual.get())
+            .map_err(|_| MetadataBuildError::PartitionIndexOverflow { partition: actual })?;
+        if actual_index != expected {
+            return Err(MetadataBuildError::TopicPartitionMissing {
+                expected,
+                next: actual,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn partition_leader(

@@ -17,7 +17,8 @@ fn driver_limits_retain_broker_membership_and_request_wait_independently() {
         .with_waiting_limits(nonzero(3), nonzero(4_096), nonzero(2))
         .with_lane_turn_budget(nonzero(6))
         .with_partition_waiting_limits(nonzero(5), nonzero(8_192), nonzero(4))
-        .with_invalidation_waiters(nonzero(6));
+        .with_invalidation_waiters(nonzero(6))
+        .with_topic_view_limits(nonzero(8), nonzero(16_384), nonzero(7));
 
     let retained = DriverLimits::default()
         .with_metadata_limits(metadata)
@@ -35,6 +36,9 @@ fn driver_limits_retain_broker_membership_and_request_wait_independently() {
     assert_eq!(retained.partition_waiting_bytes(), nonzero(8_192));
     assert_eq!(retained.partition_admission_budget(), nonzero(4));
     assert_eq!(retained.invalidation_waiters(), nonzero(6));
+    assert_eq!(retained.topic_view_waiters(), nonzero(8));
+    assert_eq!(retained.topic_view_bytes(), nonzero(16_384));
+    assert_eq!(retained.topic_view_admission_budget(), nonzero(7));
 }
 
 const fn nonzero(value: usize) -> NonZeroUsize {

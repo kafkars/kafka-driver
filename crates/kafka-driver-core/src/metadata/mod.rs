@@ -12,6 +12,7 @@ mod query;
 mod revocation;
 mod snapshot;
 mod state;
+mod topic;
 mod transition;
 
 #[cfg(test)]
@@ -26,6 +27,8 @@ mod machine_test;
 mod query_test;
 #[cfg(test)]
 mod snapshot_test;
+#[cfg(test)]
+mod topic_test;
 
 pub use effect::MetadataEffect;
 pub use error::MetadataSnapshotError;
@@ -38,4 +41,5 @@ pub use partition::{
 pub use query::{MetadataQuery, MetadataQueryLimits};
 pub use snapshot::MetadataSnapshot;
 pub use state::MetadataState;
+pub use topic::{TopicPartitionCount, TopicPartitionCountSet, TopicPartitionCountSetError};
 pub use transition::{MetadataDisposition, MetadataTransition};

@@ -56,15 +56,22 @@ impl MetadataOwner {
     }
 
     pub(in crate::reactor) fn next_wait_deadline(&self) -> Option<Moment> {
-        self.waiters.next_deadline()
+        self.waiters
+            .next_deadline()
+            .into_iter()
+            .chain(self.topic_views.next_deadline())
+            .min()
     }
 
     pub(in crate::reactor) const fn has_pending_wait_scan(&self) -> bool {
-        self.waiters.has_pending_scan() || self.invalidations.has_pending_scan()
+        self.waiters.has_pending_scan()
+            || self.topic_views.has_pending_scan()
+            || self.invalidations.has_pending_scan()
     }
 
     pub(in crate::reactor) fn fail_waiters(&mut self, failure: &RequestError) {
         self.waiters.fail_all(failure);
+        self.topic_views.fail_all(crate::TopicViewError::Draining);
         self.invalidations.fail_all();
     }
 

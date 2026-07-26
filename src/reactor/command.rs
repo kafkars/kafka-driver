@@ -3,11 +3,12 @@
 use std::time::Instant;
 
 use crate::{
-    DriverSnapshot, InvalidationDisposition, Route, RouteFailureToken, SnapshotError,
-    completion::CompletionSender, request::ErasedRequest,
+    DriverSnapshot, InvalidationDisposition, Route, RouteFailureToken, SnapshotError, TopicName,
+    TopicView, TopicViewError, completion::CompletionSender, request::ErasedRequest,
 };
 
 type SnapshotCompletion = CompletionSender<Result<DriverSnapshot, SnapshotError>>;
+type TopicViewCompletion = CompletionSender<Result<TopicView, TopicViewError>>;
 
 pub(crate) enum Command {
     Submit {
@@ -22,6 +23,12 @@ pub(crate) enum Command {
     Snapshot {
         completion: CompletionSender<Result<DriverSnapshot, SnapshotError>>,
     },
+    TopicView {
+        topic: TopicName,
+        deadline: Instant,
+        result_capacity_bytes: usize,
+        completion: TopicViewCompletion,
+    },
     Shutdown,
 }
 
@@ -34,6 +41,15 @@ impl Command {
             Self::Snapshot { .. } => {
                 size_of::<Self>().saturating_add(SnapshotCompletion::retained_state_bytes())
             }
+            Self::TopicView {
+                topic,
+                result_capacity_bytes,
+                completion: _,
+                ..
+            } => size_of::<Self>()
+                .saturating_add(topic.heap_bytes())
+                .saturating_add(*result_capacity_bytes)
+                .saturating_add(TopicViewCompletion::retained_state_bytes()),
             Self::Shutdown => size_of::<Self>(),
         }
     }

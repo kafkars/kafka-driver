@@ -12,6 +12,7 @@ mod protocol;
 mod request_options;
 mod route;
 mod submission;
+mod topic_view;
 mod tracked;
 mod traffic;
 
@@ -23,6 +24,8 @@ mod invalidation_test;
 mod request_options_test;
 #[cfg(test)]
 mod route_test;
+#[cfg(test)]
+mod topic_view_test;
 #[cfg(test)]
 mod tracked_test;
 
@@ -44,6 +47,7 @@ pub use protocol::RequestResponsePair;
 pub use request_options::RequestOptions;
 pub use route::Route;
 pub use submission::SubmitError;
+pub use topic_view::{AvailableTopicPartition, TopicView, TopicViewError};
 pub use tracked::{RouteFailureToken, RouteKind, RoutedCall, RoutedOutcome};
 pub use traffic::TrafficClass;
 

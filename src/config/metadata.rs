@@ -13,6 +13,9 @@ const DEFAULT_PARTITION_WAITING_CALLS: NonZeroUsize = nonzero(256);
 const DEFAULT_PARTITION_WAITING_BYTES: NonZeroUsize = nonzero(8 * 1024 * 1024);
 const DEFAULT_PARTITION_ADMISSION_BUDGET: NonZeroUsize = nonzero(64);
 const DEFAULT_INVALIDATION_WAITERS: NonZeroUsize = nonzero(256);
+const DEFAULT_TOPIC_VIEW_WAITERS: NonZeroUsize = nonzero(256);
+const DEFAULT_TOPIC_VIEW_BYTES: NonZeroUsize = nonzero(2 * 1024 * 1024);
+const DEFAULT_TOPIC_VIEW_ADMISSION_BUDGET: NonZeroUsize = nonzero(64);
 
 /// Resource and wait bounds applied to cluster metadata refreshes.
 #[must_use]
@@ -30,6 +33,9 @@ pub struct MetadataLimits {
     partition_waiting_bytes: NonZeroUsize,
     partition_admission_budget: NonZeroUsize,
     invalidation_waiters: NonZeroUsize,
+    topic_view_waiters: NonZeroUsize,
+    topic_view_bytes: NonZeroUsize,
+    topic_view_admission_budget: NonZeroUsize,
 }
 
 impl MetadataLimits {
@@ -48,6 +54,9 @@ impl MetadataLimits {
             partition_waiting_bytes: DEFAULT_PARTITION_WAITING_BYTES,
             partition_admission_budget: DEFAULT_PARTITION_ADMISSION_BUDGET,
             invalidation_waiters: DEFAULT_INVALIDATION_WAITERS,
+            topic_view_waiters: DEFAULT_TOPIC_VIEW_WAITERS,
+            topic_view_bytes: DEFAULT_TOPIC_VIEW_BYTES,
+            topic_view_admission_budget: DEFAULT_TOPIC_VIEW_ADMISSION_BUDGET,
         }
     }
 
@@ -101,6 +110,19 @@ impl MetadataLimits {
     /// Replaces the bound on public invalidations awaiting newer evidence.
     pub const fn with_invalidation_waiters(mut self, invalidation_waiters: NonZeroUsize) -> Self {
         self.invalidation_waiters = invalidation_waiters;
+        self
+    }
+
+    /// Replaces exact-topic view waiter count, byte, and turn-processing bounds.
+    pub const fn with_topic_view_limits(
+        mut self,
+        waiters: NonZeroUsize,
+        bytes: NonZeroUsize,
+        admission_budget: NonZeroUsize,
+    ) -> Self {
+        self.topic_view_waiters = waiters;
+        self.topic_view_bytes = bytes;
+        self.topic_view_admission_budget = admission_budget;
         self
     }
 
@@ -162,6 +184,21 @@ impl MetadataLimits {
     /// Returns maximum public invalidations awaiting newer metadata evidence.
     pub const fn invalidation_waiters(self) -> NonZeroUsize {
         self.invalidation_waiters
+    }
+
+    /// Returns maximum public exact-topic views awaiting installed facts.
+    pub const fn topic_view_waiters(self) -> NonZeroUsize {
+        self.topic_view_waiters
+    }
+
+    /// Returns maximum bytes retained by public exact-topic view waiters.
+    pub const fn topic_view_bytes(self) -> NonZeroUsize {
+        self.topic_view_bytes
+    }
+
+    /// Returns maximum exact-topic view waiters examined in one reactor turn.
+    pub const fn topic_view_admission_budget(self) -> NonZeroUsize {
+        self.topic_view_admission_budget
     }
 
     pub(super) const fn default_limits() -> Self {

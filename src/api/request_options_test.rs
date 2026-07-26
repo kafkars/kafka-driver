@@ -27,7 +27,14 @@ fn reversed_version_bounds_do_not_allocate_a_call_identity() {
     .unwrap_or_else(|error| panic!("build targetless test reactor: {error}"));
     let identity =
         DriverIdentity::allocate().unwrap_or_else(|| panic!("allocate test driver identity"));
-    let driver = Driver::new(commands, shutdown, call_ids.clone(), observation, identity);
+    let driver = Driver::new(
+        commands,
+        shutdown,
+        call_ids.clone(),
+        observation,
+        identity,
+        0,
+    );
     let options = RequestOptions::new(Instant::now())
         .with_minimum_version(ApiVersion::new(12))
         .with_maximum_version(ApiVersion::new(9));

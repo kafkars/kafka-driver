@@ -27,6 +27,7 @@ pub struct Driver {
     pub(super) call_ids: Arc<CallIds>,
     pub(super) observation: Arc<Observation>,
     pub(super) identity: DriverIdentity,
+    pub(super) topic_view_result_capacity_bytes: usize,
 }
 
 impl Driver {
@@ -36,6 +37,7 @@ impl Driver {
         call_ids: Arc<CallIds>,
         observation: Arc<Observation>,
         identity: DriverIdentity,
+        topic_view_result_capacity_bytes: usize,
     ) -> Self {
         Self {
             commands,
@@ -43,6 +45,7 @@ impl Driver {
             call_ids,
             observation,
             identity,
+            topic_view_result_capacity_bytes,
         }
     }
 

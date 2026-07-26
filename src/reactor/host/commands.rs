@@ -42,6 +42,22 @@ impl Reactor {
                     Command::Snapshot { completion } => {
                         let _ = completion.complete(Err(SnapshotError::Draining));
                     }
+                    Command::TopicView {
+                        topic,
+                        deadline,
+                        result_capacity_bytes,
+                        completion,
+                    } if self.state == HostState::Running => {
+                        self.process_topic_view(
+                            topic,
+                            deadline,
+                            result_capacity_bytes,
+                            completion,
+                        )?;
+                    }
+                    Command::TopicView { completion, .. } => {
+                        let _ = completion.complete(Err(crate::TopicViewError::Draining));
+                    }
                     Command::Shutdown => {
                         if self.state == HostState::Running {
                             self.state = HostState::DrainRequested;
@@ -107,6 +123,9 @@ impl Reactor {
                 }
                 Command::Snapshot { completion } => {
                     let _ = completion.complete(Err(SnapshotError::Draining));
+                }
+                Command::TopicView { completion, .. } => {
+                    let _ = completion.complete(Err(crate::TopicViewError::Draining));
                 }
                 Command::Shutdown => {}
             }

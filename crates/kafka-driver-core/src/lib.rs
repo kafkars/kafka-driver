@@ -79,7 +79,8 @@ pub use metadata::{
     MetadataDisposition, MetadataEffect, MetadataInput, MetadataMachine, MetadataQuery,
     MetadataQueryLimits, MetadataSnapshot, MetadataSnapshotError, MetadataState,
     MetadataTransition, PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet,
-    PartitionLeaderSetError, PartitionRoute,
+    PartitionLeaderSetError, PartitionRoute, TopicPartitionCount, TopicPartitionCountSet,
+    TopicPartitionCountSetError,
 };
 pub use resolution::{
     DnsFailure, DnsOutcome, DnsRequest, ResolutionLimits, ResolvedAddressSet,

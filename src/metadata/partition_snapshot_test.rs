@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 
 use kafka_driver_core::{
     BrokerDirectoryLimits, BrokerId, LeaderEpoch, MetadataGeneration, MetadataQuery, PartitionId,
-    PartitionLeaderLimits, PartitionLeaderSetError, TopicName,
+    PartitionLeaderLimits, TopicName,
 };
 use kafka_wire::{
     MetadataResponse,
@@ -18,10 +18,17 @@ use super::{MetadataBuildError, MetadataResponseProvenance, snapshot_from_respon
 fn successful_partitions_become_canonical_generation_fenced_routes() {
     let response = response(
         [broker(7), broker(9)],
-        [topic("orders", [partition(2, 9, 11), partition(0, 7, -1)])],
+        [topic(
+            "orders",
+            [
+                partition(2, 9, 11),
+                partition(0, 7, -1),
+                partition(1, -1, -1),
+            ],
+        )],
     );
 
-    let snapshot = build(&response, 1, 2, 2)
+    let snapshot = build(&response, 1, 3, 2)
         .unwrap_or_else(|error| panic!("valid partition metadata: {error}"));
     let route = snapshot
         .partition_route(&topic_name("orders"), partition_id(2))
@@ -32,34 +39,6 @@ fn successful_partitions_become_canonical_generation_fenced_routes() {
     assert_eq!(route.leader_epoch(), LeaderEpoch::new(11).ok());
     assert_eq!(route.evidence_stamp().get(), 3);
     assert_eq!(snapshot.partition_leaders().len(), 2);
-}
-
-#[test]
-fn topic_and_partition_inputs_are_bounded_before_identity_conversion() {
-    let invalid = topic("", [partition(-1, -2, -2)]);
-    let too_many_topics = response([broker(7)], [invalid.clone(), invalid.clone()]);
-    let too_many_partitions = response(
-        [broker(7)],
-        [topic(
-            "orders",
-            [partition(-1, -2, -2), partition(-1, -2, -2)],
-        )],
-    );
-
-    assert_eq!(
-        build(&too_many_topics, 1, 1, 2),
-        Err(MetadataBuildError::TopicCapacity {
-            observed: 2,
-            limit: 1,
-        })
-    );
-    assert_eq!(
-        build(&too_many_partitions, 1, 1, 1),
-        Err(MetadataBuildError::PartitionCapacity {
-            observed: 2,
-            limit: 1,
-        })
-    );
 }
 
 #[test]
@@ -113,26 +92,10 @@ fn malformed_and_duplicate_assignments_reject_the_generation() {
     ));
     assert_eq!(
         build(&duplicate, 1, 2, 1),
-        Err(MetadataBuildError::PartitionLeaders(
-            PartitionLeaderSetError::DuplicatePartition {
-                partition: partition_id(0),
-            }
-        ))
+        Err(MetadataBuildError::DuplicateTopicPartition {
+            partition: partition_id(0),
+        })
     );
-}
-
-#[test]
-fn rejected_topic_text_is_not_retained_by_diagnostics() {
-    let rejected = format!("private-{}", "x".repeat(TopicName::MAX_BYTES));
-    let response = response([broker(7)], [topic(&rejected, [partition(0, 7, 1)])]);
-
-    let Err(error) = build(&response, 1, 1, 1) else {
-        panic!("invalid topic must reject");
-    };
-
-    assert!(matches!(error, MetadataBuildError::TopicName(_)));
-    assert!(!error.to_string().contains(&rejected));
-    assert!(!format!("{error:?}").contains(&rejected));
 }
 
 #[test]
@@ -211,15 +174,19 @@ fn topic_refresh_replaces_only_its_topic_and_cluster_refresh_clears_routes() {
         Some(4)
     );
     assert!(cluster.partition_leaders().is_empty());
-}
-
-#[test]
-fn single_topic_response_must_match_the_requested_topic() {
-    let response = response([broker(7)], [topic("payments", [partition(0, 7, 1)])]);
-
     assert_eq!(
-        build(&response, 1, 1, 1),
-        Err(MetadataBuildError::RequestedTopicMismatch)
+        cluster
+            .topic_partition_counts()
+            .find(&topic_name("orders"))
+            .map(|count| count.count().get()),
+        Some(1)
+    );
+    assert_eq!(
+        cluster
+            .topic_partition_counts()
+            .find(&topic_name("payments"))
+            .map(|count| count.count().get()),
+        Some(1)
     );
 }
 

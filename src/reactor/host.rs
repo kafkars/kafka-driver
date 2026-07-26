@@ -17,6 +17,7 @@ mod routing;
 mod scram_proof;
 mod state;
 mod submission;
+mod topic_view;
 
 #[cfg(test)]
 mod resolution_test;
