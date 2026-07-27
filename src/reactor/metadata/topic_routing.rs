@@ -17,7 +17,7 @@ impl MetadataOwner {
     pub(in crate::reactor) fn wait_for_topic_view(
         &mut self,
         waiting: TopicViewWait,
-        broker: &mut SingleBroker,
+        broker: Option<&mut SingleBroker>,
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,

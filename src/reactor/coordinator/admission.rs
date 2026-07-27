@@ -14,7 +14,7 @@ impl CoordinatorOwner {
     pub(in crate::reactor) fn wait_for(
         &mut self,
         waiting: CoordinatorWait,
-        broker: &mut SingleBroker,
+        broker: Option<&mut SingleBroker>,
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
@@ -39,6 +39,9 @@ impl CoordinatorOwner {
         {
             self.entries[index].discovery_requested = true;
         }
+        let Some(broker) = broker else {
+            return Ok(());
+        };
         self.start_requested(
             broker,
             poller,

@@ -14,14 +14,14 @@ use kafka_wire::{
 };
 
 use broker::{
-    accept, accept_after_driving, api_versions_response, bootstrap, drive,
-    find_coordinator_response, listener, local_port, metadata_response,
-    read_find_coordinator_request, read_request, wait_for_frame,
+    accept_after_driving, api_versions_response, bootstrap, drive, find_coordinator_response,
+    listener, local_port, metadata_response, read_find_coordinator_request, read_request,
+    wait_for_frame,
 };
 use support::complete_negotiation;
 
 #[test]
-fn exact_group_key_discovers_then_routes_to_the_advertised_coordinator() {
+fn preseed_group_call_discovers_then_routes_to_the_advertised_coordinator() {
     let seed_listener = listener();
     let coordinator_listener = listener();
     let seed_port = local_port(&seed_listener);
@@ -30,15 +30,25 @@ fn exact_group_key_discovers_then_routes_to_the_advertised_coordinator() {
         .bootstrap(bootstrap(seed_port))
         .build_reactor()
         .unwrap_or_else(|error| panic!("build cluster reactor: {error}"));
+    let key = CoordinatorKey::new(CoordinatorKind::Group, "orders-readers")
+        .unwrap_or_else(|error| panic!("valid coordinator key rejected: {error}"));
+    let call = driver
+        .request_tracked(
+            Route::Coordinator { key: key.clone() },
+            ApiVersionsRequest::default(),
+            Duration::from_secs(10),
+        )
+        .unwrap_or_else(|error| panic!("admit pre-seed coordinator request: {error}"));
 
     drive(&mut reactor, Duration::from_secs(1), "resolve seed");
-    let mut seed = accept(&seed_listener, "seed");
+    let mut seed = accept_after_driving(&seed_listener, &mut reactor);
     complete_negotiation(&mut seed, &mut reactor);
     drive(
         &mut reactor,
         Duration::from_secs(1),
         "write cluster Metadata",
     );
+    wait_for_frame(&seed, &mut reactor);
     let cluster = read_request(&mut seed);
     assert_eq!(cluster.api_key, METADATA_API_DESCRIPTOR.api_key.value());
     seed.write_all(&metadata_response(
@@ -53,15 +63,6 @@ fn exact_group_key_discovers_then_routes_to_the_advertised_coordinator() {
         "install cluster Metadata",
     );
 
-    let key = CoordinatorKey::new(CoordinatorKind::Group, "orders-readers")
-        .unwrap_or_else(|error| panic!("valid coordinator key rejected: {error}"));
-    let call = driver
-        .request_tracked(
-            Route::Coordinator { key: key.clone() },
-            ApiVersionsRequest::default(),
-            Duration::from_secs(10),
-        )
-        .unwrap_or_else(|error| panic!("admit coordinator request: {error}"));
     wait_for_frame(&seed, &mut reactor);
     let discovery = read_find_coordinator_request(&mut seed);
     assert_eq!(discovery.request.key.as_str(), "orders-readers");
@@ -116,13 +117,14 @@ fn exact_coordinator_token_refreshes_once() {
         .unwrap_or_else(|error| panic!("build cluster reactor: {error}"));
 
     drive(&mut reactor, Duration::from_secs(1), "resolve seed");
-    let mut seed = accept(&seed_listener, "seed");
+    let mut seed = accept_after_driving(&seed_listener, &mut reactor);
     complete_negotiation(&mut seed, &mut reactor);
     drive(
         &mut reactor,
         Duration::from_secs(1),
         "write cluster Metadata",
     );
+    wait_for_frame(&seed, &mut reactor);
     let cluster = read_request(&mut seed);
     seed.write_all(&metadata_response(
         cluster.correlation_id,

@@ -26,8 +26,8 @@ pub use api::{
     TrafficClass, WriteQueueSnapshot,
 };
 pub use config::{
-    CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits, SaslConfig, SaslConfigError,
-    ScramProofLimits,
+    ControllerWaitingLimits, CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits,
+    SaslConfig, SaslConfigError, ScramProofLimits,
 };
 #[cfg(feature = "tls-rustls")]
 pub use config::{TlsClientConfig, TlsClientPolicy};

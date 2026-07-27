@@ -47,7 +47,7 @@ impl MetadataOwner {
         } else {
             let _ = completion.complete(immediate_disposition(disposition));
         }
-        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
+        self.interpret(transition, Some(broker), poller, now, call_ids, evidence)?;
         Ok(())
     }
 
@@ -86,7 +86,7 @@ impl MetadataOwner {
         } else {
             let _ = completion.complete(immediate_disposition(disposition));
         }
-        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
+        self.interpret(transition, Some(broker), poller, now, call_ids, evidence)?;
         Ok(())
     }
 }

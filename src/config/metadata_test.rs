@@ -4,13 +4,14 @@ use std::{num::NonZeroUsize, time::Duration};
 
 use kafka_driver_core::{BrokerDirectoryLimits, MetadataQueryLimits, PartitionLeaderLimits};
 
-use super::{DriverLimits, MetadataLimits};
+use super::{ControllerWaitingLimits, DriverLimits, MetadataLimits};
 
 #[test]
 fn driver_limits_retain_broker_membership_and_request_wait_independently() {
     let broker_directory = BrokerDirectoryLimits::new(nonzero(7));
     let partition_leaders = PartitionLeaderLimits::new(nonzero(11), nonzero(13));
     let queries = MetadataQueryLimits::new(nonzero(5));
+    let controller_waiting = ControllerWaitingLimits::new(nonzero(9), nonzero(32_768), nonzero(8));
     let metadata = MetadataLimits::new(broker_directory, Duration::from_millis(250))
         .with_partition_leader_limits(partition_leaders)
         .with_query_limits(queries)
@@ -18,6 +19,7 @@ fn driver_limits_retain_broker_membership_and_request_wait_independently() {
         .with_lane_turn_budget(nonzero(6))
         .with_partition_waiting_limits(nonzero(5), nonzero(8_192), nonzero(4))
         .with_invalidation_waiters(nonzero(6))
+        .with_controller_waiting_limits(controller_waiting)
         .with_topic_view_limits(nonzero(8), nonzero(16_384), nonzero(7));
 
     let retained = DriverLimits::default()
@@ -36,6 +38,7 @@ fn driver_limits_retain_broker_membership_and_request_wait_independently() {
     assert_eq!(retained.partition_waiting_bytes(), nonzero(8_192));
     assert_eq!(retained.partition_admission_budget(), nonzero(4));
     assert_eq!(retained.invalidation_waiters(), nonzero(6));
+    assert_eq!(retained.controller_waiting(), controller_waiting);
     assert_eq!(retained.topic_view_waiters(), nonzero(8));
     assert_eq!(retained.topic_view_bytes(), nonzero(16_384));
     assert_eq!(retained.topic_view_admission_budget(), nonzero(7));

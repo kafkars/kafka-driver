@@ -14,6 +14,8 @@ mod waiting;
 mod waiting_progress;
 
 #[cfg(test)]
+mod owner_test;
+#[cfg(test)]
 mod waiting_test;
 
 pub(super) use effect::CoordinatorStep;

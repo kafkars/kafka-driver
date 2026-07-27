@@ -10,19 +10,17 @@ use kafka_driver::{
     Driver, InvalidationDisposition, PartitionId, Reactor, Route, RouteFailureToken, RouteKind,
     TopicName,
 };
-use kafka_wire::{
-    API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
-};
+use kafka_wire::{API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse};
 use kafka_wire_core::StrBytes;
 
 use broker::{
-    accept, accept_after_driving, api_versions_response, bootstrap, drive, listener, local_port,
+    accept_after_driving, api_versions_response, bootstrap, drive, listener, local_port,
     metadata_response, read_metadata_request, read_request, wait_for_frame,
 };
 use support::complete_negotiation;
 
 #[test]
-fn partition_route_fetches_and_invalidates_only_its_exact_topic() {
+fn preseed_partition_route_fetches_and_invalidates_only_its_exact_topic() {
     let seed_listener = listener();
     let leader_listener = listener();
     let seed_port = local_port(&seed_listener);
@@ -31,30 +29,6 @@ fn partition_route_fetches_and_invalidates_only_its_exact_topic() {
         .bootstrap(bootstrap(seed_port))
         .build_reactor()
         .unwrap_or_else(|error| panic!("build cluster reactor: {error}"));
-
-    drive(&mut reactor, Duration::from_secs(1), "resolve seed");
-    let mut seed = accept(&seed_listener, "seed");
-    complete_negotiation(&mut seed, &mut reactor);
-    drive(
-        &mut reactor,
-        Duration::from_secs(1),
-        "write cluster Metadata",
-    );
-    let cluster = read_request(&mut seed);
-    assert_eq!(cluster.api_key, METADATA_API_DESCRIPTOR.api_key.value());
-    seed.write_all(&metadata_response(
-        cluster.correlation_id,
-        seed_port,
-        leader_port,
-        None,
-    ))
-    .unwrap_or_else(|error| panic!("write cluster Metadata response: {error}"));
-    drive(
-        &mut reactor,
-        Duration::from_secs(1),
-        "install cluster Metadata",
-    );
-
     let topic =
         TopicName::new("orders").unwrap_or_else(|error| panic!("valid topic rejected: {error}"));
     let partition =
@@ -68,9 +42,17 @@ fn partition_route_fetches_and_invalidates_only_its_exact_topic() {
             ApiVersionsRequest::default(),
             Duration::from_secs(10),
         )
-        .unwrap_or_else(|error| panic!("admit partition request: {error}"));
-    drive(&mut reactor, Duration::ZERO, "admit partition route wait");
-    drive(&mut reactor, Duration::from_secs(1), "write topic Metadata");
+        .unwrap_or_else(|error| panic!("admit pre-seed partition request: {error}"));
+
+    drive(&mut reactor, Duration::from_secs(1), "resolve seed");
+    let mut seed = accept_after_driving(&seed_listener, &mut reactor);
+    complete_negotiation(&mut seed, &mut reactor);
+    drive(
+        &mut reactor,
+        Duration::from_secs(1),
+        "write pre-seed topic Metadata",
+    );
+    wait_for_frame(&seed, &mut reactor);
     let topic_metadata = read_metadata_request(&mut seed);
     let topics = topic_metadata
         .request
@@ -159,6 +141,7 @@ fn assert_exact_topic_invalidation(
         Duration::from_secs(1),
         "write partition-scoped Metadata",
     );
+    wait_for_frame(seed, reactor);
     let refresh = read_metadata_request(seed);
     let refreshed_topics = refresh
         .request

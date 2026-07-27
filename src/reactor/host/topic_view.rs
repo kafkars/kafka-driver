@@ -43,15 +43,11 @@ impl Reactor {
                 }
             }
         }
-        let Some(seed) = self.brokers.seed_mut() else {
-            let _ = completion.complete(Err(TopicViewError::Unavailable));
-            return Ok(());
-        };
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         metadata
             .wait_for_topic_view(
                 TopicViewWait::new(topic, deadline, result_capacity_bytes, completion),
-                seed,
+                self.brokers.seed_mut(),
                 &self.poller,
                 now,
                 &self.call_ids,

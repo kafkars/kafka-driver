@@ -14,6 +14,7 @@ use crate::{
 };
 
 use super::{
+    controller_waiting::ControllerWaiters,
     error::MetadataOwnerError,
     identity::MetadataOperationIds,
     invalidation_wait::MetadataInvalidations,
@@ -29,7 +30,9 @@ pub(in crate::reactor) struct MetadataOwner {
     pub(super) limits: MetadataLimits,
     operation_ids: MetadataOperationIds,
     pub(super) pending: Option<PendingMetadata>,
+    requested: Option<MetadataFetch>,
     pub(super) waiters: PartitionWaiters,
+    pub(super) controller_waiters: ControllerWaiters,
     pub(super) topic_views: TopicViewWaiters,
     pub(super) invalidations: MetadataInvalidations,
     initial_refresh: bool,
@@ -45,9 +48,14 @@ impl MetadataOwner {
             limits,
             operation_ids: MetadataOperationIds::new(),
             pending: None,
+            requested: None,
             waiters: PartitionWaiters::new(
                 limits.partition_waiting_calls(),
                 limits.partition_waiting_bytes(),
+            ),
+            controller_waiters: ControllerWaiters::new(
+                limits.controller_waiting().calls(),
+                limits.controller_waiting().bytes(),
             ),
             topic_views: TopicViewWaiters::new(
                 limits.topic_view_waiters(),
@@ -70,9 +78,18 @@ impl MetadataOwner {
         call_ids: &CallIds,
         evidence: EvidenceStamp,
     ) -> Result<bool, MetadataOwnerError> {
-        let mut progress = self.observe_completion(broker, poller, now, call_ids, evidence)?;
+        let mut progress = false;
+        if broker.state().phase() == ConnectionPhase::Ready {
+            if let Some(fetch) = self.requested.take() {
+                self.initial_refresh = false;
+                self.submit(fetch, broker, poller, now, call_ids)?;
+                progress = true;
+            }
+        }
+        progress |= self.observe_completion(broker, poller, now, call_ids, evidence)?;
         if progress {
             self.waiters.begin_scan();
+            self.controller_waiters.begin_scan();
             self.topic_views.begin_scan();
             self.invalidations.begin_scan();
         }
@@ -83,7 +100,8 @@ impl MetadataOwner {
                 query: MetadataQuery::Cluster,
                 operation_id,
             });
-            progress |= self.interpret(transition, broker, poller, now, call_ids, evidence)?;
+            progress |=
+                self.interpret(transition, Some(broker), poller, now, call_ids, evidence)?;
         }
         Ok(progress)
     }
@@ -91,7 +109,7 @@ impl MetadataOwner {
     pub(super) fn interpret(
         &mut self,
         transition: MetadataTransition,
-        broker: &mut SingleBroker,
+        mut broker: Option<&mut SingleBroker>,
         poller: &Poller,
         now: Moment,
         call_ids: &CallIds,
@@ -105,18 +123,20 @@ impl MetadataOwner {
                     generation,
                     query,
                 } => {
-                    self.submit(
-                        MetadataFetch {
-                            operation_id,
-                            generation,
-                            evidence,
-                            query,
-                        },
-                        broker,
-                        poller,
-                        now,
-                        call_ids,
-                    )?;
+                    let fetch = MetadataFetch {
+                        operation_id,
+                        generation,
+                        evidence,
+                        query,
+                    };
+                    if let Some(broker) = broker
+                        .as_deref_mut()
+                        .filter(|broker| broker.state().phase() == ConnectionPhase::Ready)
+                    {
+                        self.submit(fetch, broker, poller, now, call_ids)?;
+                    } else if self.requested.replace(fetch).is_some() {
+                        return Err(MetadataOwnerError::UnexpectedEffect);
+                    }
                     progress = true;
                 }
                 MetadataEffect::GenerationExhausted => {

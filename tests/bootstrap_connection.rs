@@ -6,14 +6,18 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     num::NonZeroU16,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use bytes::BytesMut;
-use kafka_driver::{BootstrapLimits, BootstrapSet, BrokerEndpoint, Driver, HostName, TurnOutcome};
+use kafka_driver::{
+    BootstrapLimits, BootstrapSet, BrokerEndpoint, CoordinatorKey, CoordinatorKind, Driver,
+    HostName, Route, TopicName, TurnOutcome,
+};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, METADATA_API_DESCRIPTOR, MetadataRequest,
     MetadataResponse, ResponseHeader, metadata_response::MetadataResponseBroker,
+    metadata_response::MetadataResponsePartition, metadata_response::MetadataResponseTopic,
     response_header_version_for,
 };
 use kafka_wire_core::{ApiVersion, KafkaEncode, StrBytes};
@@ -43,6 +47,98 @@ fn any_broker_call_admitted_before_bootstrap_resolution_remains_pending() {
     assert!(
         call.try_result().is_none(),
         "accepted AnyBroker work must wait for seed readiness"
+    );
+}
+
+#[test]
+fn topic_view_admitted_while_seed_negotiates_retains_its_metadata_fetch() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read loopback broker address: {error}"));
+    let (driver, mut reactor) = Driver::builder()
+        .bootstrap(bootstrap(address.port()))
+        .build_reactor()
+        .unwrap_or_else(|error| panic!("build bootstrap reactor: {error}"));
+
+    reactor
+        .turn(Duration::from_secs(1))
+        .unwrap_or_else(|error| panic!("install connecting seed: {error}"));
+    let (mut peer, _) = listener
+        .accept()
+        .unwrap_or_else(|error| panic!("accept connecting seed: {error}"));
+    let topic =
+        TopicName::new("orders").unwrap_or_else(|error| panic!("valid topic rejected: {error}"));
+    let view = driver
+        .topic_view(topic.clone(), Instant::now() + Duration::from_secs(10))
+        .unwrap_or_else(|error| panic!("admit topic view while seed negotiates: {error}"));
+
+    reactor
+        .turn(Duration::ZERO)
+        .unwrap_or_else(|error| panic!("retain topic fetch before negotiation: {error}"));
+    assert!(
+        view.try_result().is_none(),
+        "metadata fetch must wait for a negotiated seed"
+    );
+
+    complete_negotiation(&mut peer, &mut reactor);
+    reactor
+        .turn(Duration::from_secs(1))
+        .unwrap_or_else(|error| panic!("write retained topic Metadata: {error}"));
+    let metadata = read_request_header(&mut peer);
+    assert_eq!(metadata.api_key, METADATA_API_DESCRIPTOR.api_key.value());
+    peer.write_all(&topic_metadata_response(
+        metadata.correlation_id,
+        address.port(),
+    ))
+    .unwrap_or_else(|error| panic!("write exact-topic Metadata response: {error}"));
+    reactor
+        .turn(Duration::from_secs(1))
+        .unwrap_or_else(|error| panic!("install exact-topic Metadata response: {error}"));
+
+    let view = view
+        .wait()
+        .unwrap_or_else(|error| panic!("observe topic view completion: {error}"))
+        .unwrap_or_else(|error| panic!("complete retained topic view: {error}"));
+    assert_eq!(view.topic(), &topic);
+    assert_eq!(view.logical_partition_count(), 1);
+    assert_eq!(
+        view.available_at(0)
+            .map(|available| available.partition().get()),
+        Some(0)
+    );
+}
+
+#[test]
+fn coordinator_call_admitted_before_bootstrap_resolution_remains_pending() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read loopback broker address: {error}"));
+    let (driver, mut reactor) = Driver::builder()
+        .bootstrap(bootstrap(address.port()))
+        .build_reactor()
+        .unwrap_or_else(|error| panic!("build bootstrap reactor: {error}"));
+    let key = CoordinatorKey::new(CoordinatorKind::Group, "orders-readers")
+        .unwrap_or_else(|error| panic!("valid coordinator key rejected: {error}"));
+    let call = driver
+        .request_tracked(
+            Route::Coordinator { key },
+            ApiVersionsRequest::default(),
+            Duration::from_secs(1),
+        )
+        .unwrap_or_else(|error| panic!("admit pre-bootstrap coordinator request: {error}"));
+
+    let outcome = reactor.turn(Duration::ZERO).unwrap_or_else(|error| {
+        panic!("retain coordinator request while bootstrap resolves: {error}")
+    });
+
+    assert!(matches!(outcome, TurnOutcome::Progress { commands: 1, .. }));
+    assert!(
+        call.try_result().is_none(),
+        "accepted coordinator work must wait for seed readiness"
     );
 }
 
@@ -151,7 +247,28 @@ fn metadata_response(correlation_id: i32, port: u16) -> Vec<u8> {
     let mut response = MetadataResponse::default();
     response.brokers.push(broker);
     response.controller_id = 1;
+    encode_metadata_response(correlation_id, &response)
+}
 
+fn topic_metadata_response(correlation_id: i32, port: u16) -> Vec<u8> {
+    let mut broker = MetadataResponseBroker::default();
+    broker.node_id = 1;
+    broker.host = StrBytes::from("127.0.0.1");
+    broker.port = i32::from(port);
+    let mut partition = MetadataResponsePartition::default();
+    partition.partition_index = 0;
+    partition.leader_id = 1;
+    let mut topic = MetadataResponseTopic::default();
+    topic.name = Some(StrBytes::from("orders"));
+    topic.partitions.push(partition);
+    let mut response = MetadataResponse::default();
+    response.brokers.push(broker);
+    response.controller_id = 1;
+    response.topics.push(topic);
+    encode_metadata_response(correlation_id, &response)
+}
+
+fn encode_metadata_response(correlation_id: i32, response: &MetadataResponse) -> Vec<u8> {
     let version = ApiVersion::new(1);
     let Ok(header_version) = response_header_version_for::<MetadataRequest>(version) else {
         panic!("Metadata v0 must have response header policy");

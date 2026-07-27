@@ -15,12 +15,13 @@ impl Reactor {
             let Some(coordinator) = &mut self.coordinator else {
                 return Ok(false);
             };
-            let Some(seed) = self.brokers.seed_mut() else {
-                return Ok(false);
+            let progress = if let Some(seed) = self.brokers.seed_mut() {
+                coordinator
+                    .drive(seed, &self.poller, now, &self.call_ids, evidence)
+                    .map_err(ReactorError::coordinator)?
+            } else {
+                false
             };
-            let progress = coordinator
-                .drive(seed, &self.poller, now, &self.call_ids, evidence)
-                .map_err(ReactorError::coordinator)?;
             let waiting = coordinator.drain_waiters(now);
             (progress, waiting)
         };

@@ -9,7 +9,10 @@ use kafka_driver_core::{
 use crate::{
     RequestError, Route,
     api::RouteFact,
-    reactor::{coordinator::CoordinatorWait, metadata::PartitionWait},
+    reactor::{
+        coordinator::CoordinatorWait,
+        metadata::{ControllerWait, PartitionWait},
+    },
     request::ErasedRequest,
 };
 
@@ -48,13 +51,27 @@ impl Reactor {
         request: Box<dyn ErasedRequest>,
         now: Moment,
     ) -> Result<(), ReactorError> {
-        let Some(route) = self
+        let route = self
             .metadata
             .as_ref()
             .and_then(|metadata| metadata.current())
-            .and_then(kafka_driver_core::MetadataSnapshot::controller_route)
-        else {
-            request.fail(RequestError::RouteUnavailable);
+            .and_then(kafka_driver_core::MetadataSnapshot::controller_route);
+        let Some(route) = route else {
+            let Some(metadata) = &mut self.metadata else {
+                request.fail(RequestError::RouteUnavailable);
+                return Ok(());
+            };
+            let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
+            metadata
+                .wait_for_controller(
+                    ControllerWait::new(request),
+                    self.brokers.seed_mut(),
+                    &self.poller,
+                    now,
+                    &self.call_ids,
+                    evidence,
+                )
+                .map_err(ReactorError::metadata)?;
             return Ok(());
         };
         let Ok(request) = bind_route(request, RouteFact::Controller(route)) else {
@@ -80,15 +97,11 @@ impl Reactor {
                 request.fail(RequestError::RouteUnavailable);
                 return Ok(());
             };
-            let Some(seed) = self.brokers.seed_mut() else {
-                request.fail(RequestError::RouteUnavailable);
-                return Ok(());
-            };
             let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
             metadata
                 .wait_for_partition(
                     PartitionWait::new(topic, partition, request),
-                    seed,
+                    self.brokers.seed_mut(),
                     &self.poller,
                     now,
                     &self.call_ids,
@@ -129,15 +142,26 @@ impl Reactor {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());
         };
-        let Some(seed) = self.brokers.seed_mut() else {
-            request.fail(RequestError::RouteUnavailable);
-            return Ok(());
-        };
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
+        let seed = self.brokers.seed_mut();
         if let Some(route) = current {
+            let Some(seed) = seed else {
+                request.fail(RequestError::RouteUnavailable);
+                return Ok(());
+            };
             owner
                 .invalidate_unobserved(route, seed, &self.poller, now, &self.call_ids, evidence)
                 .map_err(ReactorError::coordinator)?;
+            return owner
+                .wait_for(
+                    CoordinatorWait::new(key, request),
+                    Some(seed),
+                    &self.poller,
+                    now,
+                    &self.call_ids,
+                    evidence,
+                )
+                .map_err(ReactorError::coordinator);
         }
         owner
             .wait_for(

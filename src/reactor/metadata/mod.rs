@@ -1,6 +1,9 @@
 //! Generated Metadata RPC ownership above one broker and below deterministic policy.
 
 mod completion;
+mod controller_routing;
+mod controller_waiting;
+mod controller_waiting_progress;
 mod error;
 mod identity;
 mod invalidation;
@@ -18,6 +21,8 @@ mod waiting_progress;
 #[cfg(test)]
 mod completion_test;
 #[cfg(test)]
+mod controller_waiting_test;
+#[cfg(test)]
 mod identity_test;
 #[cfg(test)]
 mod invalidation_wait_test;
@@ -28,6 +33,8 @@ mod topic_waiting_test;
 #[cfg(test)]
 mod waiting_test;
 
+pub(in crate::reactor) use controller_routing::ControllerWait;
+pub(in crate::reactor) use controller_waiting_progress::ControllerWaitProgress;
 pub(in crate::reactor) use error::MetadataOwnerError;
 pub(in crate::reactor) use owner::MetadataOwner;
 pub(in crate::reactor) use routing::PartitionWait;

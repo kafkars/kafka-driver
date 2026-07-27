@@ -42,7 +42,7 @@ impl MetadataOwner {
             self.topic_views.mark_terminal(&topic, terminal);
         }
         let transition = self.machine.apply(input);
-        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
+        self.interpret(transition, Some(broker), poller, now, call_ids, evidence)?;
         Ok(true)
     }
 

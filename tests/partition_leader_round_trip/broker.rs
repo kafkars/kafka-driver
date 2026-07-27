@@ -23,12 +23,6 @@ pub(super) fn listener() -> TcpListener {
     TcpListener::bind("127.0.0.1:0").unwrap_or_else(|error| panic!("bind broker: {error}"))
 }
 
-pub(super) fn accept(listener: &TcpListener, role: &str) -> TcpStream {
-    listener
-        .accept()
-        .map_or_else(|error| panic!("accept {role}: {error}"), |(peer, _)| peer)
-}
-
 pub(super) fn accept_after_driving(
     listener: &TcpListener,
     reactor: &mut kafka_driver::Reactor,
@@ -54,21 +48,37 @@ pub(super) fn accept_after_driving(
 pub(super) fn wait_for_frame(peer: &TcpStream, reactor: &mut kafka_driver::Reactor) {
     peer.set_nonblocking(true)
         .unwrap_or_else(|error| panic!("make leader peer nonblocking: {error}"));
-    let mut byte = [0; 1];
-    for _ in 0..16 {
+    let mut frame = None;
+    for _ in 0..32 {
         drive(reactor, Duration::from_millis(100), "write leader call");
-        match peer.peek(&mut byte) {
-            Ok(observed) if observed != 0 => {
+        if frame.is_none() {
+            let mut prefix = [0; size_of::<i32>()];
+            match peer.peek(&mut prefix) {
+                Ok(observed) if observed == prefix.len() => {
+                    let length = usize::try_from(i32::from_be_bytes(prefix))
+                        .unwrap_or_else(|error| panic!("validate frame length: {error}"));
+                    frame = Some(vec![0; prefix.len().saturating_add(length)]);
+                }
+                Ok(_) => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => continue,
+                Err(error) => panic!("inspect request frame length: {error}"),
+            }
+        }
+        let frame = frame
+            .as_mut()
+            .unwrap_or_else(|| panic!("complete prefix must allocate a frame probe"));
+        match peer.peek(frame) {
+            Ok(observed) if observed == frame.len() => {
                 peer.set_nonblocking(false)
                     .unwrap_or_else(|error| panic!("make leader peer blocking: {error}"));
                 return;
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-            Err(error) => panic!("inspect leader request: {error}"),
+            Err(error) => panic!("inspect complete request frame: {error}"),
         }
     }
-    panic!("leader call was not written: {reactor:?}");
+    panic!("request frame was not written completely: {reactor:?}");
 }
 
 pub(super) fn read_metadata_request(peer: &mut TcpStream) -> MetadataRequestFrame {

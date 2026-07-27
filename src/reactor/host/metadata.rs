@@ -11,29 +11,48 @@ impl Reactor {
         }
         let now = self.clock.now().map_err(ReactorError::clock)?;
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
-        let (progress, directory, waiting, topic_views, invalidations) = {
+        let (progress, directory, controller_waiting, waiting, topic_views, invalidations) = {
             let Some(metadata) = &mut self.metadata else {
                 return Ok(false);
             };
-            let Some(seed) = self.brokers.seed_mut() else {
-                return Ok(false);
+            let progress = if let Some(seed) = self.brokers.seed_mut() {
+                metadata
+                    .drive(seed, &self.poller, now, &self.call_ids, evidence)
+                    .map_err(ReactorError::metadata)?
+            } else {
+                false
             };
-            let progress = metadata
-                .drive(seed, &self.poller, now, &self.call_ids, evidence)
-                .map_err(ReactorError::metadata)?;
             let directory = metadata
                 .current()
                 .map(|snapshot| snapshot.brokers().clone());
+            let controller_waiting = metadata.drain_controller_waiters(now);
             let waiting = metadata.drain_partition_waiters(now);
             let topic_views = metadata.drain_topic_view_waiters(now);
             let invalidations = metadata.drain_invalidation_waiters();
-            (progress, directory, waiting, topic_views, invalidations)
+            (
+                progress,
+                directory,
+                controller_waiting,
+                waiting,
+                topic_views,
+                invalidations,
+            )
         };
         let installed = directory.as_ref().map_or(Ok(false), |directory| {
             self.brokers
                 .install_directory(directory)
                 .map_err(ReactorError::broker_set)
         })?;
+        let controller_waiting_progress = controller_waiting.made_progress();
+        let controller_waiting_more = controller_waiting.more_work();
+        for routed in controller_waiting.into_routed() {
+            let route = routed.route();
+            let Ok(request) = bind_route(routed.into_request(), RouteFact::Controller(route))
+            else {
+                continue;
+            };
+            self.submit_broker_route(route, request, now)?;
+        }
         let waiting_progress = waiting.made_progress();
         let waiting_more = waiting.more_work();
         for routed in waiting.into_routed() {
@@ -46,6 +65,8 @@ impl Reactor {
         }
         Ok(progress
             || installed
+            || controller_waiting_progress
+            || controller_waiting_more
             || waiting_progress
             || waiting_more
             || topic_views.0

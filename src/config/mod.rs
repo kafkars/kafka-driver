@@ -2,6 +2,7 @@
 
 mod bootstrap;
 mod broker;
+mod controller_waiting;
 mod coordinator;
 mod limits;
 mod metadata;
@@ -25,6 +26,7 @@ mod scram_proof_test;
 #[cfg(all(test, feature = "tls-rustls"))]
 mod tls_test;
 
+pub use controller_waiting::ControllerWaitingLimits;
 pub use coordinator::CoordinatorLimits;
 pub use limits::DriverLimits;
 pub use metadata::MetadataLimits;
