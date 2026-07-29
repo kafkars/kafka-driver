@@ -78,6 +78,15 @@ impl<T> RequestCompletion<T> {
         self.complete(result, Some(selected_version), Some(observed_at))
     }
 
+    pub(crate) fn complete_observed_failure(
+        self,
+        result: Result<T, RequestError>,
+        selected_version: Option<ApiVersion>,
+        observed_at: OutcomeStamp,
+    ) -> bool {
+        self.complete(result, selected_version, Some(observed_at))
+    }
+
     fn complete(
         self,
         result: Result<T, RequestError>,

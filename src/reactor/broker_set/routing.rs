@@ -148,7 +148,9 @@ impl BrokerSet {
             .get_mut(index)
             .ok_or(BrokerSetError::UnknownBrokerChild)?;
         if !route_is_current || child.retired {
-            child.waiting.fail_all(&RequestError::RouteUnavailable);
+            child
+                .waiting
+                .fail_all(&RequestError::RouteUnavailable, None);
             return Ok(true);
         }
         let template = self

@@ -32,6 +32,7 @@ pub(super) struct BrokerChild {
     pub(super) pending_install: Option<PendingBroker>,
     pub(super) refresh_in_flight: bool,
     pub(super) last_dns_failure: Option<kafka_driver_core::DnsFailure>,
+    pub(super) route_failure_at: Option<kafka_driver_core::OutcomeStamp>,
     pub(super) retired: bool,
     pub(super) retirement_started: bool,
 }
@@ -58,6 +59,7 @@ impl BrokerChild {
             pending_install: None,
             refresh_in_flight: false,
             last_dns_failure: None,
+            route_failure_at: None,
             retired: false,
             retirement_started: false,
         }
@@ -117,15 +119,44 @@ impl BrokerChild {
         {
             return Ok(false);
         }
-        match self.waiting.pop(now) {
-            WaitingCallOutcome::Empty => Ok(false),
-            WaitingCallOutcome::Settled => Ok(true),
+        match self.waiting.pop(now, self.route_failure_at) {
+            WaitingCallOutcome::Empty => {
+                self.route_failure_at = None;
+                Ok(false)
+            }
+            WaitingCallOutcome::Settled => {
+                self.route_failure_at = None;
+                Ok(true)
+            }
             WaitingCallOutcome::Ready(request) => {
                 connection
                     .submit(poller, request, now)
                     .map_err(BrokerSetError::Broker)?;
+                self.route_failure_at = None;
                 Ok(true)
             }
+        }
+    }
+
+    pub(super) fn capture_transport_failure(&mut self) {
+        if let Some(observed_at) = self
+            .connection
+            .as_mut()
+            .and_then(SingleBroker::take_transport_failure_at)
+        {
+            self.route_failure_at = Some(observed_at);
+        }
+        self.clear_recovered_route_failure_if_idle();
+    }
+
+    fn clear_recovered_route_failure_if_idle(&mut self) {
+        if self.waiting.is_empty()
+            && self.connection.as_ref().is_some_and(|connection| {
+                connection.state().phase() == ConnectionPhase::Ready
+                    && connection.broker_state().phase() == BrokerPhase::Available
+            })
+        {
+            self.route_failure_at = None;
         }
     }
 }

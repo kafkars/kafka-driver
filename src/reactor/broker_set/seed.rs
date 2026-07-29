@@ -127,7 +127,7 @@ impl BrokerSet {
         }
         let mut progress = false;
         for _admission in 0..self.admission_budget.get() {
-            match self.seed_waiting.pop(now) {
+            match self.seed_waiting.pop(now, None) {
                 WaitingCallOutcome::Empty => break,
                 WaitingCallOutcome::Settled => progress = true,
                 WaitingCallOutcome::Ready(request) => {

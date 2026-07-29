@@ -53,7 +53,7 @@ fn absolute_deadline_survives_time_spent_in_the_wait_queue() {
     let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes), nonzero(1));
     assert!(waiting.admit(request, Moment::from_nanos(100)));
 
-    let WaitingCallOutcome::Ready(mut request) = waiting.pop(Moment::from_nanos(104)) else {
+    let WaitingCallOutcome::Ready(mut request) = waiting.pop(Moment::from_nanos(104), None) else {
         panic!("unexpired call must leave the queue");
     };
 
@@ -72,7 +72,7 @@ fn a_call_expiring_in_the_wait_queue_is_never_submitted() {
     assert!(waiting.admit(request, Moment::from_nanos(100)));
 
     assert!(matches!(
-        waiting.pop(Moment::from_nanos(110)),
+        waiting.pop(Moment::from_nanos(110), None),
         WaitingCallOutcome::Settled
     ));
 
@@ -95,7 +95,7 @@ fn earliest_deadline_is_reported_even_when_it_is_not_at_the_fifo_front() {
     assert!(waiting.admit(earlier, Moment::ORIGIN));
 
     assert_eq!(waiting.next_deadline(), Some(Moment::from_nanos(10)));
-    let expiration = waiting.expire_due(Moment::from_nanos(10));
+    let expiration = waiting.expire_due(Moment::from_nanos(10), None);
 
     assert_eq!(expiration.settled(), 1);
     assert!(!expiration.more_due());
@@ -119,7 +119,7 @@ fn expiration_settlement_is_bounded_and_reports_remaining_due_work() {
     let (second_call, second) = request(2, Duration::from_nanos(10));
     assert!(waiting.admit(second, Moment::ORIGIN));
 
-    let first_turn = waiting.expire_due(Moment::from_nanos(10));
+    let first_turn = waiting.expire_due(Moment::from_nanos(10), None);
 
     assert_eq!(first_turn.settled(), 1);
     assert!(first_turn.more_due());
@@ -128,7 +128,7 @@ fn expiration_settlement_is_bounded_and_reports_remaining_due_work() {
         first_call.wait(),
         Ok(Err(RequestError::Rejected { .. }))
     ));
-    let second_turn = waiting.expire_due(Moment::from_nanos(10));
+    let second_turn = waiting.expire_due(Moment::from_nanos(10), None);
     assert_eq!(second_turn.settled(), 1);
     assert!(!second_turn.more_due());
     assert!(matches!(

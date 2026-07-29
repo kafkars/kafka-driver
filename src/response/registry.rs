@@ -153,6 +153,7 @@ impl ResponseRegistry {
         &mut self,
         call_id: CallId,
         failure: RequestError,
+        observed_at: Option<OutcomeStamp>,
     ) -> Result<CompletionDisposition, ResponseFailError> {
         let Some(front) = self.slots.front() else {
             return Err(ResponseFailError::NoPendingResponse { call_id, failure });
@@ -167,7 +168,10 @@ impl ResponseRegistry {
         let Some(slot) = self.slots.pop_front() else {
             return Err(ResponseFailError::NoPendingResponse { call_id, failure });
         };
-        Ok(slot.fail(failure))
+        Ok(match observed_at {
+            Some(observed_at) => slot.fail_observed(failure, observed_at),
+            None => slot.fail(failure),
+        })
     }
 
     pub(crate) fn validate_admission<R>(

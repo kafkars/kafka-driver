@@ -65,6 +65,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) completed_writes: Vec<CompletedWrite>,
     pub(super) retry_read: bool,
     pub(super) retry_write: bool,
+    pub(super) pending_transport_failure_at: Option<OutcomeStamp>,
     pub(super) write_frame_rejections: u64,
     pub(super) write_byte_rejections: u64,
 }
@@ -128,6 +129,7 @@ impl SingleBroker {
                     transport_failure(&error),
                 )?;
                 self.close_resource(poller, identity)?;
+                self.pending_transport_failure_at = Some(observed_at);
                 Ok(true)
             }
         }

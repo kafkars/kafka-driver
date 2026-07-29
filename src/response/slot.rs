@@ -24,6 +24,11 @@ pub(super) trait PendingResponse: Send {
         observed_at: OutcomeStamp,
     ) -> Result<CompletionDisposition, SlotDecodeError>;
     fn fail(self: Box<Self>, failure: RequestError) -> CompletionDisposition;
+    fn fail_observed(
+        self: Box<Self>,
+        failure: RequestError,
+        observed_at: OutcomeStamp,
+    ) -> CompletionDisposition;
 }
 
 pub(super) struct TypedSlot<T> {
@@ -117,6 +122,18 @@ where
         let delivered = self
             .completion
             .complete_unobserved(Err(failure.clone()), Some(self.version));
+        finish(self.timeline, CallOutcome::Failed(&failure), delivered);
+        disposition(delivered)
+    }
+
+    fn fail_observed(
+        self: Box<Self>,
+        failure: RequestError,
+        observed_at: OutcomeStamp,
+    ) -> CompletionDisposition {
+        let delivered =
+            self.completion
+                .complete_observed(Err(failure.clone()), self.version, observed_at);
         finish(self.timeline, CallOutcome::Failed(&failure), delivered);
         disposition(delivered)
     }

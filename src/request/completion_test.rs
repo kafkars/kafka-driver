@@ -29,20 +29,29 @@ fn one_request_completion_cannot_replace_its_first_route_fact() {
 }
 
 #[test]
-fn unobserved_failure_issues_no_route_failure_token() {
-    let route = controller_fact(7);
-    let (receiver, sender) = completion_pair();
-    let mut completion = RequestCompletion::<()>::routed(sender, driver());
-    assert!(completion.record_route(route).is_ok());
+fn local_admission_deadline_and_shutdown_failures_issue_no_route_evidence() {
+    let failures = [
+        RequestError::IdentityConflict,
+        RequestError::ResponseCapacityReached { limit: 1 },
+        RequestError::Rejected {
+            failure: kafka_driver_core::CallFailure::DeadlineExceeded,
+            delivery: kafka_driver_core::Delivery::PossiblySent,
+        },
+        RequestError::ConnectionClosed(crate::ResponseCloseReason::Shutdown),
+    ];
+    for failure in failures {
+        let (receiver, sender) = completion_pair();
+        let mut completion = RequestCompletion::<()>::routed(sender, driver());
+        assert!(completion.record_route(controller_fact(7)).is_ok());
 
-    assert!(completion.complete_unobserved(Err(RequestError::RouteUnavailable), None));
+        assert!(completion.complete_unobserved(Err(failure.clone()), None));
 
-    let outcome = receiver
-        .wait()
-        .unwrap_or_else(|error| panic!("completion must remain observable: {error}"));
-    assert_eq!(outcome.result(), &Err(RequestError::RouteUnavailable));
-    assert_eq!(outcome.selected_version(), None);
-    assert!(outcome.route_failure_token().is_none());
+        let outcome = receiver
+            .wait()
+            .unwrap_or_else(|error| panic!("completion must remain observable: {error}"));
+        assert_eq!(outcome.result(), &Err(failure));
+        assert!(outcome.route_failure_token().is_none());
+    }
 }
 
 #[test]

@@ -27,12 +27,12 @@ impl SingleBroker {
             progress |= self.drive_read(poller, token, identity, now, observed_at)?;
         }
         if self.resource_token == Some(token) && readiness.is_writable() {
-            progress |= self.drive_write(poller, token, identity)?;
+            progress |= self.drive_write(poller, token, identity, observed_at)?;
         }
         if self.resource_token == Some(token)
             && (readiness.is_read_closed() || readiness.is_write_closed() || readiness.is_error())
         {
-            self.transport_lost(poller, identity, TransportFailure::Reset)?;
+            self.transport_lost_observed(poller, identity, TransportFailure::Reset, observed_at)?;
             progress = true;
         }
         Ok(progress)
@@ -70,7 +70,7 @@ impl SingleBroker {
             progress |= self.drive_read(poller, token, identity, now, observed_at)?;
         }
         if self.resource_token == Some(token) && write {
-            progress |= self.drive_write(poller, token, identity)?;
+            progress |= self.drive_write(poller, token, identity, observed_at)?;
         }
         Ok(progress)
     }
@@ -103,7 +103,12 @@ impl SingleBroker {
         let progress = match result {
             Ok(progress) => progress,
             Err(error) => {
-                self.transport_lost(poller, identity, transport_failure(&error))?;
+                self.transport_lost_observed(
+                    poller,
+                    identity,
+                    transport_failure(&error),
+                    observed_at,
+                )?;
                 return Ok(true);
             }
         };
@@ -113,14 +118,19 @@ impl SingleBroker {
             ReadState::BudgetExhausted | ReadState::Interrupted
         );
         if self.resource_token == Some(token) && progress.state() == ReadState::PeerClosed {
-            self.transport_lost(poller, identity, TransportFailure::Reset)?;
+            self.transport_lost_observed(poller, identity, TransportFailure::Reset, observed_at)?;
         } else if self.resource_token == Some(token) && progress.write_pending() {
             if self
                 .resources
                 .reregister(poller, token, PollInterest::ReadWrite)
                 .is_err()
             {
-                self.transport_lost(poller, identity, TransportFailure::Other)?;
+                self.transport_lost_observed(
+                    poller,
+                    identity,
+                    TransportFailure::Other,
+                    observed_at,
+                )?;
                 return Ok(true);
             }
             self.retry_write = true;
@@ -133,6 +143,7 @@ impl SingleBroker {
         poller: &Poller,
         token: ResourceToken,
         identity: ResourceIdentity,
+        observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerError> {
         self.completed_writes.clear();
         let result = {
@@ -147,7 +158,12 @@ impl SingleBroker {
         let progress = match result {
             Ok(progress) => progress,
             Err(error) => {
-                self.transport_lost(poller, identity, transport_failure(&error))?;
+                self.transport_lost_observed(
+                    poller,
+                    identity,
+                    transport_failure(&error),
+                    observed_at,
+                )?;
                 return Ok(true);
             }
         };

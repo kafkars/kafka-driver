@@ -18,8 +18,12 @@ pub(super) struct PendingBroker {
 
 impl BrokerChild {
     pub(super) fn retain_route(&mut self, route: BrokerRoute, endpoint: &BrokerEndpoint) {
+        let route_changed = self.route.is_some_and(|current| current != route);
         self.retired = false;
         self.route = Some(route);
+        if route_changed {
+            self.route_failure_at = None;
+        }
         let pending_is_stale = self
             .pending_install
             .as_ref()
@@ -37,7 +41,7 @@ impl BrokerChild {
         }
         if pending_is_stale || resolution_is_stale || active_endpoint_changed {
             self.refresh_in_flight = false;
-            self.waiting.fail_all(&RequestError::RouteUnavailable);
+            self.waiting.fail_all(&RequestError::RouteUnavailable, None);
         }
     }
 
@@ -49,7 +53,8 @@ impl BrokerChild {
         self.retirement_started = false;
         self.pending_install = None;
         self.refresh_in_flight = false;
-        self.waiting.fail_all(&RequestError::RouteUnavailable);
+        self.route_failure_at = None;
+        self.waiting.fail_all(&RequestError::RouteUnavailable, None);
     }
 
     pub(super) fn is_reusable(&self) -> bool {
@@ -71,6 +76,7 @@ impl BrokerChild {
         self.retirement_started = false;
         self.refresh_in_flight = false;
         self.last_dns_failure = None;
+        self.route_failure_at = None;
     }
 
     pub(super) fn stage(&mut self, pending: PendingBroker) {

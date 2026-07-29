@@ -1,6 +1,6 @@
 //! Bounded operational state retained across replaceable connection epochs.
 
-use kafka_driver_core::{CloseReason, ConnectionState};
+use kafka_driver_core::{CloseReason, ConnectionState, OutcomeStamp};
 use kafka_driver_transport::WriteAdmissionFailure;
 
 use crate::WriteQueueSnapshot;
@@ -47,5 +47,9 @@ impl SingleBroker {
             WriteAdmissionFailure::FrameTooShort { .. }
             | WriteAdmissionFailure::IdentityInUse(_) => {}
         }
+    }
+
+    pub(in crate::reactor) fn take_transport_failure_at(&mut self) -> Option<OutcomeStamp> {
+        self.pending_transport_failure_at.take()
     }
 }

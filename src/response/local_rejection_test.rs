@@ -30,7 +30,7 @@ fn locally_rejected_later_call_is_removed_without_disturbing_the_front() {
     assert_eq!(second.wait(), Ok(Err(failure)));
     assert_eq!(registry.pending(), 1);
     assert_eq!(
-        registry.fail_verified(first_id, RequestError::IdentityConflict),
+        registry.fail_verified(first_id, RequestError::IdentityConflict, None),
         Ok(CompletionDisposition::Delivered)
     );
     assert_eq!(first.wait(), Ok(Err(RequestError::IdentityConflict)));

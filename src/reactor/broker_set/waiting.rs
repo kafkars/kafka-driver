@@ -2,7 +2,7 @@
 
 use std::num::NonZeroUsize;
 
-use kafka_driver_core::{CallFailure, Delivery, Moment};
+use kafka_driver_core::{CallFailure, Delivery, Moment, OutcomeStamp};
 
 use crate::{RequestError, reactor::wait_queue::WaitQueue, request::ErasedRequest};
 
@@ -59,30 +59,38 @@ impl WaitingCalls {
         true
     }
 
-    pub(super) fn pop(&mut self, now: Moment) -> WaitingCallOutcome {
+    pub(super) fn pop(
+        &mut self,
+        now: Moment,
+        observed_at: Option<OutcomeStamp>,
+    ) -> WaitingCallOutcome {
         let Some((waiting, deadline)) = self.calls.pop_front() else {
             return WaitingCallOutcome::Empty;
         };
         self.retained_bytes -= waiting.bytes;
         let Some(remaining) = deadline.duration_since(now) else {
-            waiting.request.fail(deadline_exceeded());
+            fail(waiting.request, deadline_exceeded(), observed_at);
             return WaitingCallOutcome::Settled;
         };
         if remaining.is_zero() {
-            waiting.request.fail(deadline_exceeded());
+            fail(waiting.request, deadline_exceeded(), observed_at);
             return WaitingCallOutcome::Settled;
         }
         WaitingCallOutcome::Ready(waiting.request)
     }
 
-    pub(super) fn expire_due(&mut self, now: Moment) -> WaitingExpiration {
+    pub(super) fn expire_due(
+        &mut self,
+        now: Moment,
+        observed_at: Option<OutcomeStamp>,
+    ) -> WaitingExpiration {
         let mut settled = 0;
         while settled < self.turn_budget.get() {
             let Some((waiting, _)) = self.calls.take_due(now) else {
                 break;
             };
             self.retained_bytes -= waiting.bytes;
-            waiting.request.fail(deadline_exceeded());
+            fail(waiting.request, deadline_exceeded(), observed_at);
             settled += 1;
         }
         let more_due = self
@@ -96,9 +104,9 @@ impl WaitingCalls {
         self.calls.next_deadline()
     }
 
-    pub(super) fn fail_all(&mut self, failure: &RequestError) {
+    pub(super) fn fail_all(&mut self, failure: &RequestError, observed_at: Option<OutcomeStamp>) {
         for waiting in self.calls.drain() {
-            waiting.request.fail(failure.clone());
+            fail(waiting.request, failure.clone(), observed_at);
         }
         self.retained_bytes = 0;
     }
@@ -153,5 +161,12 @@ fn deadline_exceeded() -> RequestError {
     RequestError::Rejected {
         failure: CallFailure::DeadlineExceeded,
         delivery: Delivery::NotSent,
+    }
+}
+
+fn fail(request: Box<dyn ErasedRequest>, failure: RequestError, observed_at: Option<OutcomeStamp>) {
+    match observed_at {
+        Some(observed_at) => request.fail_observed(failure, observed_at),
+        None => request.fail(failure),
     }
 }

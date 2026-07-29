@@ -27,6 +27,7 @@ impl BrokerChild {
                 .observe(poller, event, now, observed_at)
                 .map_err(BrokerSetError::Broker)
         })?;
+        self.capture_transport_failure();
         Ok(progress | self.settle_terminal_waiting())
     }
 
@@ -53,6 +54,7 @@ impl BrokerChild {
                 .continue_io(poller, now, observed_at)
                 .map_err(BrokerSetError::Broker)
         })?;
+        self.capture_transport_failure();
         Ok(progress | self.settle_terminal_waiting())
     }
 
@@ -61,7 +63,7 @@ impl BrokerChild {
         poller: &Poller,
         now: Moment,
     ) -> Result<DeadlineProgress, BrokerSetError> {
-        let expiration = self.waiting.expire_due(now);
+        let expiration = self.waiting.expire_due(now, self.route_failure_at);
         let mut progress = DeadlineProgress::from_work(expiration.settled(), expiration.more_due());
         progress = progress.merge(self.connection.as_mut().map_or(
             Ok(DeadlineProgress::idle()),
@@ -92,7 +94,7 @@ impl BrokerChild {
         poller: &Poller,
         now: Moment,
     ) -> Result<(), BrokerSetError> {
-        self.waiting.fail_all(&draining());
+        self.waiting.fail_all(&draining(), None);
         self.abandon_pending();
         self.connection.as_mut().map_or(Ok(()), |connection| {
             connection
@@ -146,7 +148,8 @@ impl BrokerChild {
         if reason == BrokerCloseReason::Requested && self.replacement_in_flight() {
             return false;
         }
-        self.waiting.fail_all(&terminal(reason));
+        self.waiting
+            .fail_all(&terminal(reason), self.route_failure_at);
         true
     }
 }

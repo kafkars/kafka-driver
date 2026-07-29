@@ -5,6 +5,7 @@ use std::{num::NonZeroUsize, time::Duration};
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
     ConnectionEpoch, DnsFailure, DnsOutcome, EffectId, HostName, MetadataGeneration, Moment,
+    OutcomeStamp,
 };
 use kafka_wire::ApiVersionsRequest;
 
@@ -15,7 +16,7 @@ use crate::{
     request::erased_request,
 };
 
-use super::BrokerSet;
+use super::{BrokerLane, BrokerSet};
 
 #[test]
 fn retired_dormant_slot_is_reassigned_without_old_dns_diagnostics() {
@@ -82,6 +83,59 @@ fn retired_dormant_slot_is_reassigned_without_old_dns_diagnostics() {
     assert_eq!(snapshots[0].broker_id(), broker_id(8));
     assert_eq!(snapshots[0].last_dns_failure(), None);
     drop(second_call);
+}
+
+#[test]
+fn route_failure_evidence_cannot_cross_route_or_lane_generations() {
+    let mut brokers = broker_set();
+    let first_directory = directory(1, 7, "broker.test");
+    brokers
+        .install_directory(&first_directory)
+        .unwrap_or_else(|error| panic!("first directory: {error}"));
+    let first_route = first_directory
+        .route_to(broker_id(7))
+        .unwrap_or_else(|| panic!("first route"));
+    let poller = Poller::new(nonzero(1)).unwrap_or_else(|error| panic!("test poller: {error}"));
+    let (_call, request) = request(1);
+    brokers
+        .submit_route(
+            &poller,
+            first_route,
+            Some(EffectId::from_raw(1)),
+            request,
+            Moment::ORIGIN,
+        )
+        .unwrap_or_else(|error| panic!("first demand: {error}"));
+    let child = brokers
+        .children
+        .first_mut()
+        .unwrap_or_else(|| panic!("first demand must allocate a child"));
+    child.route_failure_at = Some(OutcomeStamp::from_raw(7));
+    let endpoint = first_directory
+        .resolve(first_route)
+        .unwrap_or_else(|error| panic!("first endpoint: {error}"))
+        .endpoint()
+        .clone();
+
+    child.retain_route(first_route, &endpoint);
+    assert_eq!(
+        child.route_failure_at,
+        Some(OutcomeStamp::from_raw(7)),
+        "same route generation retains its causal transport evidence"
+    );
+    let next_route = directory(2, 7, "broker.test")
+        .route_to(broker_id(7))
+        .unwrap_or_else(|| panic!("next route"));
+    child.retain_route(next_route, &endpoint);
+    assert_eq!(child.route_failure_at, None);
+
+    child.route_failure_at = Some(OutcomeStamp::from_raw(8));
+    child.retire();
+    assert_eq!(child.route_failure_at, None);
+
+    child.route_failure_at = Some(OutcomeStamp::from_raw(9));
+    child.reassign(BrokerLane::new(broker_id(8), crate::TrafficClass::Control));
+    assert_eq!(child.route_failure_at, None);
 }
 
 fn broker_set() -> BrokerSet {

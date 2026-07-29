@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use bytes::BytesMut;
-use kafka_driver_core::{CallId, CorrelationId};
+use kafka_driver_core::{CallId, CorrelationId, OutcomeStamp};
 use kafka_wire::{OutboundFrameLimits, RequestResponsePair, encode_request};
 use kafka_wire_core::{ApiVersion, Bytes};
 
@@ -189,6 +189,17 @@ where
         let delivered = self
             .completion
             .complete_unobserved(Err(failure.clone()), self.selected_version);
+        if let Some(timeline) = self.lifecycle.timeline {
+            timeline.finish(CallOutcome::Failed(&failure), delivered);
+        }
+    }
+
+    fn fail_observed(self: Box<Self>, failure: RequestError, observed_at: OutcomeStamp) {
+        let delivered = self.completion.complete_observed_failure(
+            Err(failure.clone()),
+            self.selected_version,
+            observed_at,
+        );
         if let Some(timeline) = self.lifecycle.timeline {
             timeline.finish(CallOutcome::Failed(&failure), delivered);
         }

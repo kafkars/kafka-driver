@@ -100,6 +100,7 @@ impl SingleBroker {
             completed_writes: Vec::new(),
             retry_read: false,
             retry_write: false,
+            pending_transport_failure_at: None,
             write_frame_rejections: 0,
             write_byte_rejections: 0,
         }

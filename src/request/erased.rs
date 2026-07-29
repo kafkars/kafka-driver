@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use kafka_driver_core::{CallId, CorrelationId, Moment, NegotiatedApi};
+use kafka_driver_core::{CallId, CorrelationId, Moment, NegotiatedApi, OutcomeStamp};
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::{ApiKey, ApiVersion, Bytes};
 
@@ -48,4 +48,7 @@ pub(crate) trait ErasedRequest: Send {
 
     /// Settles a request that cannot reach typed FIFO response ownership.
     fn fail(self: Box<Self>, failure: RequestError);
+
+    /// Settles a route-bound request after an externally observed transport failure.
+    fn fail_observed(self: Box<Self>, failure: RequestError, observed_at: OutcomeStamp);
 }

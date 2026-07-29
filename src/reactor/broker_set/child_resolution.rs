@@ -28,6 +28,7 @@ impl BrokerChild {
                 connection
                     .submit(poller, request, now)
                     .map_err(BrokerSetError::Broker)?;
+                self.route_failure_at = None;
                 return Ok(None);
             }
             if !connection.is_terminal()
@@ -133,8 +134,10 @@ impl BrokerChild {
             }
             [BrokerResolutionEffect::Failed { failure, .. }] => {
                 self.last_dns_failure = Some(*failure);
-                self.waiting
-                    .fail_all(&RequestError::NameResolutionFailed { failure: *failure });
+                self.waiting.fail_all(
+                    &RequestError::NameResolutionFailed { failure: *failure },
+                    None,
+                );
                 Ok(ChildResolution::Failed)
             }
             _ => Err(BrokerSetError::UnexpectedResolutionEffect),

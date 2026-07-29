@@ -28,11 +28,42 @@ impl SingleBroker {
         self.interpret_close(poller, transition.into_effects(), None)
     }
 
+    pub(super) fn transport_lost_observed(
+        &mut self,
+        poller: &Poller,
+        identity: ResourceIdentity,
+        failure: TransportFailure,
+        observed_at: kafka_driver_core::OutcomeStamp,
+    ) -> Result<(), BrokerError> {
+        self.negotiation_exchange = None;
+        self.authentication_exchange = None;
+        self.authentication_session = None;
+        self.close_resource(poller, identity)?;
+        let transition = self.connection.apply(ConnectionInput::TransportClosed {
+            epoch: identity.epoch(),
+            transport_id: identity.transport_id(),
+            failure,
+        })?;
+        self.interpret_close_at(poller, transition.into_effects(), None, Some(observed_at))?;
+        self.pending_transport_failure_at = Some(observed_at);
+        Ok(())
+    }
+
     pub(super) fn interpret_close(
         &mut self,
         poller: &Poller,
         effects: Vec<ConnectionEffect>,
         settled_call: Option<CallId>,
+    ) -> Result<(), BrokerError> {
+        self.interpret_close_at(poller, effects, settled_call, None)
+    }
+
+    fn interpret_close_at(
+        &mut self,
+        poller: &Poller,
+        effects: Vec<ConnectionEffect>,
+        settled_call: Option<CallId>,
+        observed_at: Option<kafka_driver_core::OutcomeStamp>,
     ) -> Result<(), BrokerError> {
         for effect in effects {
             match effect {
@@ -65,8 +96,11 @@ impl SingleBroker {
                     failure,
                     delivery,
                 } => {
-                    self.responses
-                        .fail_verified(call_id, RequestError::Rejected { failure, delivery })?;
+                    self.responses.fail_verified(
+                        call_id,
+                        RequestError::Rejected { failure, delivery },
+                        observed_at,
+                    )?;
                 }
                 unexpected => return Err(BrokerError::UnexpectedEffect(unexpected)),
             }

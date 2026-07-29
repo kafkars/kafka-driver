@@ -153,7 +153,7 @@ fn machine_failure_settles_only_the_named_fifo_front() {
         delivery: Delivery::PossiblySent,
     };
 
-    let completion = registry.fail_verified(call_id(), failure.clone());
+    let completion = registry.fail_verified(call_id(), failure.clone(), None);
 
     assert_eq!(completion, Ok(CompletionDisposition::Delivered));
     assert_eq!(first.wait(), Ok(Err(failure)));
@@ -170,7 +170,7 @@ fn machine_failure_mismatch_preserves_the_fifo_front_and_failure() {
     let failed_call = CallId::from_raw(99);
     let failure = RequestError::IdentityConflict;
 
-    let result = registry.fail_verified(failed_call, failure.clone());
+    let result = registry.fail_verified(failed_call, failure.clone(), None);
 
     assert!(matches!(
         result,
@@ -184,7 +184,7 @@ fn machine_failure_mismatch_preserves_the_fifo_front_and_failure() {
     ));
     assert_eq!(registry.pending(), 1);
     assert_eq!(
-        registry.fail_verified(call_id(), RequestError::IdentityConflict),
+        registry.fail_verified(call_id(), RequestError::IdentityConflict, None),
         Ok(CompletionDisposition::Delivered)
     );
     assert_eq!(first.wait(), Ok(Err(RequestError::IdentityConflict)));

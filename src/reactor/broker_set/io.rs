@@ -71,7 +71,7 @@ impl BrokerSet {
         poller: &Poller,
         now: Moment,
     ) -> Result<DeadlineProgress, BrokerSetError> {
-        let seed_waiting = self.seed_waiting.expire_due(now);
+        let seed_waiting = self.seed_waiting.expire_due(now, None);
         let mut progress =
             DeadlineProgress::from_work(seed_waiting.settled(), seed_waiting.more_due());
         progress = progress.merge(
@@ -116,7 +116,7 @@ impl BrokerSet {
         poller: &Poller,
         now: Moment,
     ) -> Result<(), BrokerSetError> {
-        self.seed_waiting.fail_all(&draining());
+        self.seed_waiting.fail_all(&draining(), None);
         self.seed.as_mut().map_or(Ok(()), |seed| {
             seed.begin_drain(poller, now)
                 .map_err(BrokerSetError::Broker)
