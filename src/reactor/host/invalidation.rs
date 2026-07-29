@@ -24,7 +24,7 @@ impl Reactor {
     ) -> Result<(), ReactorError> {
         let now = self.clock.now().map_err(ReactorError::clock)?;
         match token.into_parts() {
-            (RouteFact::Controller(route), observed_at) => {
+            (RouteFact::Controller(route) | RouteFact::Broker(route), observed_at) => {
                 self.invalidate_broker_route(route, observed_at, now, completion)
             }
             (RouteFact::Coordinator(route), observed_at) => {

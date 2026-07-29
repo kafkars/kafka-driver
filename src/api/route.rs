@@ -1,6 +1,6 @@
 //! Semantic cluster destinations independent of sockets and connection lanes.
 
-use kafka_driver_core::{CoordinatorKey, PartitionId, TopicName};
+use kafka_driver_core::{BrokerId, CoordinatorKey, PartitionId, TopicName};
 
 /// Kafka ownership fact required before a generated request can be submitted.
 #[non_exhaustive]
@@ -11,6 +11,12 @@ pub enum Route {
 
     /// Uses the controller broker from the current immutable metadata generation.
     Controller,
+
+    /// Uses one exact broker from the current immutable metadata generation.
+    Broker {
+        /// Nonnegative broker identity published by cluster metadata.
+        broker_id: BrokerId,
+    },
 
     /// Uses the broker currently coordinating one group, transaction, or share key.
     Coordinator {
@@ -31,7 +37,7 @@ pub enum Route {
 impl Route {
     pub(crate) fn heap_bytes(&self) -> usize {
         match self {
-            Self::AnyBroker | Self::Controller => 0,
+            Self::AnyBroker | Self::Controller | Self::Broker { .. } => 0,
             Self::Coordinator { key } => key.heap_bytes(),
             Self::PartitionLeader { topic, .. } => topic.heap_bytes(),
         }

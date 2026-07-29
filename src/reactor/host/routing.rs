@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use kafka_driver_core::{
-    BrokerRoute, CoordinatorKey, CoordinatorRoute, Moment, PartitionId, TopicName,
+    BrokerId, BrokerRoute, CoordinatorKey, CoordinatorRoute, Moment, PartitionId, TopicName,
 };
 
 use crate::{
@@ -28,6 +28,7 @@ impl Reactor {
         match route {
             Route::AnyBroker => self.submit_any_broker(request, now),
             Route::Controller => self.submit_controller(request, now),
+            Route::Broker { broker_id } => self.submit_broker(broker_id, request, now),
             Route::Coordinator { key } => self.submit_coordinator(key, request, now),
             Route::PartitionLeader { topic, partition } => {
                 self.submit_partition_leader(topic, partition, request, now)
@@ -75,6 +76,27 @@ impl Reactor {
             return Ok(());
         };
         let Ok(request) = bind_route(request, RouteFact::Controller(route)) else {
+            return Ok(());
+        };
+        self.submit_broker_route(route, request, now)
+    }
+
+    fn submit_broker(
+        &mut self,
+        broker_id: BrokerId,
+        request: Box<dyn ErasedRequest>,
+        now: Moment,
+    ) -> Result<(), ReactorError> {
+        let route = self
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.current())
+            .and_then(|snapshot| snapshot.brokers().route_to(broker_id));
+        let Some(route) = route else {
+            request.fail(RequestError::RouteUnavailable);
+            return Ok(());
+        };
+        let Ok(request) = bind_route(request, RouteFact::Broker(route)) else {
             return Ok(());
         };
         self.submit_broker_route(route, request, now)

@@ -67,6 +67,34 @@ fn routed_result_can_be_extracted_without_blocking() {
     ));
 }
 
+#[test]
+fn exact_broker_route_publishes_its_distinct_invalidation_kind() {
+    let broker_id = BrokerId::new(1).unwrap_or_else(|error| panic!("valid broker ID: {error}"));
+    let host =
+        HostName::new("broker.test").unwrap_or_else(|error| panic!("valid broker host: {error}"));
+    let port = NonZeroU16::new(9092).unwrap_or_else(|| panic!("test port must be nonzero"));
+    let directory = BrokerDirectory::try_from_iter(
+        MetadataGeneration::from_raw(7),
+        [BrokerDirectoryEntry::new(
+            broker_id,
+            BrokerEndpoint::new(host, port),
+        )],
+        BrokerDirectoryLimits::new(NonZeroUsize::MIN),
+    )
+    .unwrap_or_else(|error| panic!("valid broker directory: {error}"));
+    let token = RouteFact::Broker(
+        directory
+            .route_to(broker_id)
+            .unwrap_or_else(|| panic!("directory must issue broker route")),
+    )
+    .observe(
+        DriverIdentity::allocate().unwrap_or_else(|| panic!("driver identity")),
+        OutcomeStamp::from_raw(9),
+    );
+
+    assert_eq!(token.kind(), RouteKind::Broker);
+}
+
 fn controller_token(raw_generation: u64) -> super::RouteFailureToken {
     controller_token_for(
         raw_generation,

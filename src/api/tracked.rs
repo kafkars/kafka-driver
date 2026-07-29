@@ -19,6 +19,8 @@ use crate::api::identity::DriverIdentity;
 pub enum RouteKind {
     /// Cluster controller routing.
     Controller,
+    /// Exact broker routing.
+    Broker,
     /// Key-scoped coordinator routing.
     Coordinator,
     /// Topic-partition leader routing.
@@ -39,6 +41,7 @@ pub struct RouteFailureToken {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum RouteFact {
     Controller(BrokerRoute),
+    Broker(BrokerRoute),
     Coordinator(CoordinatorRoute),
     PartitionLeader(PartitionRoute),
 }
@@ -130,6 +133,7 @@ impl RouteFailureToken {
     pub const fn kind(&self) -> RouteKind {
         match self.route {
             RouteFact::Controller(_) => RouteKind::Controller,
+            RouteFact::Broker(_) => RouteKind::Broker,
             RouteFact::Coordinator(_) => RouteKind::Coordinator,
             RouteFact::PartitionLeader(_) => RouteKind::PartitionLeader,
         }
@@ -163,7 +167,7 @@ impl RouteFact {
 
     pub(crate) fn heap_bytes(&self) -> usize {
         match self {
-            Self::Controller(_) => 0,
+            Self::Controller(_) | Self::Broker(_) => 0,
             Self::Coordinator(route) => route
                 .key()
                 .heap_bytes()
