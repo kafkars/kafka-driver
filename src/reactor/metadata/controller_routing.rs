@@ -1,7 +1,7 @@
 //! Controller-route wait admission into bounded cluster metadata ownership.
 
 use kafka_driver_core::{
-    CallId, EvidenceStamp, MetadataDisposition, MetadataInput, MetadataQuery, Moment,
+    BrokerId, CallId, EvidenceStamp, MetadataDisposition, MetadataInput, MetadataQuery, Moment,
 };
 
 use crate::{
@@ -23,10 +23,34 @@ impl MetadataOwner {
         call_ids: &CallIds,
         evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
-        let ControllerWait { request } = waiting;
+        self.wait_for_cluster_route(waiting, broker, poller, now, call_ids, evidence)
+    }
+
+    pub(in crate::reactor) fn wait_for_broker(
+        &mut self,
+        waiting: ControllerWait,
+        broker: Option<&mut SingleBroker>,
+        poller: &Poller,
+        now: Moment,
+        call_ids: &CallIds,
+        evidence: EvidenceStamp,
+    ) -> Result<(), MetadataOwnerError> {
+        self.wait_for_cluster_route(waiting, broker, poller, now, call_ids, evidence)
+    }
+
+    fn wait_for_cluster_route(
+        &mut self,
+        waiting: ControllerWait,
+        broker: Option<&mut SingleBroker>,
+        poller: &Poller,
+        now: Moment,
+        call_ids: &CallIds,
+        evidence: EvidenceStamp,
+    ) -> Result<(), MetadataOwnerError> {
+        let ControllerWait { target, request } = waiting;
         let operation_id = self.reserve_operation()?;
         let call_id = request.call_id();
-        if !self.controller_waiters.admit(request, now) {
+        if !self.controller_waiters.admit(target, request, now) {
             return Ok(());
         }
         let transition = self.machine.apply(MetadataInput::Resolve {
@@ -69,11 +93,31 @@ impl MetadataOwner {
 
 /// One public call transferring into controller-route wait ownership.
 pub(in crate::reactor) struct ControllerWait {
+    target: ClusterRouteTarget,
     request: Box<dyn ErasedRequest>,
 }
 
 impl ControllerWait {
-    pub(in crate::reactor) const fn new(request: Box<dyn ErasedRequest>) -> Self {
-        Self { request }
+    pub(in crate::reactor) const fn controller(request: Box<dyn ErasedRequest>) -> Self {
+        Self {
+            target: ClusterRouteTarget::Controller,
+            request,
+        }
     }
+
+    pub(in crate::reactor) const fn broker(
+        broker_id: BrokerId,
+        request: Box<dyn ErasedRequest>,
+    ) -> Self {
+        Self {
+            target: ClusterRouteTarget::Broker(broker_id),
+            request,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ClusterRouteTarget {
+    Controller,
+    Broker(BrokerId),
 }

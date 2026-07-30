@@ -6,7 +6,10 @@ use kafka_driver_core::{CallFailure, CallId, Delivery, MetadataMachine, Moment};
 
 use crate::{RequestError, reactor::wait_queue::WaitQueue, request::ErasedRequest};
 
-use super::controller_waiting_progress::{ControllerWaitProgress, RoutedControllerCall};
+use super::{
+    controller_routing::ClusterRouteTarget,
+    controller_waiting_progress::{ControllerWaitProgress, RoutedControllerCall},
+};
 
 pub(super) struct ControllerWaiters {
     calls: WaitQueue<WaitingControllerCall>,
@@ -29,7 +32,12 @@ impl ControllerWaiters {
         }
     }
 
-    pub(super) fn admit(&mut self, mut request: Box<dyn ErasedRequest>, now: Moment) -> bool {
+    pub(super) fn admit(
+        &mut self,
+        target: ClusterRouteTarget,
+        mut request: Box<dyn ErasedRequest>,
+        now: Moment,
+    ) -> bool {
         let deadline = match request.establish_deadline(now) {
             Ok(deadline) => deadline,
             Err(failure) => {
@@ -50,7 +58,11 @@ impl ControllerWaiters {
             self.reject_capacity(request);
             return false;
         }
-        let waiting = WaitingControllerCall { request, bytes };
+        let waiting = WaitingControllerCall {
+            target,
+            request,
+            bytes,
+        };
         if let Err(waiting) = self.calls.push(waiting, deadline) {
             self.reject_capacity(waiting.request);
             return false;
@@ -111,12 +123,10 @@ impl ControllerWaiters {
                 progress.settled += 1;
                 continue;
             }
-            if let Some(route) = machine
-                .current()
-                .and_then(kafka_driver_core::MetadataSnapshot::controller_route)
-            {
+            if let Some(route) = waiting.target.resolve(machine) {
                 progress.routed.push(RoutedControllerCall {
                     route,
+                    target: waiting.target,
                     request: waiting.request,
                 });
                 continue;
@@ -168,8 +178,19 @@ impl ControllerWaiters {
 }
 
 struct WaitingControllerCall {
+    target: ClusterRouteTarget,
     request: Box<dyn ErasedRequest>,
     bytes: usize,
+}
+
+impl ClusterRouteTarget {
+    fn resolve(self, machine: &MetadataMachine) -> Option<kafka_driver_core::BrokerRoute> {
+        let snapshot = machine.current()?;
+        match self {
+            Self::Controller => snapshot.controller_route(),
+            Self::Broker(broker_id) => snapshot.brokers().route_to(broker_id),
+        }
+    }
 }
 
 fn deadline_exceeded() -> RequestError {

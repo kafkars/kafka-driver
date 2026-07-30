@@ -65,7 +65,7 @@ impl Reactor {
             let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
             metadata
                 .wait_for_controller(
-                    ControllerWait::new(request),
+                    ControllerWait::controller(request),
                     self.brokers.seed_mut(),
                     &self.poller,
                     now,
@@ -93,7 +93,21 @@ impl Reactor {
             .and_then(|metadata| metadata.current())
             .and_then(|snapshot| snapshot.brokers().route_to(broker_id));
         let Some(route) = route else {
-            request.fail(RequestError::RouteUnavailable);
+            let Some(metadata) = &mut self.metadata else {
+                request.fail(RequestError::RouteUnavailable);
+                return Ok(());
+            };
+            let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
+            metadata
+                .wait_for_broker(
+                    ControllerWait::broker(broker_id, request),
+                    self.brokers.seed_mut(),
+                    &self.poller,
+                    now,
+                    &self.call_ids,
+                    evidence,
+                )
+                .map_err(ReactorError::metadata)?;
             return Ok(());
         };
         let Ok(request) = bind_route(request, RouteFact::Broker(route)) else {

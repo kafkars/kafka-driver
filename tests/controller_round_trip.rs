@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use kafka_driver::{Driver, Reactor, Route, RouteKind, TrafficClass};
+use kafka_driver::{BrokerId, Driver, Reactor, Route, RouteKind, TrafficClass};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, METADATA_API_DESCRIPTOR,
 };
@@ -95,6 +95,57 @@ fn controller_call_admitted_before_metadata_waits_and_completes_on_the_advertise
             .route_failure_token()
             .map(kafka_driver::RouteFailureToken::kind),
         Some(RouteKind::Controller)
+    );
+}
+
+#[test]
+fn exact_broker_call_admitted_before_metadata_waits_and_routes_once() {
+    let seed_listener = listener();
+    let broker_listener = listener();
+    let seed_port = local_port(&seed_listener);
+    let broker_port = local_port(&broker_listener);
+    let (driver, mut reactor) = Driver::builder()
+        .bootstrap(bootstrap(seed_port))
+        .build_reactor()
+        .unwrap_or_else(|error| panic!("build exact-broker reactor: {error}"));
+    let call = driver
+        .request_tracked(
+            Route::Broker {
+                broker_id: BrokerId::new(7)
+                    .unwrap_or_else(|error| panic!("exact broker ID: {error}")),
+            },
+            ApiVersionsRequest::default(),
+            Duration::from_secs(10),
+        )
+        .unwrap_or_else(|error| panic!("admit pre-metadata exact-broker request: {error}"));
+
+    assert_progress(&reactor.turn(Duration::ZERO), 1);
+    assert!(
+        call.try_result().is_none(),
+        "accepted exact-broker work must wait for Metadata"
+    );
+
+    let mut seed = accept_after_driving(&seed_listener, &mut reactor);
+    complete_negotiation(&mut seed, &mut reactor);
+    assert_progress(&reactor.turn(Duration::from_secs(1)), 0);
+    let metadata = read_request_header(&mut seed);
+    assert_eq!(metadata.api_key, METADATA_API_DESCRIPTOR.api_key.value());
+    seed.write_all(&metadata_response(metadata.correlation_id, broker_port))
+        .unwrap_or_else(|error| panic!("write Metadata response: {error}"));
+    assert_progress(&reactor.turn(Duration::from_secs(1)), 0);
+
+    let mut broker = accept_after_driving(&broker_listener, &mut reactor);
+    complete_negotiation(&mut broker, &mut reactor);
+    let response = reply(&mut broker, &mut reactor);
+    let outcome = await_call(call, &mut reactor, "settle retained exact-broker call")
+        .unwrap_or_else(|error| panic!("observe retained exact-broker call: {error}"));
+
+    assert_eq!(outcome.result(), &Ok(response));
+    assert_eq!(
+        outcome
+            .route_failure_token()
+            .map(kafka_driver::RouteFailureToken::kind),
+        Some(RouteKind::Broker)
     );
 }
 

@@ -47,8 +47,8 @@ impl Reactor {
         let controller_waiting_more = controller_waiting.more_work();
         for routed in controller_waiting.into_routed() {
             let route = routed.route();
-            let Ok(request) = bind_route(routed.into_request(), RouteFact::Controller(route))
-            else {
+            let fact = routed.fact();
+            let Ok(request) = bind_route(routed.into_request(), fact) else {
                 continue;
             };
             self.submit_broker_route(route, request, now)?;

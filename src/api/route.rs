@@ -12,7 +12,7 @@ pub enum Route {
     /// Uses the controller broker from the current immutable metadata generation.
     Controller,
 
-    /// Uses one exact broker from the current immutable metadata generation.
+    /// Resolves one exact broker through bounded cluster metadata ownership.
     Broker {
         /// Nonnegative broker identity published by cluster metadata.
         broker_id: BrokerId,

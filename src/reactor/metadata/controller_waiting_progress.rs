@@ -2,7 +2,9 @@
 
 use kafka_driver_core::BrokerRoute;
 
-use crate::request::ErasedRequest;
+use crate::{api::RouteFact, request::ErasedRequest};
+
+use super::controller_routing::ClusterRouteTarget;
 
 #[derive(Default)]
 pub(in crate::reactor) struct ControllerWaitProgress {
@@ -28,12 +30,20 @@ impl ControllerWaitProgress {
 
 pub(in crate::reactor) struct RoutedControllerCall {
     pub(super) route: BrokerRoute,
+    pub(super) target: ClusterRouteTarget,
     pub(super) request: Box<dyn ErasedRequest>,
 }
 
 impl RoutedControllerCall {
     pub(in crate::reactor) const fn route(&self) -> BrokerRoute {
         self.route
+    }
+
+    pub(in crate::reactor) fn fact(&self) -> RouteFact {
+        match self.target {
+            ClusterRouteTarget::Controller => RouteFact::Controller(self.route),
+            ClusterRouteTarget::Broker(_) => RouteFact::Broker(self.route),
+        }
     }
 
     pub(in crate::reactor) fn into_request(self) -> Box<dyn ErasedRequest> {
