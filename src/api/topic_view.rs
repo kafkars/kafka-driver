@@ -14,6 +14,7 @@ use super::{Call, Driver, SubmitError};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AvailableTopicPartition {
     partition: PartitionId,
+    broker_id: kafka_driver_core::BrokerId,
     leader_epoch: Option<LeaderEpoch>,
 }
 
@@ -21,6 +22,11 @@ impl AvailableTopicPartition {
     /// Returns the available logical partition.
     pub const fn partition(self) -> PartitionId {
         self.partition
+    }
+
+    /// Returns the broker currently leading this partition.
+    pub const fn broker_id(self) -> kafka_driver_core::BrokerId {
+        self.broker_id
     }
 
     /// Returns the broker-issued leader epoch when Metadata supplied one.
@@ -98,6 +104,7 @@ impl TopicView {
             }
             available.push(AvailableTopicPartition {
                 partition: leader.partition(),
+                broker_id: leader.broker_id(),
                 leader_epoch: leader.leader_epoch(),
             });
         }

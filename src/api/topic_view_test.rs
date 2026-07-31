@@ -57,6 +57,10 @@ fn view_keeps_total_count_and_sorted_available_subset_distinct() {
         Some(partition_id(0))
     );
     assert_eq!(
+        view.available_at(0).map(|entry| entry.broker_id()),
+        Some(broker_id(1))
+    );
+    assert_eq!(
         view.available_at(1).map(|entry| entry.partition()),
         Some(partition_id(2))
     );
