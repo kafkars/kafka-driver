@@ -7,22 +7,62 @@ use std::{
 
 use crate::TopicName;
 
+/// Nonzero sixteen-byte Kafka topic identity published by Metadata.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct KafkaTopicId([u8; 16]);
+
+impl KafkaTopicId {
+    /// Creates an identity unless the bytes are Kafka's all-zero absent sentinel.
+    pub fn from_bytes(bytes: [u8; 16]) -> Option<Self> {
+        if bytes == [0; 16] {
+            None
+        } else {
+            Some(Self(bytes))
+        }
+    }
+
+    /// Returns the exact Kafka wire bytes.
+    pub const fn to_bytes(self) -> [u8; 16] {
+        self.0
+    }
+}
+
 /// Total logical partitions observed for one exact topic.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TopicPartitionCount {
     topic: TopicName,
+    topic_id: Option<KafkaTopicId>,
     count: NonZeroU32,
 }
 
 impl TopicPartitionCount {
     /// Creates one validated nonempty logical topic fact.
     pub const fn new(topic: TopicName, count: NonZeroU32) -> Self {
-        Self { topic, count }
+        Self {
+            topic,
+            topic_id: None,
+            count,
+        }
+    }
+
+    /// Creates one validated nonempty logical topic fact with broker identity.
+    pub const fn new_with_id(topic: TopicName, topic_id: KafkaTopicId, count: NonZeroU32) -> Self {
+        Self {
+            topic,
+            topic_id: Some(topic_id),
+            count,
+        }
     }
 
     /// Borrows the topic whose complete logical range was observed.
     pub const fn topic(&self) -> &TopicName {
         &self.topic
+    }
+
+    /// Returns the broker-issued topic identity when the Metadata version supplied one.
+    pub const fn topic_id(&self) -> Option<KafkaTopicId> {
+        self.topic_id
     }
 
     /// Returns the total logical count, including partitions without known leaders.

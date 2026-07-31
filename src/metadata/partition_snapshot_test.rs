@@ -16,17 +16,16 @@ use super::{MetadataBuildError, MetadataResponseProvenance, snapshot_from_respon
 
 #[test]
 fn successful_partitions_become_canonical_generation_fenced_routes() {
-    let response = response(
-        [broker(7), broker(9)],
-        [topic(
-            "orders",
-            [
-                partition(2, 9, 11),
-                partition(0, 7, -1),
-                partition(1, -1, -1),
-            ],
-        )],
+    let mut orders = topic(
+        "orders",
+        [
+            partition(2, 9, 11),
+            partition(0, 7, -1),
+            partition(1, -1, -1),
+        ],
     );
+    orders.topic_id = kafka_wire_core::Uuid::from_bytes([5; 16]);
+    let response = response([broker(7), broker(9)], [orders]);
 
     let snapshot = build(&response, 1, 3, 2)
         .unwrap_or_else(|error| panic!("valid partition metadata: {error}"));
@@ -39,6 +38,14 @@ fn successful_partitions_become_canonical_generation_fenced_routes() {
     assert_eq!(route.leader_epoch(), LeaderEpoch::new(11).ok());
     assert_eq!(route.evidence_stamp().get(), 3);
     assert_eq!(snapshot.partition_leaders().len(), 2);
+    assert_eq!(
+        snapshot
+            .topic_partition_counts()
+            .find(&topic_name("orders"))
+            .and_then(kafka_driver_core::TopicPartitionCount::topic_id)
+            .map(kafka_driver_core::KafkaTopicId::to_bytes),
+        Some([5; 16])
+    );
 }
 
 #[test]

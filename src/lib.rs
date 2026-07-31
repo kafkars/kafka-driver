@@ -37,8 +37,8 @@ pub use kafka_driver_core::{
     BootstrapSet, BrokerDirectoryLimits, BrokerEndpoint, BrokerId, BrokerIdError, BrokerRoute,
     BrokerState, CallFailure, CallId, CloseReason as ConnectionCloseReason, ConnectionPhase,
     CoordinatorKey, CoordinatorKeyError, CoordinatorKind, CoordinatorRoute, HostName,
-    HostNameError, MetadataGeneration, MetadataRevision, Moment, NegotiationFailure, PartitionId,
-    PartitionIdError, PartitionRoute, TopicName, TopicNameError, TransportFailure,
+    HostNameError, KafkaTopicId, MetadataGeneration, MetadataRevision, Moment, NegotiationFailure,
+    PartitionId, PartitionIdError, PartitionRoute, TopicName, TopicNameError, TransportFailure,
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use reactor::{Reactor, ReactorError, TurnOutcome, WakeHandle};

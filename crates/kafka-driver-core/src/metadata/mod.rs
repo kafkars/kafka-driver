@@ -41,5 +41,7 @@ pub use partition::{
 pub use query::{MetadataQuery, MetadataQueryLimits};
 pub use snapshot::MetadataSnapshot;
 pub use state::MetadataState;
-pub use topic::{TopicPartitionCount, TopicPartitionCountSet, TopicPartitionCountSetError};
+pub use topic::{
+    KafkaTopicId, TopicPartitionCount, TopicPartitionCountSet, TopicPartitionCountSetError,
+};
 pub use transition::{MetadataDisposition, MetadataTransition};

@@ -4,8 +4,8 @@ use std::num::{NonZeroU16, NonZeroU32};
 
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
-    HostName, LeaderEpoch, MetadataGeneration, MetadataSnapshot, PartitionId, PartitionLeader,
-    PartitionLeaderLimits, PartitionLeaderSet, TopicName, TopicPartitionCount,
+    HostName, KafkaTopicId, LeaderEpoch, MetadataGeneration, MetadataSnapshot, PartitionId,
+    PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet, TopicName, TopicPartitionCount,
     TopicPartitionCountSet,
 };
 
@@ -20,7 +20,11 @@ fn view_keeps_total_count_and_sorted_available_subset_distinct() {
     )
     .unwrap_or_else(|error| panic!("valid leaders: {error}"));
     let counts = TopicPartitionCountSet::try_from_iter(
-        [TopicPartitionCount::new(topic.clone(), nonzero_u32(3))],
+        [TopicPartitionCount::new_with_id(
+            topic.clone(),
+            topic_id(7),
+            nonzero_u32(3),
+        )],
         PartitionLeaderLimits::default().max_topics(),
     )
     .unwrap_or_else(|error| panic!("valid counts: {error}"));
@@ -44,6 +48,7 @@ fn view_keeps_total_count_and_sorted_available_subset_distinct() {
         .unwrap_or_else(|| panic!("topic view missing"));
 
     assert_eq!(view.topic(), &topic);
+    assert_eq!(view.topic_id(), Some(topic_id(7)));
     assert_eq!(view.generation(), MetadataGeneration::from_raw(7));
     assert_eq!(view.logical_partition_count(), 3);
     assert_eq!(view.available_len(), 2);
@@ -70,6 +75,11 @@ fn leader(topic: TopicName, partition: i32, epoch: i32) -> PartitionLeader {
 
 fn topic(value: &str) -> TopicName {
     TopicName::new(value).unwrap_or_else(|error| panic!("valid topic: {error}"))
+}
+
+fn topic_id(value: u8) -> KafkaTopicId {
+    KafkaTopicId::from_bytes([value; 16])
+        .unwrap_or_else(|| panic!("test Kafka topic identity must be nonzero"))
 }
 
 fn nonzero_u32(value: u32) -> NonZeroU32 {

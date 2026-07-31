@@ -4,7 +4,21 @@ use std::num::{NonZeroU32, NonZeroUsize};
 
 use crate::TopicName;
 
-use super::{TopicPartitionCount, TopicPartitionCountSet, TopicPartitionCountSetError};
+use super::{
+    KafkaTopicId, TopicPartitionCount, TopicPartitionCountSet, TopicPartitionCountSetError,
+};
+
+#[test]
+fn topic_identity_rejects_the_absent_sentinel_and_round_trips_exact_bytes() {
+    assert_eq!(KafkaTopicId::from_bytes([0; 16]), None);
+    let bytes = [7; 16];
+    let topic_id =
+        KafkaTopicId::from_bytes(bytes).unwrap_or_else(|| panic!("nonzero Kafka topic identity"));
+    assert_eq!(topic_id.to_bytes(), bytes);
+
+    let count = TopicPartitionCount::new_with_id(topic("orders"), topic_id, nonzero_u32(3));
+    assert_eq!(count.topic_id(), Some(topic_id));
+}
 
 #[test]
 fn counts_are_sorted_and_indexed_by_validated_topic() {
@@ -48,10 +62,11 @@ fn count_storage_rejects_capacity_and_duplicate_topics() {
 }
 
 fn count(raw_topic: &str, raw_count: u32) -> TopicPartitionCount {
-    TopicPartitionCount::new(
-        topic(raw_topic),
-        NonZeroU32::new(raw_count).unwrap_or_else(|| panic!("test count must be nonzero")),
-    )
+    TopicPartitionCount::new(topic(raw_topic), nonzero_u32(raw_count))
+}
+
+fn nonzero_u32(value: u32) -> NonZeroU32 {
+    NonZeroU32::new(value).unwrap_or_else(|| panic!("test count must be nonzero"))
 }
 
 fn topic(value: &str) -> TopicName {

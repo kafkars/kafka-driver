@@ -3,7 +3,7 @@
 use std::{fmt, num::NonZeroUsize, time::Instant};
 
 use kafka_driver_core::{
-    LeaderEpoch, MetadataGeneration, MetadataSnapshot, PartitionId, TopicName,
+    KafkaTopicId, LeaderEpoch, MetadataGeneration, MetadataSnapshot, PartitionId, TopicName,
 };
 
 use crate::{completion::completion_pair, reactor::Command};
@@ -33,6 +33,7 @@ impl AvailableTopicPartition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TopicView {
     topic: TopicName,
+    topic_id: Option<KafkaTopicId>,
     generation: MetadataGeneration,
     logical_partition_count: u32,
     available: Vec<AvailableTopicPartition>,
@@ -42,6 +43,11 @@ impl TopicView {
     /// Borrows the exact topic identity completed by this view.
     pub const fn topic(&self) -> &TopicName {
         &self.topic
+    }
+
+    /// Returns the broker-issued topic identity when the negotiated Metadata version supplied one.
+    pub const fn topic_id(&self) -> Option<KafkaTopicId> {
+        self.topic_id
     }
 
     /// Returns the installed immutable cluster generation.
@@ -68,11 +74,7 @@ impl TopicView {
         snapshot: &MetadataSnapshot,
         topic: &TopicName,
     ) -> Result<Option<Self>, TopicViewError> {
-        let Some(count) = snapshot
-            .topic_partition_counts()
-            .find(topic)
-            .map(kafka_driver_core::TopicPartitionCount::count)
-        else {
+        let Some(count) = snapshot.topic_partition_counts().find(topic) else {
             return Ok(None);
         };
         let available_len = snapshot
@@ -90,7 +92,7 @@ impl TopicView {
             .filter(|leader| leader.topic() == topic)
         {
             if u32::try_from(leader.partition().get())
-                .map_or(true, |partition| partition >= count.get())
+                .map_or(true, |partition| partition >= count.count().get())
             {
                 return Err(TopicViewError::MalformedMetadata);
             }
@@ -101,8 +103,9 @@ impl TopicView {
         }
         Ok(Some(Self {
             topic: topic.clone(),
+            topic_id: count.topic_id(),
             generation: snapshot.generation(),
-            logical_partition_count: count.get(),
+            logical_partition_count: count.count().get(),
             available,
         }))
     }

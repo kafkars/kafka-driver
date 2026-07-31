@@ -3,8 +3,8 @@
 use std::num::NonZeroU32;
 
 use kafka_driver_core::{
-    BrokerId, EvidenceStamp, LeaderEpoch, MetadataRevision, PartitionId, PartitionLeader,
-    PartitionLeaderLimits, PartitionLeaderSet, TopicName, TopicPartitionCount,
+    BrokerId, EvidenceStamp, KafkaTopicId, LeaderEpoch, MetadataRevision, PartitionId,
+    PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet, TopicName, TopicPartitionCount,
 };
 use kafka_wire::{
     MetadataResponse,
@@ -46,9 +46,14 @@ pub(super) fn partition_facts_for_topic(
             .ok()
             .and_then(NonZeroU32::new)
             .ok_or(MetadataBuildError::TopicPartitionsEmpty)?;
+        let topic_id = KafkaTopicId::from_bytes(topic.topic_id.to_bytes());
+        let count = match topic_id {
+            Some(topic_id) => TopicPartitionCount::new_with_id(name, topic_id, count),
+            None => TopicPartitionCount::new(name, count),
+        };
         (
-            topic_leaders(topic, &name, revision, evidence)?,
-            Some(TopicPartitionCount::new(name, count)),
+            topic_leaders(topic, count.topic(), revision, evidence)?,
+            Some(count),
         )
     } else {
         (Vec::new(), None)

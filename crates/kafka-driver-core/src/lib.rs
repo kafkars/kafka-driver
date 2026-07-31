@@ -76,8 +76,8 @@ pub use identity::{
 };
 pub use kafka_wire_core::{ApiKey, ApiVersion};
 pub use metadata::{
-    MetadataDisposition, MetadataEffect, MetadataInput, MetadataMachine, MetadataQuery,
-    MetadataQueryLimits, MetadataSnapshot, MetadataSnapshotError, MetadataState,
+    KafkaTopicId, MetadataDisposition, MetadataEffect, MetadataInput, MetadataMachine,
+    MetadataQuery, MetadataQueryLimits, MetadataSnapshot, MetadataSnapshotError, MetadataState,
     MetadataTransition, PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet,
     PartitionLeaderSetError, PartitionRoute, TopicPartitionCount, TopicPartitionCountSet,
     TopicPartitionCountSetError,
