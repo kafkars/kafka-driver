@@ -9,6 +9,8 @@ mod scram;
 mod session;
 
 #[cfg(test)]
+mod framing_test;
+#[cfg(test)]
 mod plain_test;
 
 pub(crate) use error::AuthenticationExchangeError;

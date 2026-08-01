@@ -7,7 +7,7 @@ use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
 #[cfg(feature = "tls-rustls")]
 use super::{TlsClientConfig, TlsClientPolicy, TlsConnectionConfig};
 
-use super::SaslConfig;
+use super::{ClientId, SaslConfig};
 
 /// Fully selected connection mechanics for one configured broker.
 #[derive(Clone, Debug)]
@@ -15,6 +15,7 @@ pub(crate) struct BrokerConfig {
     addresses: BrokerAddresses,
     security: BrokerSecurity,
     sasl: Option<SaslConfig>,
+    client_id: Option<ClientId>,
 }
 
 impl BrokerConfig {
@@ -23,6 +24,7 @@ impl BrokerConfig {
             addresses: BrokerAddresses::Direct(address),
             security: BrokerSecurity::Plaintext,
             sasl: None,
+            client_id: None,
         }
     }
 
@@ -32,6 +34,7 @@ impl BrokerConfig {
             addresses: BrokerAddresses::Direct(address),
             security: BrokerSecurity::Rustls(TlsConnectionConfig::configured(tls)),
             sasl: None,
+            client_id: None,
         }
     }
 
@@ -40,8 +43,20 @@ impl BrokerConfig {
         self
     }
 
-    pub(crate) fn into_parts(self) -> (BrokerAddresses, BrokerSecurity, Option<SaslConfig>) {
-        (self.addresses, self.security, self.sasl)
+    pub(crate) fn with_client_id(mut self, client_id: Option<ClientId>) -> Self {
+        self.client_id = client_id;
+        self
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        BrokerAddresses,
+        BrokerSecurity,
+        Option<SaslConfig>,
+        Option<ClientId>,
+    ) {
+        (self.addresses, self.security, self.sasl, self.client_id)
     }
 
     pub(crate) const fn is_resolved(&self) -> bool {
@@ -60,6 +75,7 @@ impl BrokerConfig {
 pub(crate) struct BrokerTemplate {
     security: BrokerSecurityTemplate,
     sasl: Option<SaslConfig>,
+    client_id: Option<ClientId>,
 }
 
 impl BrokerTemplate {
@@ -67,6 +83,7 @@ impl BrokerTemplate {
         Self {
             security: BrokerSecurityTemplate::Plaintext,
             sasl: None,
+            client_id: None,
         }
     }
 
@@ -75,11 +92,17 @@ impl BrokerTemplate {
         Self {
             security: BrokerSecurityTemplate::EndpointRustls(tls),
             sasl: None,
+            client_id: None,
         }
     }
 
     pub(crate) fn with_sasl(mut self, sasl: Option<SaslConfig>) -> Self {
         self.sasl = sasl;
+        self
+    }
+
+    pub(crate) fn with_client_id(mut self, client_id: Option<ClientId>) -> Self {
+        self.client_id = client_id;
         self
     }
 
@@ -102,6 +125,7 @@ impl BrokerTemplate {
             },
             security,
             sasl: self.sasl,
+            client_id: self.client_id,
         }
     }
 

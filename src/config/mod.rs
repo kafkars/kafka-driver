@@ -2,6 +2,7 @@
 
 mod bootstrap;
 mod broker;
+mod client_id;
 mod controller_waiting;
 mod coordinator;
 mod limits;
@@ -13,6 +14,8 @@ mod target;
 #[cfg(feature = "tls-rustls")]
 mod tls;
 
+#[cfg(test)]
+mod client_id_test;
 #[cfg(test)]
 mod coordinator_test;
 #[cfg(test)]
@@ -38,6 +41,7 @@ pub use tls::{TlsClientConfig, TlsClientPolicy};
 
 pub(crate) use bootstrap::BootstrapConfig;
 pub(crate) use broker::{BrokerAddresses, BrokerConfig, BrokerSecurity, BrokerTemplate};
+pub(crate) use client_id::{ClientId, ClientIdError};
 pub(crate) use target::DriverTarget;
 #[cfg(feature = "tls-rustls")]
 pub(crate) use tls::{TlsConnectionConfig, TlsSessionError};

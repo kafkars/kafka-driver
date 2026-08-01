@@ -50,6 +50,7 @@ impl SingleBroker {
         let Ok(frame) = owned.prepare(
             correlation_id,
             version,
+            self.client_id.as_ref().map(crate::config::ClientId::wire),
             self.outbound_frame,
             &mut self.responses,
         ) else {

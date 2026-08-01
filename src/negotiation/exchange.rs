@@ -7,7 +7,7 @@ use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, OutboundFrameLimits,
     ResponseHeader, encode_request, response_header_version_for,
 };
-use kafka_wire_core::{ApiVersion, Bytes, DecodeLimits, Decoder, KafkaDecode};
+use kafka_wire_core::{ApiVersion, Bytes, DecodeLimits, Decoder, KafkaDecode, StrBytes};
 
 use super::NegotiationExchangeError;
 
@@ -25,6 +25,7 @@ impl NegotiationExchange {
     pub(crate) fn start(
         effect_id: EffectId,
         correlation_id: CorrelationId,
+        client_id: Option<&StrBytes>,
         outbound_limits: OutboundFrameLimits,
         decode_limits: DecodeLimits,
     ) -> Result<(Self, Bytes), NegotiationExchangeError> {
@@ -32,7 +33,7 @@ impl NegotiationExchange {
         encode_request(
             &mut frame,
             correlation_id.get(),
-            None,
+            client_id.cloned(),
             &ApiVersionsRequest::default(),
             BOOTSTRAP_VERSION,
             outbound_limits,

@@ -91,6 +91,7 @@ impl SingleBroker {
                     correlation_id,
                     mechanism,
                     version,
+                    self.client_id.as_ref().map(crate::config::ClientId::wire),
                     self.outbound_frame,
                     self.negotiation_limits.decode_limits(),
                 );
@@ -173,6 +174,7 @@ impl SingleBroker {
             correlation_id,
             version,
             &message,
+            self.client_id.as_ref().map(crate::config::ClientId::wire),
             self.outbound_frame,
             self.negotiation_limits.decode_limits(),
         );

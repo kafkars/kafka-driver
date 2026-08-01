@@ -7,7 +7,7 @@ use kafka_wire::{
     OutboundFrameLimits, ResponseHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
     encode_request, response_header_version_for,
 };
-use kafka_wire_core::{ApiVersion, Bytes, DecodeLimits, Decoder, KafkaDecode};
+use kafka_wire_core::{ApiVersion, Bytes, DecodeLimits, Decoder, KafkaDecode, StrBytes};
 use zeroize::Zeroizing;
 
 use super::AuthenticationExchangeError;
@@ -23,12 +23,17 @@ pub(crate) struct AuthenticateExchange {
 }
 
 impl AuthenticateExchange {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the framing boundary retains five protocol identities beside borrowed payload and encode/decode policy"
+    )]
     pub(crate) fn start(
         effect_id: EffectId,
         round: AuthenticationRound,
         correlation_id: CorrelationId,
         version: ApiVersion,
         auth_bytes: &Zeroizing<Vec<u8>>,
+        client_id: Option<&StrBytes>,
         outbound_limits: OutboundFrameLimits,
         decode_limits: DecodeLimits,
     ) -> Result<(Self, Bytes), AuthenticationExchangeError> {
@@ -38,7 +43,7 @@ impl AuthenticateExchange {
         encode_request(
             &mut frame,
             correlation_id.get(),
-            None,
+            client_id.cloned(),
             &request,
             version,
             outbound_limits,

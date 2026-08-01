@@ -1,6 +1,6 @@
 //! Exclusive direct-broker or bootstrap construction target.
 
-use super::{BootstrapConfig, BrokerConfig, SaslConfig};
+use super::{BootstrapConfig, BrokerConfig, ClientId, SaslConfig};
 
 /// One configured ownership root for initial broker connectivity.
 #[derive(Clone, Debug)]
@@ -14,6 +14,13 @@ impl DriverTarget {
         match self {
             Self::Direct(config) => Self::Direct(config.with_sasl(sasl)),
             Self::Bootstrap(config) => Self::Bootstrap(config.with_sasl(sasl)),
+        }
+    }
+
+    pub(crate) fn with_client_id(self, client_id: Option<ClientId>) -> Self {
+        match self {
+            Self::Direct(config) => Self::Direct(config.with_client_id(client_id)),
+            Self::Bootstrap(config) => Self::Bootstrap(config.with_client_id(client_id)),
         }
     }
 

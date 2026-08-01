@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use kafka_driver_core::{CallId, CorrelationId, Moment, NegotiatedApi, OutcomeStamp};
 use kafka_wire::OutboundFrameLimits;
-use kafka_wire_core::{ApiKey, ApiVersion, Bytes};
+use kafka_wire_core::{ApiKey, ApiVersion, Bytes, StrBytes};
 
 use crate::{RequestError, TrafficClass, api::RouteFact, response::ResponseRegistry};
 
@@ -42,6 +42,7 @@ pub(crate) trait ErasedRequest: Send {
         self: Box<Self>,
         correlation_id: CorrelationId,
         version: ApiVersion,
+        client_id: Option<&StrBytes>,
         outbound_limits: OutboundFrameLimits,
         responses: &mut ResponseRegistry,
     ) -> Result<Bytes, RequestError>;

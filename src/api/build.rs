@@ -10,6 +10,13 @@ pub enum DriverBuildError {
     MissingTarget,
     /// Every process-local driver authority identity has been allocated.
     IdentityExhausted,
+    /// The configured request-header client identifier exceeds Kafka's string domain.
+    ClientIdTooLong {
+        /// UTF-8 bytes retained by the requested identifier.
+        actual: usize,
+        /// Maximum UTF-8 bytes representable by a Kafka request header.
+        limit: usize,
+    },
     /// The purpose-built reactor could not acquire its operating-system resources.
     Reactor(io::Error),
 }
@@ -17,6 +24,13 @@ pub enum DriverBuildError {
 impl DriverBuildError {
     pub(crate) const fn new(source: io::Error) -> Self {
         Self::Reactor(source)
+    }
+
+    pub(crate) const fn client_id(source: crate::config::ClientIdError) -> Self {
+        Self::ClientIdTooLong {
+            actual: source.actual,
+            limit: source.limit,
+        }
     }
 }
 
@@ -29,6 +43,10 @@ impl fmt::Display for DriverBuildError {
             Self::IdentityExhausted => {
                 formatter.write_str("the driver authority identity space is exhausted")
             }
+            Self::ClientIdTooLong { actual, limit } => write!(
+                formatter,
+                "the Kafka client identifier retains {actual} bytes but the limit is {limit}",
+            ),
             Self::Reactor(_) => formatter.write_str("failed to create the driver I/O shard"),
         }
     }
@@ -38,7 +56,7 @@ impl std::error::Error for DriverBuildError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Reactor(source) => Some(source),
-            Self::MissingTarget | Self::IdentityExhausted => None,
+            Self::MissingTarget | Self::IdentityExhausted | Self::ClientIdTooLong { .. } => None,
         }
     }
 }

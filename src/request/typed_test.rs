@@ -3,8 +3,10 @@
 use std::{num::NonZeroUsize, time::Duration};
 
 use kafka_driver_core::{CallId, CorrelationId, NegotiatedApi};
-use kafka_wire::{ApiVersionsRequest, ApiVersionsResponse, KafkaRequest, OutboundFrameLimits};
-use kafka_wire_core::{ApiVersion, DecodeLimits, EncodeError};
+use kafka_wire::{
+    ApiVersionsRequest, ApiVersionsResponse, KafkaRequest, OutboundFrameLimits, RequestHeader,
+};
+use kafka_wire_core::{ApiVersion, DecodeLimits, Decoder, EncodeError, KafkaDecode, StrBytes};
 
 use crate::{
     RequestError, TrafficClass,
@@ -51,6 +53,7 @@ fn preparation_encodes_and_transfers_typed_completion_to_fifo_ownership() {
     let encoded = request.prepare(
         CorrelationId::from_raw(7),
         version(0),
+        None,
         outbound_limit(1_024),
         &mut responses,
     );
@@ -59,6 +62,7 @@ fn preparation_encodes_and_transfers_typed_completion_to_fifo_ownership() {
         panic!("supported generated request must prepare");
     };
     assert!(encoded.len() > size_of::<i32>());
+    assert_eq!(request_client_id(&encoded), None);
     assert_eq!(responses.pending(), 1);
     assert_eq!(responses.fail_all(ResponseCloseReason::Shutdown).total, 1);
     assert_eq!(
@@ -67,6 +71,39 @@ fn preparation_encodes_and_transfers_typed_completion_to_fifo_ownership() {
             ResponseCloseReason::Shutdown
         )))
     );
+}
+
+#[test]
+fn preparation_encodes_the_configured_client_id_without_changing_completion_ownership() {
+    let (call, request) = erased_request(
+        CallId::from_raw(1),
+        ApiVersionsRequest::default(),
+        Duration::from_secs(1),
+    );
+    let mut responses = registry();
+    let client_id = StrBytes::from("driver-client");
+
+    let encoded = request
+        .prepare(
+            CorrelationId::from_raw(7),
+            version(0),
+            Some(&client_id),
+            outbound_limit(1_024),
+            &mut responses,
+        )
+        .unwrap_or_else(|error| panic!("configured request must prepare: {error}"));
+
+    assert_eq!(
+        request_client_id(&encoded).as_deref(),
+        Some("driver-client")
+    );
+    assert_eq!(responses.fail_all(ResponseCloseReason::Shutdown).total, 1);
+    assert!(matches!(
+        call.wait(),
+        Ok(Err(RequestError::ConnectionClosed(
+            ResponseCloseReason::Shutdown
+        )))
+    ));
 }
 
 #[test]
@@ -82,6 +119,7 @@ fn unsupported_version_settles_the_call_without_creating_a_fifo_slot() {
     let result = request.prepare(
         CorrelationId::from_raw(7),
         unsupported,
+        None,
         outbound_limit(1_024),
         &mut responses,
     );
@@ -109,6 +147,7 @@ fn outbound_frame_limit_settles_the_call_before_fifo_ownership() {
     let result = request.prepare(
         CorrelationId::from_raw(7),
         version(0),
+        None,
         outbound_limit(0),
         &mut responses,
     );
@@ -182,6 +221,15 @@ fn version(raw: i16) -> ApiVersion {
 
 const fn outbound_limit(bytes: usize) -> OutboundFrameLimits {
     OutboundFrameLimits::new(bytes)
+}
+
+fn request_client_id(frame: &kafka_wire_core::Bytes) -> Option<String> {
+    let mut decoder = Decoder::new(frame.slice(size_of::<i32>()..), DecodeLimits::default())
+        .unwrap_or_else(|error| panic!("decode request frame: {error}"));
+    RequestHeader::decode(&mut decoder, ApiVersion::new(1))
+        .unwrap_or_else(|error| panic!("decode request header: {error}"))
+        .client_id
+        .map(StrBytes::into_string)
 }
 
 fn nonzero(value: usize) -> NonZeroUsize {

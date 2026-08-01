@@ -34,6 +34,7 @@ impl HandshakeExchange {
         correlation_id: CorrelationId,
         mechanism: SaslMechanism,
         version: ApiVersion,
+        client_id: Option<&StrBytes>,
         outbound_limits: OutboundFrameLimits,
         decode_limits: DecodeLimits,
     ) -> Result<(Self, Bytes), AuthenticationExchangeError> {
@@ -43,7 +44,7 @@ impl HandshakeExchange {
         encode_request(
             &mut frame,
             correlation_id.get(),
-            None,
+            client_id.cloned(),
             &request,
             version,
             outbound_limits,

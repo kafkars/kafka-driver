@@ -79,6 +79,7 @@ impl SingleBroker {
         let (exchange, frame) = match NegotiationExchange::start(
             *effect_id,
             *correlation_id,
+            self.client_id.as_ref().map(crate::config::ClientId::wire),
             self.outbound_frame,
             self.negotiation_limits.decode_limits(),
         ) {

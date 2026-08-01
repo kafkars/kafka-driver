@@ -5,7 +5,7 @@ use std::{net::SocketAddr, sync::Arc};
 use kafka_driver_core::BootstrapSet;
 
 use crate::{
-    config::{BootstrapConfig, BrokerConfig, DriverLimits, DriverTarget},
+    config::{BootstrapConfig, BrokerConfig, ClientId, DriverLimits, DriverTarget},
     host::DriverHost,
     observation::Observation,
     reactor::Reactor,
@@ -19,6 +19,7 @@ pub struct DriverBuilder {
     limits: DriverLimits,
     target: Option<DriverTarget>,
     sasl: Option<crate::SaslConfig>,
+    client_id: Option<String>,
 }
 
 impl DriverBuilder {
@@ -74,13 +75,25 @@ impl DriverBuilder {
         self
     }
 
+    /// Sets the immutable client identifier written into every Kafka request header.
+    #[must_use]
+    pub fn client_id(mut self, client_id: impl Into<String>) -> Self {
+        self.client_id = Some(client_id.into());
+        self
+    }
+
     /// Builds a driver handle and an embedded, caller-driven reactor.
     pub fn build_reactor(self) -> Result<(Driver, Reactor), DriverBuildError> {
         let Some(target) = self.target else {
             return Err(DriverBuildError::MissingTarget);
         };
+        let client_id = self
+            .client_id
+            .map(ClientId::try_new)
+            .transpose()
+            .map_err(DriverBuildError::client_id)?;
         let identity = DriverIdentity::allocate().ok_or(DriverBuildError::IdentityExhausted)?;
-        let target = target.with_sasl(self.sasl);
+        let target = target.with_sasl(self.sasl).with_client_id(client_id);
         let call_ids = Arc::new(CallIds::new());
         let observation = Arc::new(Observation::default());
         let (commands, shutdown, reactor) = Reactor::new(

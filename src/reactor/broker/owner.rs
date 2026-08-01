@@ -58,6 +58,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) negotiation_timeout: std::time::Duration,
     pub(super) authentication_timeout: std::time::Duration,
     pub(super) sasl: Option<SaslConfig>,
+    pub(super) client_id: Option<crate::config::ClientId>,
     pub(super) authentication_session: Option<AuthenticationSession>,
     pub(super) authentication_exchange: Option<AuthenticationExchange>,
     pub(super) scram_proof: Option<crate::reactor::scram_proof::ScramProofSender>,

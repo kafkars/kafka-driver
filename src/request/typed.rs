@@ -5,7 +5,7 @@ use std::time::Instant;
 use bytes::BytesMut;
 use kafka_driver_core::{CallId, CorrelationId, OutcomeStamp};
 use kafka_wire::{OutboundFrameLimits, RequestResponsePair, encode_request};
-use kafka_wire_core::{ApiVersion, Bytes};
+use kafka_wire_core::{ApiVersion, Bytes, StrBytes};
 
 use crate::{
     RequestError, TrafficClass,
@@ -132,6 +132,7 @@ where
         self: Box<Self>,
         correlation_id: CorrelationId,
         version: ApiVersion,
+        client_id: Option<&StrBytes>,
         outbound_limits: OutboundFrameLimits,
         responses: &mut ResponseRegistry,
     ) -> Result<Bytes, RequestError> {
@@ -159,7 +160,7 @@ where
         if let Err(source) = encode_request(
             &mut frame,
             correlation_id.get(),
-            None,
+            client_id.cloned(),
             &request,
             version,
             outbound_limits,

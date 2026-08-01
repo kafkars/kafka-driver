@@ -50,7 +50,7 @@ impl SingleBroker {
         epoch: ConnectionEpoch,
         scram_proof: Option<ScramProofSender>,
     ) -> Self {
-        let (addresses, security, sasl) = config.into_parts();
+        let (addresses, security, sasl, client_id) = config.into_parts();
         let addresses = AddressRotation::new(addresses);
         let primary = addresses
             .primary()
@@ -93,6 +93,7 @@ impl SingleBroker {
             negotiation_timeout: limits.negotiation_timeout(),
             authentication_timeout: limits.authentication_timeout(),
             sasl,
+            client_id,
             authentication_session: None,
             authentication_exchange: None,
             scram_proof,
