@@ -5,5 +5,6 @@ mod dependency;
 mod facade;
 mod file_size;
 mod module_contract;
+mod qualification;
 mod support;
 mod test_location;

@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: kafkars/kafka-wire
-          ref: ab7e99e561ea0f1c3f08dd516a7b78b93d2858d7
+          ref: 3c3ec1e9cc44f47c00f5e5ba6bfb2012e30aa0f5
           path: kafka-protocol
 
       - name: Install pinned Rust toolchain
@@ -54,6 +54,14 @@ jobs:
 
       - name: Install qualification harness
         run: npm ci
+
+      - name: Fetch the locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Qualify publishable crate archives
+        run: scripts/qualify-packages
+        env:
+          CARGO_NET_OFFLINE: "true"
 
       - name: Run managed real-broker qualification
         run: npm run qualify:real-kafka

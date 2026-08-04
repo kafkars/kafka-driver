@@ -24,11 +24,11 @@ repository = "https://github.com/zsumz/kafka-driver"
 [workspace.dependencies]
 base64 = "0.22.1"
 bytes = "1.10"
-kafka-driver = { path = "." }
-kafka-driver-core = { path = "crates/kafka-driver-core" }
+kafka-driver = { version = "0.1.0", path = "." }
+kafka-driver-core = { version = "0.1.0", path = "crates/kafka-driver-core" }
 kafka-driver-sim = { path = "crates/kafka-driver-sim" }
-kafka-driver-transport = { path = "crates/kafka-driver-transport" }
-kafka-wire-core = { path = "../kafka-protocol/crates/kafka-wire-core" }
+kafka-driver-transport = { version = "0.1.0", path = "crates/kafka-driver-transport" }
+kafka-wire-core = { version = "0.1.0", path = "../kafka-protocol/crates/kafka-wire-core" }
 mio = { version = "1.2", default-features = false, features = ["net", "os-poll"] }
 ring = "0.17.14"
 rustls = { version = "0.23.42", default-features = false, features = ["ring", "std"] }
@@ -46,7 +46,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "A deterministic, runtime-neutral Kafka broker and cluster RPC engine"
-publish = false
+publish = ["crates-io"]
+keywords = ["kafka", "client", "runtime-neutral", "networking"]
+categories = ["network-programming"]
 
 [features]
 default = ["tls-rustls"]
@@ -57,7 +59,7 @@ base64.workspace = true
 bytes.workspace = true
 kafka-driver-core.workspace = true
 kafka-driver-transport.workspace = true
-kafka-wire = { path = "../kafka-protocol/crates/kafka-wire" }
+kafka-wire = { version = "0.1.0", path = "../kafka-protocol/crates/kafka-wire" }
 kafka-wire-core.workspace = true
 mio.workspace = true
 ring.workspace = true

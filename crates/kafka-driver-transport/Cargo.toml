@@ -6,7 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Sans-I/O framing and byte movement for kafka-driver"
-publish = false
+publish = ["crates-io"]
+keywords = ["kafka", "transport", "sans-io"]
+categories = ["network-programming"]
 
 [dependencies]
 bytes.workspace = true

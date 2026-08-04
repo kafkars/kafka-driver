@@ -30,8 +30,8 @@ jobs:
         shell: bash
         working-directory: kafka-driver
     steps:
-      # The two repositories are siblings because kafka-wire is deliberately
-      # unpublished and remains a path dependency during joint development.
+      # Joint development tests the exact reviewed kafka-wire source revision;
+      # packaged builds resolve the same declared version from crates.io.
       - name: Check out kafka-driver
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: kafkars/kafka-wire
-          ref: ab7e99e561ea0f1c3f08dd516a7b78b93d2858d7
+          ref: 3c3ec1e9cc44f47c00f5e5ba6bfb2012e30aa0f5
           path: kafka-protocol
 
       - name: Install pinned Rust toolchain

@@ -38,10 +38,7 @@ fn dependency_graph_contains_no_async_runtime() {
 fn kafka_wire_remains_the_local_protocol_authority() {
     let root = workspace_root();
     let guardrails = load_guardrails(&root);
-    let manifest = read(&root.join("Cargo.toml"));
-    let value = manifest
-        .parse::<toml::Value>()
-        .unwrap_or_else(|error| panic!("parse Cargo.toml: {error}"));
+    let value = parse_manifest(&root.join("Cargo.toml"));
     let path = value["dependencies"]["kafka-wire"]["path"]
         .as_str()
         .unwrap_or_else(|| panic!("kafka-wire must be a path dependency"));
@@ -51,6 +48,63 @@ fn kafka_wire_remains_the_local_protocol_authority() {
 
     assert_eq!(path, guardrails.dependencies.kafka_wire_path);
     assert_eq!(core_path, guardrails.dependencies.kafka_wire_core_path);
+}
+
+#[test]
+fn local_path_dependencies_carry_the_release_version() {
+    let root = workspace_root();
+    let manifest = parse_manifest(&root.join("Cargo.toml"));
+    for package in [
+        "kafka-driver",
+        "kafka-driver-core",
+        "kafka-driver-transport",
+        "kafka-wire-core",
+    ] {
+        assert_eq!(
+            manifest["workspace"]["dependencies"][package]["version"].as_str(),
+            Some("0.1.0"),
+            "{package} must carry its path-compatible release version"
+        );
+    }
+    assert_eq!(
+        manifest["dependencies"]["kafka-wire"]["version"].as_str(),
+        Some("0.1.0")
+    );
+    assert_eq!(
+        manifest["workspace"]["dependencies"]["kafka-driver-sim"]
+            .get("version")
+            .and_then(toml::Value::as_str),
+        None
+    );
+    let probe = parse_manifest(&root.join("crates/kafka-driver-probe/Cargo.toml"));
+    assert_eq!(
+        probe["dependencies"]["kafka-wire"]["version"].as_str(),
+        Some("0.1.0")
+    );
+}
+
+#[test]
+fn publication_policy_exposes_only_the_runtime_graph() {
+    let root = workspace_root();
+    for path in [
+        "Cargo.toml",
+        "crates/kafka-driver-core/Cargo.toml",
+        "crates/kafka-driver-transport/Cargo.toml",
+    ] {
+        let manifest = parse_manifest(&root.join(path));
+        let registries = manifest["package"]["publish"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{path} must carry a registry allowlist"));
+        assert_eq!(registries.len(), 1);
+        assert_eq!(registries[0].as_str(), Some("crates-io"));
+    }
+    for path in [
+        "crates/kafka-driver-sim/Cargo.toml",
+        "crates/kafka-driver-probe/Cargo.toml",
+    ] {
+        let manifest = parse_manifest(&root.join(path));
+        assert_eq!(manifest["package"]["publish"].as_bool(), Some(false));
+    }
 }
 
 #[test]
@@ -70,10 +124,7 @@ fn driver_dependencies_are_explicitly_allowlisted() {
 #[test]
 fn rustls_is_a_runtime_neutral_optional_transport_feature() {
     let root = workspace_root();
-    let manifest = read(&root.join("Cargo.toml"));
-    let value = manifest
-        .parse::<toml::Value>()
-        .unwrap_or_else(|error| panic!("parse Cargo.toml: {error}"));
+    let value = parse_manifest(&root.join("Cargo.toml"));
     let rustls = &value["dependencies"]["rustls"];
     let policy = &value["workspace"]["dependencies"]["rustls"];
     let transport_feature = value["features"]["tls-rustls"]
@@ -158,23 +209,6 @@ fn real_broker_probe_depends_only_on_public_driver_protocol_and_tls_surfaces() {
 }
 
 #[test]
-fn ci_pins_the_verified_public_kafka_wire_source() {
-    let root = workspace_root();
-    let guardrails = load_guardrails(&root);
-    let workflow = read(&root.join(".github/workflows/ci.yml"));
-    let repository = format!(
-        "repository: {}",
-        guardrails.dependencies.kafka_wire_repository
-    );
-    let revision = format!("ref: {}", guardrails.dependencies.kafka_wire_revision);
-
-    assert!(workflow.contains(&repository));
-    assert!(workflow.contains(&revision));
-    assert!(!workflow.contains("KAFKA_PROTOCOL_SSH_KEY"));
-    assert!(!workflow.contains("KAFKA_PROTOCOL_TOKEN"));
-}
-
-#[test]
 fn ci_delegates_validation_to_the_canonical_repository_gate() {
     let root = workspace_root();
     let workflow = read(&root.join(".github/workflows/ci.yml"));
@@ -209,49 +243,6 @@ fn extensionless_gate_scripts_keep_unix_line_endings_on_every_runner() {
 }
 
 #[test]
-fn release_qualification_is_scheduled_and_pins_the_protocol() {
-    let root = workspace_root();
-    let guardrails = load_guardrails(&root);
-    let workflow = read(&root.join(".github/workflows/qualification.yml"));
-    let repository = format!(
-        "repository: {}",
-        guardrails.dependencies.kafka_wire_repository
-    );
-    let revision = format!("ref: {}", guardrails.dependencies.kafka_wire_revision);
-
-    assert!(workflow.contains("schedule:"));
-    assert!(workflow.contains("tags: [\"v*\"]"));
-    assert!(workflow.contains(&repository));
-    assert!(workflow.contains(&revision));
-    assert!(!workflow.contains("KAFKA_PROTOCOL_SSH_KEY"));
-    assert!(!workflow.contains("KAFKA_PROTOCOL_TOKEN"));
-    assert!(workflow.contains("run: npm run qualify:real-kafka"));
-}
-
-#[test]
-fn secure_cluster_qualification_binds_each_advertised_host_to_its_identity() {
-    let root = workspace_root();
-    let manifest = read(&root.join("package.json"));
-    let compose = read(&root.join("smoke/kafka-secure-cluster.compose.yml"));
-    let scenario = read(&root.join("smoke/real-kafka-secure-multi-broker.smoke.mjs"));
-    let identities = read(&root.join("smoke/support/tls-identities.mjs"));
-
-    assert!(manifest.contains(
-        "\"smoke:real-kafka-secure-multi-broker\": \
-         \"smoque run smoke/ --tag real-kafka-secure-multi-broker --ci\""
-    ));
-    assert!(compose.contains("image: rust:1.88.0-bookworm@sha256:af306cfa71d987911a781c37b59d7d67d934f49684058f96cf72079c3626bfe0"));
-    for (number, broker) in [(1, "kafka-1"), (2, "kafka-2"), (3, "kafka-3")] {
-        assert!(compose.contains(&format!("SSL://{broker}:9092")));
-        assert!(compose.contains(&format!("KAFKA_{number}_SSL_SECRETS")));
-    }
-    assert!(identities.contains("DNS.1 = ${brokerName}"));
-    assert!(scenario.contains("\"kafka-1:9092,kafka-2:9092\""));
-    assert!(scenario.contains("RECOVERED TLS broker failover 1"));
-    assert!(scenario.contains("PASS TLS broker failover 2"));
-}
-
-#[test]
 fn package_extraction_matches_exact_names_only() {
     let packages = lockfile_packages(
         "[[package]]\nname = \"tokio-util-extra\"\n[[package]]\nname = \"bytes\"\n",
@@ -262,14 +253,17 @@ fn package_extraction_matches_exact_names_only() {
 }
 
 fn manifest_dependencies(path: &std::path::Path) -> BTreeSet<String> {
-    let manifest = read(path);
-    let value = manifest
-        .parse::<toml::Value>()
-        .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()));
+    let value = parse_manifest(path);
 
     value["dependencies"]
         .as_table()
         .map_or_else(BTreeSet::new, |dependencies| {
             dependencies.keys().cloned().collect()
         })
+}
+
+fn parse_manifest(path: &std::path::Path) -> toml::Value {
+    read(path)
+        .parse::<toml::Value>()
+        .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()))
 }

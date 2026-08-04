@@ -6,7 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Deterministic state-machine core for kafka-driver"
-publish = false
+publish = ["crates-io"]
+keywords = ["kafka", "state-machine", "sans-io"]
+categories = ["network-programming"]
 
 [dependencies]
 kafka-wire-core.workspace = true
