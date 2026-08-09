@@ -230,16 +230,13 @@ fn ci_runs_the_same_gate_on_linux_macos_and_windows() {
 }
 
 #[test]
-fn extensionless_gate_scripts_keep_unix_line_endings_on_every_runner() {
+fn rust_sources_and_gate_scripts_keep_unix_line_endings_on_every_runner() {
     let root = workspace_root();
     let attributes = read(&root.join(".gitattributes"));
 
-    assert!(
-        attributes
-            .lines()
-            .any(|line| line.trim() == "scripts/* text eol=lf"),
-        "extensionless scripts must retain LF endings for Windows Git Bash"
-    );
+    for expected in ["*.rs text eol=lf", "scripts/* text eol=lf"] {
+        assert!(attributes.lines().any(|line| line.trim() == expected));
+    }
 }
 
 #[test]
