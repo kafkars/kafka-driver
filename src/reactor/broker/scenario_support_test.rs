@@ -35,35 +35,39 @@ pub(in crate::reactor) fn complete_negotiation(
 }
 
 pub(super) fn observe_once(poller: &mut Poller, broker: &mut SingleBroker) {
-    if broker.has_continuation_io()
-        && broker
-            .continue_io(
-                poller,
-                Moment::ORIGIN,
-                kafka_driver_core::OutcomeStamp::ORIGIN,
-            )
-            .unwrap_or_else(|error| panic!("continue broker I/O: {error}"))
-    {
-        return;
-    }
     let mut events = Vec::with_capacity(2);
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
-        .unwrap_or_else(|error| panic!("poll broker readiness: {error}"));
-    assert!(
-        !events.is_empty(),
-        "expected broker readiness before timeout"
-    );
-    for event in events {
-        broker
-            .observe(
-                poller,
-                event,
-                Moment::ORIGIN,
-                kafka_driver_core::OutcomeStamp::ORIGIN,
-            )
-            .unwrap_or_else(|error| panic!("observe broker readiness: {error}"));
+    for _ in 0..4 {
+        if broker.has_continuation_io()
+            && broker
+                .continue_io(
+                    poller,
+                    Moment::ORIGIN,
+                    kafka_driver_core::OutcomeStamp::ORIGIN,
+                )
+                .unwrap_or_else(|error| panic!("continue broker I/O: {error}"))
+        {
+            return;
+        }
+        events.clear();
+        poller
+            .poll_into(Some(Duration::from_secs(1)), &mut events)
+            .unwrap_or_else(|error| panic!("poll broker readiness: {error}"));
+        let mut progress = false;
+        for event in events.drain(..) {
+            progress |= broker
+                .observe(
+                    poller,
+                    event,
+                    Moment::ORIGIN,
+                    kafka_driver_core::OutcomeStamp::ORIGIN,
+                )
+                .unwrap_or_else(|error| panic!("observe broker readiness: {error}"));
+        }
+        if progress {
+            return;
+        }
     }
+    panic!("expected broker readiness before timeout");
 }
 
 fn negotiation_response() -> Vec<u8> {

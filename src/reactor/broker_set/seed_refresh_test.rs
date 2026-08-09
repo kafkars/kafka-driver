@@ -127,31 +127,39 @@ fn addresses(port: u16) -> ResolvedAddressSet {
 }
 
 fn observe_refusal(poller: &mut Poller, brokers: &mut BrokerSet) {
-    if brokers.has_local_io()
-        && brokers
-            .continue_io(
-                poller,
-                Moment::ORIGIN,
-                kafka_driver_core::OutcomeStamp::ORIGIN,
-            )
-            .unwrap_or_else(|error| panic!("continue refused connection: {error}"))
-    {
-        return;
-    }
     let mut events = Vec::with_capacity(1);
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
-        .unwrap_or_else(|error| panic!("poll refused connection: {error}"));
-    for event in events {
-        brokers
-            .observe(
-                poller,
-                event,
-                Moment::ORIGIN,
-                kafka_driver_core::OutcomeStamp::ORIGIN,
-            )
-            .unwrap_or_else(|error| panic!("observe refused connection: {error}"));
+    for _ in 0..4 {
+        if brokers.has_local_io()
+            && brokers
+                .continue_io(
+                    poller,
+                    Moment::ORIGIN,
+                    kafka_driver_core::OutcomeStamp::ORIGIN,
+                )
+                .unwrap_or_else(|error| panic!("continue refused connection: {error}"))
+        {
+            return;
+        }
+        events.clear();
+        poller
+            .poll_into(Some(Duration::from_secs(1)), &mut events)
+            .unwrap_or_else(|error| panic!("poll refused connection: {error}"));
+        let mut progress = false;
+        for event in events.drain(..) {
+            progress |= brokers
+                .observe(
+                    poller,
+                    event,
+                    Moment::ORIGIN,
+                    kafka_driver_core::OutcomeStamp::ORIGIN,
+                )
+                .unwrap_or_else(|error| panic!("observe refused connection: {error}"));
+        }
+        if progress {
+            return;
+        }
     }
+    panic!("expected refused connection progress before timeout");
 }
 
 fn listener() -> TcpListener {

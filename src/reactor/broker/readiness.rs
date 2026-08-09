@@ -8,7 +8,11 @@ use crate::reactor::{
     transport::{ReadState, WriteState},
 };
 
-use super::{BrokerError, failure::transport_failure, owner::SingleBroker};
+use super::{
+    BrokerError,
+    failure::transport_failure,
+    owner::{ConnectCheck, SingleBroker},
+};
 
 impl SingleBroker {
     pub(super) fn drive_io(
@@ -66,7 +70,8 @@ impl SingleBroker {
         let write = std::mem::take(&mut self.retry_write);
         let mut progress = false;
         if connect {
-            progress |= self.finish_connect(poller, token, now, observed_at)?;
+            progress |=
+                self.finish_connect(poller, token, now, observed_at, ConnectCheck::Local)?;
         }
         let Some(token) = self.resource_token else {
             return Ok(progress);

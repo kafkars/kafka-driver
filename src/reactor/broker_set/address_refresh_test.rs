@@ -157,31 +157,39 @@ fn observe_refusal_if_needed(poller: &mut Poller, brokers: &mut BrokerSet, lane:
     {
         return;
     }
-    if brokers.has_local_io()
-        && brokers
-            .continue_io(
-                poller,
-                Moment::ORIGIN,
-                kafka_driver_core::OutcomeStamp::ORIGIN,
-            )
-            .unwrap_or_else(|error| panic!("continue refused candidate: {error}"))
-    {
-        return;
-    }
     let mut events = Vec::with_capacity(2);
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
-        .unwrap_or_else(|error| panic!("poll refused candidate: {error}"));
-    for event in events {
-        brokers
-            .observe(
-                poller,
-                event,
-                Moment::ORIGIN,
-                kafka_driver_core::OutcomeStamp::ORIGIN,
-            )
-            .unwrap_or_else(|error| panic!("observe refused candidate: {error}"));
+    for _ in 0..4 {
+        if brokers.has_local_io()
+            && brokers
+                .continue_io(
+                    poller,
+                    Moment::ORIGIN,
+                    kafka_driver_core::OutcomeStamp::ORIGIN,
+                )
+                .unwrap_or_else(|error| panic!("continue refused candidate: {error}"))
+        {
+            return;
+        }
+        events.clear();
+        poller
+            .poll_into(Some(Duration::from_secs(1)), &mut events)
+            .unwrap_or_else(|error| panic!("poll refused candidate: {error}"));
+        let mut progress = false;
+        for event in events.drain(..) {
+            progress |= brokers
+                .observe(
+                    poller,
+                    event,
+                    Moment::ORIGIN,
+                    kafka_driver_core::OutcomeStamp::ORIGIN,
+                )
+                .unwrap_or_else(|error| panic!("observe refused candidate: {error}"));
+        }
+        if progress {
+            return;
+        }
     }
+    panic!("expected refused candidate progress before timeout");
 }
 
 fn connection(brokers: &BrokerSet, lane: BrokerLane) -> &super::super::broker::SingleBroker {

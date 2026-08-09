@@ -146,35 +146,39 @@ fn endpoint_refresh_cannot_outlive_a_waiting_call_deadline() {
 }
 
 fn observe_once(poller: &mut Poller, brokers: &mut BrokerSet) {
-    if brokers.has_local_io()
-        && brokers
-            .continue_io(
-                poller,
-                Moment::ORIGIN,
-                kafka_driver_core::OutcomeStamp::ORIGIN,
-            )
-            .unwrap_or_else(|error| panic!("continue refused broker: {error}"))
-    {
-        return;
-    }
     let mut events = Vec::<PollEvent>::with_capacity(1);
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
-        .unwrap_or_else(|error| panic!("poll refused broker: {error}"));
-    assert!(
-        !events.is_empty(),
-        "expected connect failure before timeout"
-    );
-    for event in events {
-        brokers
-            .observe(
-                poller,
-                event,
-                Moment::ORIGIN,
-                kafka_driver_core::OutcomeStamp::ORIGIN,
-            )
-            .unwrap_or_else(|error| panic!("observe connect failure: {error}"));
+    for _ in 0..4 {
+        if brokers.has_local_io()
+            && brokers
+                .continue_io(
+                    poller,
+                    Moment::ORIGIN,
+                    kafka_driver_core::OutcomeStamp::ORIGIN,
+                )
+                .unwrap_or_else(|error| panic!("continue refused broker: {error}"))
+        {
+            return;
+        }
+        events.clear();
+        poller
+            .poll_into(Some(Duration::from_secs(1)), &mut events)
+            .unwrap_or_else(|error| panic!("poll refused broker: {error}"));
+        let mut progress = false;
+        for event in events.drain(..) {
+            progress |= brokers
+                .observe(
+                    poller,
+                    event,
+                    Moment::ORIGIN,
+                    kafka_driver_core::OutcomeStamp::ORIGIN,
+                )
+                .unwrap_or_else(|error| panic!("observe connect failure: {error}"));
+        }
+        if progress {
+            return;
+        }
     }
+    panic!("expected connect failure before timeout");
 }
 
 fn broker_set() -> BrokerSet {

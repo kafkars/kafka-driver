@@ -30,6 +30,12 @@ use super::{
     failure::transport_failure, limits::BrokerLimits, terminal::expect_no_effects,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ConnectCheck {
+    Local,
+    Readiness,
+}
+
 /// Single-owner adapter for one broker and its replaceable connection epoch.
 #[derive(Debug)]
 pub(in crate::reactor) struct SingleBroker {
@@ -107,7 +113,7 @@ impl SingleBroker {
         ) {
             return self.drive_io(poller, token, readiness, now, observed_at);
         }
-        self.finish_connect(poller, token, now, observed_at)
+        self.finish_connect(poller, token, now, observed_at, ConnectCheck::Readiness)
     }
 
     pub(super) fn finish_connect(
@@ -116,6 +122,7 @@ impl SingleBroker {
         token: ResourceToken,
         now: kafka_driver_core::Moment,
         observed_at: OutcomeStamp,
+        check: ConnectCheck,
     ) -> Result<bool, BrokerError> {
         self.retry_connect = false;
         let Some((identity, connection)) = self.resources.get_mut(token) else {
@@ -129,6 +136,12 @@ impl SingleBroker {
                 };
                 self.begin_negotiation(poller, identity, effect_id, now)?;
                 Ok(true)
+            }
+            Ok(ConnectProgress::Pending) if check == ConnectCheck::Readiness => {
+                // Some pollers can report an intermediate connect edge before the socket exposes
+                // its terminal status. Keep one bounded local recheck armed for the next turn.
+                self.retry_connect = true;
+                Ok(false)
             }
             Ok(ConnectProgress::Pending) => Ok(false),
             Err(error) => {
