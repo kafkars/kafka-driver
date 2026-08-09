@@ -157,6 +157,17 @@ fn observe_refusal_if_needed(poller: &mut Poller, brokers: &mut BrokerSet, lane:
     {
         return;
     }
+    if brokers.has_local_io()
+        && brokers
+            .continue_io(
+                poller,
+                Moment::ORIGIN,
+                kafka_driver_core::OutcomeStamp::ORIGIN,
+            )
+            .unwrap_or_else(|error| panic!("continue refused candidate: {error}"))
+    {
+        return;
+    }
     let mut events = Vec::with_capacity(2);
     poller
         .poll_into(Some(Duration::from_secs(1)), &mut events)

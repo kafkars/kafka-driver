@@ -27,6 +27,7 @@ impl SingleBroker {
         self.authentication_exchange = None;
         self.frames.clear();
         self.completed_writes.clear();
+        self.retry_connect = false;
         self.retry_read = false;
         self.retry_write = false;
 
@@ -85,7 +86,12 @@ impl SingleBroker {
             return Err(BrokerError::MissingEffect);
         };
         match self.resources.open(poller, identity, address) {
-            Ok(token) => self.resource_token = Some(token),
+            Ok(token) => {
+                self.resource_token = Some(token);
+                // Registration follows connect initiation. Verify once locally so a completion
+                // racing registration cannot strand the epoch waiting for another OS edge.
+                self.retry_connect = true;
+            }
             Err(error) => {
                 self.apply_open_failed(epoch, *effect_id, *transport_id, open_failure(&error))?;
             }

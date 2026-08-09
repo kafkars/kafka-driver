@@ -127,6 +127,17 @@ fn addresses(port: u16) -> ResolvedAddressSet {
 }
 
 fn observe_refusal(poller: &mut Poller, brokers: &mut BrokerSet) {
+    if brokers.has_local_io()
+        && brokers
+            .continue_io(
+                poller,
+                Moment::ORIGIN,
+                kafka_driver_core::OutcomeStamp::ORIGIN,
+            )
+            .unwrap_or_else(|error| panic!("continue refused connection: {error}"))
+    {
+        return;
+    }
     let mut events = Vec::with_capacity(1);
     poller
         .poll_into(Some(Duration::from_secs(1)), &mut events)

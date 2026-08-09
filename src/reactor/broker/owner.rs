@@ -64,6 +64,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) scram_proof: Option<crate::reactor::scram_proof::ScramProofSender>,
     pub(super) frames: Vec<FrameBody>,
     pub(super) completed_writes: Vec<CompletedWrite>,
+    pub(super) retry_connect: bool,
     pub(super) retry_read: bool,
     pub(super) retry_write: bool,
     pub(super) pending_transport_failure_at: Option<OutcomeStamp>,
@@ -106,6 +107,17 @@ impl SingleBroker {
         ) {
             return self.drive_io(poller, token, readiness, now, observed_at);
         }
+        self.finish_connect(poller, token, now, observed_at)
+    }
+
+    pub(super) fn finish_connect(
+        &mut self,
+        poller: &Poller,
+        token: ResourceToken,
+        now: kafka_driver_core::Moment,
+        observed_at: OutcomeStamp,
+    ) -> Result<bool, BrokerError> {
+        self.retry_connect = false;
         let Some((identity, connection)) = self.resources.get_mut(token) else {
             return Ok(false);
         };
@@ -178,6 +190,9 @@ impl SingleBroker {
         identity: ResourceIdentity,
     ) -> Result<(), BrokerError> {
         self.resource_token = None;
+        self.retry_connect = false;
+        self.retry_read = false;
+        self.retry_write = false;
         self.resources
             .close(poller, identity)
             .map(|_| ())

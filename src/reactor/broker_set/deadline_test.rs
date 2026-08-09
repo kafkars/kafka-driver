@@ -146,6 +146,17 @@ fn endpoint_refresh_cannot_outlive_a_waiting_call_deadline() {
 }
 
 fn observe_once(poller: &mut Poller, brokers: &mut BrokerSet) {
+    if brokers.has_local_io()
+        && brokers
+            .continue_io(
+                poller,
+                Moment::ORIGIN,
+                kafka_driver_core::OutcomeStamp::ORIGIN,
+            )
+            .unwrap_or_else(|error| panic!("continue refused broker: {error}"))
+    {
+        return;
+    }
     let mut events = Vec::<PollEvent>::with_capacity(1);
     poller
         .poll_into(Some(Duration::from_secs(1)), &mut events)

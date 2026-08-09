@@ -55,6 +55,10 @@ impl SingleBroker {
             self.transport_lost(poller, identity, TransportFailure::Other)?;
             return Ok(AuthenticationWriteOutcome::ConnectionLost);
         }
+        if admitted == AuthenticationWriteOutcome::Admitted {
+            // Admission is local work; the socket's prior writable edge may already be consumed.
+            self.retry_write = true;
+        }
         Ok(admitted)
     }
 }

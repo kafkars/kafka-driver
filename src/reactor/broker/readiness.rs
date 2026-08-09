@@ -56,16 +56,24 @@ impl SingleBroker {
         observed_at: OutcomeStamp,
     ) -> Result<bool, BrokerError> {
         let Some(token) = self.resource_token else {
+            self.retry_connect = false;
             self.retry_read = false;
             self.retry_write = false;
             return Ok(false);
         };
+        let connect = std::mem::take(&mut self.retry_connect);
         let read = std::mem::take(&mut self.retry_read);
         let write = std::mem::take(&mut self.retry_write);
-        let Some((identity, _)) = self.resources.get_mut(token) else {
-            return Ok(false);
-        };
         let mut progress = false;
+        if connect {
+            progress |= self.finish_connect(poller, token, now, observed_at)?;
+        }
+        let Some(token) = self.resource_token else {
+            return Ok(progress);
+        };
+        let Some((identity, _)) = self.resources.get_mut(token) else {
+            return Ok(progress);
+        };
         if read {
             progress |= self.drive_read(poller, token, identity, now, observed_at)?;
         }
@@ -80,7 +88,7 @@ impl SingleBroker {
     }
 
     pub(in crate::reactor) const fn has_continuation_io(&self) -> bool {
-        self.retry_read || self.retry_write
+        self.retry_connect || self.retry_read || self.retry_write
     }
 
     fn drive_read(

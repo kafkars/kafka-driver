@@ -114,6 +114,7 @@ impl SingleBroker {
             );
         }
         self.negotiation_exchange = Some(exchange);
+        self.retry_write = true;
         if self
             .resources
             .reregister(poller, token, PollInterest::ReadWrite)

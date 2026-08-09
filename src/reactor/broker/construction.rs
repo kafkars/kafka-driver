@@ -99,6 +99,7 @@ impl SingleBroker {
             scram_proof,
             frames: Vec::new(),
             completed_writes: Vec::new(),
+            retry_connect: false,
             retry_read: false,
             retry_write: false,
             pending_transport_failure_at: None,
