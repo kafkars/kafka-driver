@@ -28,6 +28,8 @@ pub(in crate::reactor) struct PlaintextConnection {
     writes: WriteQueue,
     read_buffer: Box<[u8]>,
     max_buffered_read_bytes: usize,
+    #[cfg(test)]
+    read_failure_after_frame: Option<io::ErrorKind>,
 }
 
 impl PlaintextConnection {
@@ -50,6 +52,8 @@ impl PlaintextConnection {
             writes: WriteQueue::new(limits.write()),
             read_buffer: vec![0; limits.read_chunk_bytes().get()].into_boxed_slice(),
             max_buffered_read_bytes: limits.frame().max_buffered_bytes(),
+            #[cfg(test)]
+            read_failure_after_frame: None,
         }
     }
 
@@ -82,6 +86,10 @@ impl PlaintextConnection {
                 };
                 destination.push(frame);
                 frames += 1;
+                #[cfg(test)]
+                if let Some(kind) = self.read_failure_after_frame.take() {
+                    return Err(PlaintextError::Read(io::Error::from(kind)));
+                }
             }
             if frames == budget.frames() || bytes == budget.bytes() {
                 return Ok(ReadProgress::new(
@@ -192,6 +200,11 @@ impl PlaintextConnection {
 
     pub(in crate::reactor) const fn queued_write_bytes(&self) -> usize {
         self.writes.buffered_bytes()
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn fail_read_after_frame(&mut self, kind: io::ErrorKind) {
+        self.read_failure_after_frame = Some(kind);
     }
 }
 

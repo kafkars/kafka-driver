@@ -21,6 +21,7 @@ smoke.suite("real Kafka advertised broker movement", { tags: ["real-kafka-moveme
   const initialEnv = clusterEnv(first, second, third);
   const movedEnv = clusterEnv(movedFirst, second, third);
   const stableBootstrap = `${third.host}:${third.port}`;
+  const movedBootstrap = `${movedFirst.host}:${movedFirst.port}`;
   const docker = await t.tools.docker();
 
   await t.step("required tools are available", async () => {
@@ -95,6 +96,25 @@ smoke.suite("real Kafka advertised broker movement", { tags: ["real-kafka-moveme
       ["--force-recreate"],
     );
     await awaitBroker(t, docker.command, stack, composeFile, movedEnv, "kafka-1");
+  });
+
+  await t.step("require the moved endpoint in live cluster metadata", async () => {
+    await t.poll(
+      "moved endpoint public route proof",
+      async () => {
+        const result = await t.cmd(
+          probe,
+          ["routes", movedBootstrap, TOPIC, "kafka-driver-movement-registration"],
+          { cwd: root, check: false, timeout: "15s" },
+        );
+        if (result.exitCode !== 0) {
+          throw new Error(result.stderr || result.stdout || "moved endpoint is not ready");
+        }
+        expect.value(result.stdout).toContain("PASS partition-leader route");
+        return result;
+      },
+      { timeout: "2m", interval: "1s" },
+    );
   });
 
   await t.step("invalidate the old route and require moved-endpoint progress", async () => {

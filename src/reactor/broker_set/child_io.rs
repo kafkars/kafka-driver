@@ -1,7 +1,7 @@
 //! I/O, timer, and shutdown delegation for one lazy broker child.
 
 use kafka_driver_core::{
-    BrokerCloseReason, BrokerState, CallFailure, CloseReason, Delivery, Moment, OutcomeStamp,
+    BrokerCloseReason, BrokerState, CallFailure, Delivery, Moment, OutcomeStamp,
 };
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-use super::{BrokerSetError, child::BrokerChild};
+use super::{BrokerSetError, child::BrokerChild, waiting::terminal};
 
 impl BrokerChild {
     pub(super) fn observe(
@@ -157,29 +157,6 @@ impl BrokerChild {
 fn draining() -> RequestError {
     RequestError::Rejected {
         failure: CallFailure::Draining,
-        delivery: Delivery::NotSent,
-    }
-}
-
-fn terminal(reason: BrokerCloseReason) -> RequestError {
-    if let BrokerCloseReason::EndpointResolutionFailed(failure) = reason {
-        return RequestError::NameResolutionFailed { failure };
-    }
-    let failure = match reason {
-        BrokerCloseReason::AuthenticationFailed(failure) => CallFailure::ConnectionClosed {
-            reason: CloseReason::AuthenticationFailed(failure),
-        },
-        BrokerCloseReason::Requested => CallFailure::Draining,
-        BrokerCloseReason::EpochExhausted
-        | BrokerCloseReason::RetryExhausted
-        | BrokerCloseReason::RetryResourcesUnavailable
-        | BrokerCloseReason::ClockOverflow => CallFailure::Closed,
-        BrokerCloseReason::EndpointResolutionFailed(_) => {
-            unreachable!("endpoint resolution returned above")
-        }
-    };
-    RequestError::Rejected {
-        failure,
         delivery: Delivery::NotSent,
     }
 }

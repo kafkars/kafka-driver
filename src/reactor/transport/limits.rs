@@ -56,7 +56,7 @@ impl Default for TransportLimits {
     }
 }
 
-/// Maximum bytes and complete frames consumed by one read drive.
+/// Maximum total transport-layer byte movement and complete frames in one read drive.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) struct ReadBudget {
     bytes: NonZeroUsize,
@@ -77,7 +77,7 @@ impl ReadBudget {
     }
 }
 
-/// Maximum bytes handed to one selected transport by one write drive.
+/// Maximum total transport-layer byte movement in one write drive.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) struct WriteBudget(NonZeroUsize);

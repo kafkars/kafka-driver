@@ -34,6 +34,7 @@ pub(crate) enum BrokerStep {
     NegotiationRejected,
     NegotiationResponded,
     CallResponded,
+    CallRespondedBeforeMalformedFrame,
 }
 
 #[allow(
@@ -123,6 +124,15 @@ impl TlsBroker {
         (receiver, owner)
     }
 
+    #[allow(dead_code, reason = "used only by the TLS read-failure test")]
+    pub(crate) fn spawn_malformed_after_call(
+        self,
+    ) -> (mpsc::Receiver<BrokerStep>, thread::JoinHandle<()>) {
+        let (sender, receiver) = mpsc::channel();
+        let owner = thread::spawn(move || self.serve_malformed_after_call(&sender));
+        (receiver, owner)
+    }
+
     #[allow(
         dead_code,
         reason = "shared fixture method is selected by the bootstrap-rotation TLS scenario"
@@ -159,6 +169,34 @@ impl TlsBroker {
         steps
             .send(BrokerStep::CallResponded)
             .unwrap_or_else(|error| panic!("report TLS call response: {error}"));
+    }
+
+    #[allow(dead_code, reason = "used only by the TLS read-failure test")]
+    fn serve_malformed_after_call(self, steps: &mpsc::Sender<BrokerStep>) {
+        let mut stream = self.accept_stream();
+        read_frame(&mut stream);
+        stream
+            .write_all(&negotiation_response())
+            .unwrap_or_else(|error| panic!("write TLS negotiation response: {error}"));
+        stream
+            .flush()
+            .unwrap_or_else(|error| panic!("flush TLS negotiation response: {error}"));
+        steps
+            .send(BrokerStep::NegotiationResponded)
+            .unwrap_or_else(|error| panic!("report TLS negotiation response: {error}"));
+
+        read_frame(&mut stream);
+        let mut response = call_response();
+        response.extend_from_slice(&(-1_i32).to_be_bytes());
+        stream
+            .write_all(&response)
+            .unwrap_or_else(|error| panic!("write TLS response and malformed frame: {error}"));
+        stream
+            .flush()
+            .unwrap_or_else(|error| panic!("flush TLS response and malformed frame: {error}"));
+        steps
+            .send(BrokerStep::CallRespondedBeforeMalformedFrame)
+            .unwrap_or_else(|error| panic!("report TLS malformed response batch: {error}"));
     }
 
     #[allow(

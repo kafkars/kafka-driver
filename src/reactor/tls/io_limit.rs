@@ -4,6 +4,36 @@ use std::io::{self, Write};
 
 use crate::reactor::tcp::TcpSocket;
 
+/// One shared byte-work bound across TLS wire and plaintext movement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct TlsByteBudget {
+    limit: usize,
+    consumed: usize,
+}
+
+impl TlsByteBudget {
+    pub(super) const fn new(limit: usize) -> Self {
+        Self { limit, consumed: 0 }
+    }
+
+    pub(super) const fn consumed(self) -> usize {
+        self.consumed
+    }
+
+    pub(super) const fn remaining(self) -> usize {
+        self.limit - self.consumed
+    }
+
+    pub(super) const fn is_exhausted(self) -> bool {
+        self.consumed == self.limit
+    }
+
+    pub(super) fn record(&mut self, bytes: usize) {
+        debug_assert!(bytes <= self.remaining());
+        self.consumed += bytes;
+    }
+}
+
 pub(super) struct LimitedWriter<'a> {
     socket: &'a mut TcpSocket,
     remaining: usize,

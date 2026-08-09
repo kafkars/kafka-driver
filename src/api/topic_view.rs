@@ -124,6 +124,7 @@ impl TopicView {
 
 /// Why an admitted topic-view request could not return installed topic facts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum TopicViewError {
     /// The caller-owned absolute deadline elapsed.
     DeadlineExceeded,

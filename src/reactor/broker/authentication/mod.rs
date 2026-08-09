@@ -5,3 +5,4 @@ mod outcomes;
 mod proof;
 mod response;
 mod start;
+mod write;

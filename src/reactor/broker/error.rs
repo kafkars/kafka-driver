@@ -27,8 +27,6 @@ pub(in crate::reactor) enum BrokerError {
     ResponseFailure(ResponseFailError),
     /// A machine completion contradicted typed FIFO response ownership.
     ResponseDispatch(ResponseDispatchError),
-    /// A registered resource could not change its readiness interests.
-    ResourceInterest(io::Error),
     /// A machine-requested deadline contradicted bounded timer ownership.
     TimerSchedule(TimerScheduleError),
     /// A driver-relative negotiation deadline could not fit the clock domain.
@@ -63,9 +61,6 @@ impl fmt::Display for BrokerError {
             ),
             Self::ResponseFailure(error) => error.fmt(formatter),
             Self::ResponseDispatch(error) => error.fmt(formatter),
-            Self::ResourceInterest(_) => {
-                formatter.write_str("failed to update broker readiness interests")
-            }
             Self::TimerSchedule(error) => error.fmt(formatter),
             Self::DeadlineOverflow => {
                 formatter.write_str("negotiation deadline exceeds the driver clock domain")
@@ -91,7 +86,7 @@ impl std::error::Error for BrokerError {
             Self::ResponseFailure(source) => Some(source),
             Self::ResponseDispatch(source) => Some(source),
             Self::TimerSchedule(source) => Some(source),
-            Self::ResourceInterest(source) | Self::ResourceClose(source) => Some(source),
+            Self::ResourceClose(source) => Some(source),
             Self::IdentityExhausted
             | Self::Machine(_)
             | Self::UnexpectedEffect(_)

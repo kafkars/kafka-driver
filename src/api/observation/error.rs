@@ -4,6 +4,7 @@ use std::fmt;
 
 /// Why an admitted snapshot command could not return a running-owner view.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum SnapshotError {
     /// Graceful shutdown won priority before this snapshot was interpreted.
     Draining,

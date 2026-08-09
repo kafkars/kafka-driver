@@ -6,7 +6,7 @@ use kafka_driver_transport::FrameBody;
 
 use crate::reactor::transport::{ReadBudget, ReadProgress, ReadState};
 
-use super::{TlsConnection, TlsError};
+use super::{TlsConnection, TlsError, io_limit::TlsByteBudget};
 
 impl TlsConnection {
     pub(in crate::reactor) fn drive_read(
@@ -14,8 +14,7 @@ impl TlsConnection {
         budget: ReadBudget,
         destination: &mut Vec<FrameBody>,
     ) -> Result<ReadProgress, TlsError> {
-        let mut tls_bytes = 0;
-        let mut plaintext_bytes = 0;
+        let mut bytes = TlsByteBudget::new(budget.bytes());
         let mut frames = 0;
         let mut peer_closed = false;
         loop {
@@ -26,62 +25,49 @@ impl TlsConnection {
                 destination.push(frame);
                 frames += 1;
             }
-            if frames == budget.frames() || plaintext_bytes == budget.bytes() {
+            if frames == budget.frames() || bytes.is_exhausted() {
                 return Ok(progress(
-                    tls_bytes,
-                    plaintext_bytes,
+                    bytes.consumed(),
                     frames,
                     ReadState::BudgetExhausted,
                     self.tls.wants_write(),
                 ));
             }
 
-            let read = self.read_plaintext(budget.bytes() - plaintext_bytes)?;
+            let read = self.read_plaintext(bytes.remaining())?;
             if read != 0 {
-                plaintext_bytes += read;
+                bytes.record(read);
                 continue;
             }
             if peer_closed {
                 return Ok(progress(
-                    tls_bytes,
-                    plaintext_bytes,
+                    bytes.consumed(),
                     frames,
                     ReadState::PeerClosed,
                     self.tls.wants_write(),
                 ));
             }
-            if tls_bytes == budget.bytes() {
-                return Ok(progress(
-                    tls_bytes,
-                    plaintext_bytes,
-                    frames,
-                    ReadState::BudgetExhausted,
-                    self.tls.wants_write(),
-                ));
-            }
 
-            let mut limited = (&mut self.socket).take((budget.bytes() - tls_bytes) as u64);
+            let mut limited = (&mut self.socket).take(bytes.remaining() as u64);
             match self.tls.read_tls(&mut limited) {
                 Ok(0) => {
                     // Authenticated records and complete Kafka frames were drained above.
                     // Report bare TCP EOF afterward so policy can complete them before close.
                     return Ok(progress(
-                        tls_bytes,
-                        plaintext_bytes,
+                        bytes.consumed(),
                         frames,
                         ReadState::PeerClosed,
                         self.tls.wants_write(),
                     ));
                 }
                 Ok(read) => {
-                    tls_bytes += read;
+                    bytes.record(read);
                     let state = self.tls.process_new_packets().map_err(TlsError::Protocol)?;
                     peer_closed |= state.peer_has_closed();
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     return Ok(progress(
-                        tls_bytes,
-                        plaintext_bytes,
+                        bytes.consumed(),
                         frames,
                         ReadState::Blocked,
                         self.tls.wants_write(),
@@ -89,8 +75,7 @@ impl TlsConnection {
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {
                     return Ok(progress(
-                        tls_bytes,
-                        plaintext_bytes,
+                        bytes.consumed(),
                         frames,
                         ReadState::Interrupted,
                         self.tls.wants_write(),
@@ -125,12 +110,6 @@ impl TlsConnection {
     }
 }
 
-fn progress(
-    tls_bytes: usize,
-    plaintext_bytes: usize,
-    frames: usize,
-    state: ReadState,
-    write_pending: bool,
-) -> ReadProgress {
-    ReadProgress::new(tls_bytes.max(plaintext_bytes), frames, state, write_pending)
+fn progress(bytes: usize, frames: usize, state: ReadState, write_pending: bool) -> ReadProgress {
+    ReadProgress::new(bytes, frames, state, write_pending)
 }

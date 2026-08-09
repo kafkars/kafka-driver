@@ -15,7 +15,7 @@ pub(in crate::reactor) enum ReadState {
     PeerClosed,
 }
 
-/// Progress made by one bounded read drive.
+/// Total transport-layer byte movement and frame progress from one bounded read drive.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) struct ReadProgress {
     bytes: usize,
@@ -107,7 +107,7 @@ pub(in crate::reactor) enum WriteState {
     BudgetExhausted,
 }
 
-/// Progress made by one bounded write drive.
+/// Total transport-layer byte movement and completion progress from one bounded write drive.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) struct WriteDrive {
     bytes: usize,

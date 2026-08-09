@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use kafka_driver::{Driver, Reactor, TurnOutcome};
+use kafka_driver::{Call, CompletionError, Driver, Reactor, TurnOutcome};
 use kafka_wire::{ApiVersionsRequest, ApiVersionsResponse};
 
 use tls_broker::{BrokerStep, TlsBroker};
@@ -44,13 +44,62 @@ fn generated_call_round_trips_through_the_public_rustls_host() {
         TurnOutcome::Progress { commands: 1, .. }
     ));
     drive_until(&mut reactor, &steps, BrokerStep::CallResponded);
-    drive_once(&mut reactor);
+    let result = drive_call_until_ready(&mut reactor, &call);
     owner
         .join()
         .unwrap_or_else(|_| panic!("TLS broker fixture must finish cleanly"));
 
     // Then
-    assert_eq!(call.wait(), Ok(Ok(response)));
+    assert_eq!(result, Ok(Ok(response)));
+}
+
+#[test]
+fn valid_tls_response_precedes_a_malformed_trailing_frame() {
+    let broker = TlsBroker::bind();
+    let address = broker.address();
+    let tls = broker.client_config();
+    let (steps, owner) = broker.spawn_malformed_after_call();
+    let Ok((driver, mut reactor)) = Driver::builder()
+        .rustls_broker(address, tls)
+        .build_reactor()
+    else {
+        panic!("build configured rustls reactor");
+    };
+    drive_until(&mut reactor, &steps, BrokerStep::NegotiationResponded);
+    drive_once(&mut reactor);
+    let response = ApiVersionsResponse::default();
+    let Ok(call) = driver.call(ApiVersionsRequest::default(), Duration::from_secs(1)) else {
+        panic!("admit generated TLS call command");
+    };
+    let admitted = reactor
+        .turn(Duration::ZERO)
+        .unwrap_or_else(|error| panic!("admit TLS call: {error}"));
+    assert!(matches!(
+        admitted,
+        TurnOutcome::Progress { commands: 1, .. }
+    ));
+
+    drive_until(
+        &mut reactor,
+        &steps,
+        BrokerStep::CallRespondedBeforeMalformedFrame,
+    );
+    let result = drive_call_until_ready(&mut reactor, &call);
+    owner
+        .join()
+        .unwrap_or_else(|_| panic!("TLS broker fixture must finish cleanly"));
+
+    assert_eq!(result, Ok(Ok(response)));
+}
+
+fn drive_call_until_ready<T>(reactor: &mut Reactor, call: &Call<T>) -> Result<T, CompletionError> {
+    for _ in 0..64 {
+        if let Some(result) = call.try_result() {
+            return result;
+        }
+        drive_once(reactor);
+    }
+    panic!("TLS call remained pending");
 }
 
 fn drive_until(reactor: &mut Reactor, steps: &Receiver<BrokerStep>, expected: BrokerStep) {

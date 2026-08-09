@@ -5,6 +5,7 @@ use kafka_wire_core::{ApiKey, ApiVersion, DecodeError, EncodeError};
 
 /// Why one generated request could not complete successfully.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RequestError {
     /// The generated request could not be encoded at the selected version.
     Encode(EncodeError),
@@ -102,6 +103,7 @@ pub(crate) type ResponseFailure = RequestError;
 
 /// Sanitized reason all remaining typed response slots were failed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ResponseCloseReason {
     /// The transport ended or failed.
     TransportClosed,

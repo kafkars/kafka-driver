@@ -103,12 +103,15 @@ impl SingleBroker {
         let progress = match result {
             Ok(progress) => progress,
             Err(error) => {
-                self.transport_lost_observed(
-                    poller,
-                    identity,
-                    transport_failure(&error),
-                    observed_at,
-                )?;
+                self.process_frames(poller, identity, now, observed_at)?;
+                if self.resource_token == Some(token) {
+                    self.transport_lost_observed(
+                        poller,
+                        identity,
+                        transport_failure(&error),
+                        observed_at,
+                    )?;
+                }
                 return Ok(true);
             }
         };
@@ -171,10 +174,14 @@ impl SingleBroker {
             progress.state(),
             WriteState::BudgetExhausted | WriteState::Interrupted
         );
-        if progress.state() == WriteState::Idle {
-            self.resources
+        if progress.state() == WriteState::Idle
+            && self
+                .resources
                 .reregister(poller, token, PollInterest::Readable)
-                .map_err(BrokerError::ResourceInterest)?;
+                .is_err()
+        {
+            self.transport_lost_observed(poller, identity, TransportFailure::Other, observed_at)?;
+            return Ok(true);
         }
         Ok(progress.bytes() != 0 || progress.completed() != 0)
     }

@@ -28,7 +28,7 @@ mod address_refresh_terminal_test;
 #[cfg(test)]
 mod address_rotation_test;
 #[cfg(test)]
-mod authentication_fixture_test;
+pub(in crate::reactor) mod authentication_fixture_test;
 #[cfg(test)]
 mod authentication_test;
 #[cfg(test)]
@@ -36,11 +36,15 @@ mod deadline_test;
 #[cfg(test)]
 mod identity_test;
 #[cfg(test)]
+mod interest_failure_test;
+#[cfg(test)]
 mod lifecycle_test;
 #[cfg(test)]
 mod limits_test;
 #[cfg(test)]
 mod negotiation_test;
+#[cfg(test)]
+mod read_failure_test;
 #[cfg(test)]
 mod reconnect_test;
 #[cfg(test)]

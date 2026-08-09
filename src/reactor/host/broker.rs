@@ -6,6 +6,8 @@ use crate::reactor::{broker::DeadlineProgress, clock::ReactorClock};
 
 use super::{Reactor, ReactorError};
 
+const WORKER_SHUTDOWN_OBSERVATION_INTERVAL: Duration = Duration::from_millis(10);
+
 impl Reactor {
     pub(super) fn observe_poll_events(&mut self) -> Result<bool, ReactorError> {
         let now = self.clock.now().map_err(ReactorError::clock)?;
@@ -37,6 +39,11 @@ impl Reactor {
 
     pub(super) fn poll_wait(&self, host_limit: Duration) -> Result<Duration, ReactorError> {
         let now = self.clock.now().map_err(ReactorError::clock)?;
+        let host_limit = if self.worker_shutdown_pending() {
+            host_limit.min(WORKER_SHUTDOWN_OBSERVATION_INTERVAL)
+        } else {
+            host_limit
+        };
         let deadline = self
             .brokers
             .next_deadline()

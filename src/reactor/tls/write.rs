@@ -6,7 +6,10 @@ use kafka_driver_transport::WriteProgress;
 
 use crate::reactor::transport::{CompletedWrite, WriteBudget, WriteDrive, WriteState};
 
-use super::{TlsConnection, TlsError, io_limit::LimitedWriter};
+use super::{
+    TlsConnection, TlsError,
+    io_limit::{LimitedWriter, TlsByteBudget},
+};
 
 impl TlsConnection {
     pub(in crate::reactor) fn drive_write(
@@ -14,46 +17,33 @@ impl TlsConnection {
         budget: WriteBudget,
         destination: &mut Vec<CompletedWrite>,
     ) -> Result<WriteDrive, TlsError> {
-        let mut tls_bytes = 0;
-        let mut plaintext_bytes = 0;
+        let mut bytes = TlsByteBudget::new(budget.bytes());
         let mut completed = 0;
         loop {
             if self.writes.queued_frames() == 0 && !self.tls.wants_write() {
-                return Ok(progress(
-                    tls_bytes,
-                    plaintext_bytes,
-                    completed,
-                    WriteState::Idle,
-                ));
+                return Ok(progress(bytes.consumed(), completed, WriteState::Idle));
             }
             if self.tls.wants_write() {
-                if tls_bytes == budget.bytes() {
+                if bytes.is_exhausted() {
                     return Ok(progress(
-                        tls_bytes,
-                        plaintext_bytes,
+                        bytes.consumed(),
                         completed,
                         WriteState::BudgetExhausted,
                     ));
                 }
-                let mut writer = LimitedWriter::new(&mut self.socket, budget.bytes() - tls_bytes);
+                let mut writer = LimitedWriter::new(&mut self.socket, bytes.remaining());
                 match self.tls.write_tls(&mut writer) {
                     Ok(0) => return Err(TlsError::WriteZero),
                     Ok(written) => {
-                        tls_bytes += written;
+                        bytes.record(written);
                         continue;
                     }
                     Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                        return Ok(progress(
-                            tls_bytes,
-                            plaintext_bytes,
-                            completed,
-                            WriteState::Blocked,
-                        ));
+                        return Ok(progress(bytes.consumed(), completed, WriteState::Blocked));
                     }
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => {
                         return Ok(progress(
-                            tls_bytes,
-                            plaintext_bytes,
+                            bytes.consumed(),
                             completed,
                             WriteState::Interrupted,
                         ));
@@ -61,15 +51,14 @@ impl TlsConnection {
                     Err(error) => return Err(TlsError::TlsWrite(error)),
                 }
             }
-            if plaintext_bytes == budget.bytes() {
+            if bytes.is_exhausted() {
                 return Ok(progress(
-                    tls_bytes,
-                    plaintext_bytes,
+                    bytes.consumed(),
                     completed,
                     WriteState::BudgetExhausted,
                 ));
             }
-            let Some(remaining) = NonZeroUsize::new(budget.bytes() - plaintext_bytes) else {
+            let Some(remaining) = NonZeroUsize::new(bytes.remaining()) else {
                 continue;
             };
             let Some(front) = self.writes.front(remaining) else {
@@ -78,7 +67,7 @@ impl TlsConnection {
             match self.tls.writer().write(front.bytes()) {
                 Ok(0) => return Err(TlsError::WriteZero),
                 Ok(written) => {
-                    plaintext_bytes += written;
+                    bytes.record(written);
                     if let WriteProgress::Complete {
                         call_id,
                         effect_id,
@@ -100,11 +89,6 @@ impl TlsConnection {
     }
 }
 
-fn progress(
-    tls_bytes: usize,
-    plaintext_bytes: usize,
-    completed: usize,
-    state: WriteState,
-) -> WriteDrive {
-    WriteDrive::new(tls_bytes.max(plaintext_bytes), completed, state)
+fn progress(bytes: usize, completed: usize, state: WriteState) -> WriteDrive {
+    WriteDrive::new(bytes, completed, state)
 }

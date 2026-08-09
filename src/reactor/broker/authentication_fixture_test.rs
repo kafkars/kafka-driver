@@ -126,7 +126,7 @@ pub(super) fn advance_to_handshake(
     decode_request(read_frame(peer), HANDSHAKE_VERSION, 1)
 }
 
-pub(super) fn accepted_handshake_response(mechanism: &'static str) -> Vec<u8> {
+pub(in crate::reactor) fn accepted_handshake_response(mechanism: &'static str) -> Vec<u8> {
     let mut response = SaslHandshakeResponse::default();
     response.mechanisms.push(StrBytes::from(mechanism));
     encode_response(1, &response, HANDSHAKE_VERSION, ApiVersion::new(0))
@@ -150,7 +150,7 @@ pub(super) fn authenticate_response(correlation_id: i32, auth_bytes: Bytes) -> V
     )
 }
 
-pub(super) fn rejected_authenticate_response(correlation_id: i32) -> Vec<u8> {
+pub(in crate::reactor) fn rejected_authenticate_response(correlation_id: i32) -> Vec<u8> {
     let mut response = SaslAuthenticateResponse::default();
     response.error_code = 1;
     encode_response(
@@ -165,7 +165,7 @@ pub(super) fn decode_authenticate(frame: Bytes) -> SaslAuthenticateRequest {
     decode_request(frame, AUTHENTICATE_VERSION, 1)
 }
 
-pub(super) fn read_frame(peer: &mut TcpStream) -> Bytes {
+pub(in crate::reactor) fn read_frame(peer: &mut TcpStream) -> Bytes {
     let mut prefix = [0; size_of::<i32>()];
     peer.read_exact(&mut prefix)
         .unwrap_or_else(|error| panic!("read frame length: {error}"));
@@ -177,7 +177,7 @@ pub(super) fn read_frame(peer: &mut TcpStream) -> Bytes {
     Bytes::from(body)
 }
 
-fn negotiation_response() -> Vec<u8> {
+pub(in crate::reactor) fn negotiation_response() -> Vec<u8> {
     let mut response = ApiVersionsResponse::default();
     response.api_keys = vec![
         advertised(&SASL_HANDSHAKE_API_DESCRIPTOR, 1),

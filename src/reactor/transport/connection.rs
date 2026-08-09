@@ -115,6 +115,15 @@ impl TransportConnection {
             Self::Rustls(connection) => connection.queued_write_bytes(),
         }
     }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn fail_read_after_frame(&mut self, kind: io::ErrorKind) {
+        match self {
+            Self::Plaintext(connection) => connection.fail_read_after_frame(kind),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(_) => panic!("plaintext read-failure injection requires plaintext"),
+        }
+    }
 }
 
 impl Source for TransportConnection {

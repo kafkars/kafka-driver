@@ -29,6 +29,8 @@ services:
   kafka-1:
     image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
     hostname: kafka-1
+    volumes:
+      - kafka-1-data:/var/lib/kafka/data
     ports:
       - "127.0.0.1:${KAFKA_1_HOST_PORT}:9092"
     environment:
@@ -40,6 +42,8 @@ services:
   kafka-2:
     image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
     hostname: kafka-2
+    volumes:
+      - kafka-2-data:/var/lib/kafka/data
     ports:
       - "127.0.0.1:${KAFKA_2_HOST_PORT}:9092"
     environment:
@@ -51,6 +55,8 @@ services:
   kafka-3:
     image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
     hostname: kafka-3
+    volumes:
+      - kafka-3-data:/var/lib/kafka/data
     ports:
       - "127.0.0.1:${KAFKA_3_HOST_PORT}:9092"
     environment:
@@ -58,3 +64,8 @@ services:
       KAFKA_NODE_ID: "3"
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:19092,EXTERNAL://127.0.0.1:${KAFKA_3_HOST_PORT}
     healthcheck: *kafka-healthcheck
+
+volumes:
+  kafka-1-data:
+  kafka-2-data:
+  kafka-3-data:

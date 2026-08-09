@@ -21,6 +21,8 @@ pub(in crate::reactor) struct TransportResources {
     connections: ResourceRegistry<TransportConnection>,
     limits: TransportLimits,
     security: BrokerSecurity,
+    #[cfg(test)]
+    reject_next_reregister: bool,
 }
 
 impl TransportResources {
@@ -43,6 +45,8 @@ impl TransportResources {
             connections: ResourceRegistry::in_namespace(capacity, namespace),
             limits,
             security,
+            #[cfg(test)]
+            reject_next_reregister: false,
         }
     }
 
@@ -92,6 +96,10 @@ impl TransportResources {
         token: ResourceToken,
         interest: PollInterest,
     ) -> io::Result<bool> {
+        #[cfg(test)]
+        if std::mem::take(&mut self.reject_next_reregister) {
+            return Err(io::Error::other("injected readiness-interest failure"));
+        }
         let Some((_, connection)) = self.connections.get_mut(token) else {
             return Ok(false);
         };
@@ -123,6 +131,11 @@ impl TransportResources {
     #[cfg(test)]
     pub(in crate::reactor) const fn len(&self) -> usize {
         self.connections.len()
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn reject_next_reregister(&mut self) {
+        self.reject_next_reregister = true;
     }
 }
 

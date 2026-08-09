@@ -14,6 +14,7 @@ use crate::{
 /// When returned by request admission, every variant leaves that request
 /// definitely unsent because no command entered reactor ownership.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum SubmitError {
     /// A command lane or the shutdown barrier has reached its configured capacity.
     Full,

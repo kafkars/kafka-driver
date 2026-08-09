@@ -1,24 +1,21 @@
 //! Ordered interpretation of secret-free authentication child effects.
 
 use kafka_driver_core::{
-    AuthenticationEffect, AuthenticationFailure, AuthenticationRound, CallId, ConnectionEffect,
+    AuthenticationEffect, AuthenticationFailure, AuthenticationRound, ConnectionEffect,
     ConnectionPhase, EffectId,
 };
-use kafka_driver_transport::WriteAdmissionFailure;
-use kafka_wire_core::Bytes;
 
 use crate::{
     authentication::{AuthenticateExchange, AuthenticationExchange, HandshakeExchange},
     reactor::{
-        PollInterest, Poller,
+        Poller,
         resource::ResourceIdentity,
         timer::{DeadlineTimer, TimerScheduleError},
     },
 };
 
 use super::super::{BrokerError, owner::SingleBroker};
-
-const AUTHENTICATION_CALL: CallId = CallId::from_raw(0);
+use super::write::AuthenticationWriteOutcome;
 
 impl SingleBroker {
     pub(super) fn interpret_authentication_effects(
@@ -103,14 +100,18 @@ impl SingleBroker {
                     }
                 };
                 self.authentication_exchange = Some(AuthenticationExchange::Handshake(exchange));
-                if !self.admit_authentication_write(poller, identity, effect_id, frame)? {
-                    self.fail_handshake(
-                        poller,
-                        identity,
-                        effect_id,
-                        AuthenticationFailure::LocalCapacity,
-                    )?;
-                    return Ok(false);
+                match self.admit_authentication_write(poller, identity, effect_id, frame)? {
+                    AuthenticationWriteOutcome::Admitted => {}
+                    AuthenticationWriteOutcome::CapacityReached => {
+                        self.fail_handshake(
+                            poller,
+                            identity,
+                            effect_id,
+                            AuthenticationFailure::LocalCapacity,
+                        )?;
+                        return Ok(false);
+                    }
+                    AuthenticationWriteOutcome::ConnectionLost => return Ok(false),
                 }
             }
             AuthenticationEffect::SendExchange {
@@ -186,50 +187,20 @@ impl SingleBroker {
             }
         };
         self.authentication_exchange = Some(AuthenticationExchange::Authenticate(exchange));
-        if !self.admit_authentication_write(poller, identity, effect_id, frame)? {
-            self.fail_exchange(
-                poller,
-                identity,
-                effect_id,
-                round,
-                AuthenticationFailure::LocalCapacity,
-            )?;
-            return Ok(false);
+        match self.admit_authentication_write(poller, identity, effect_id, frame)? {
+            AuthenticationWriteOutcome::Admitted => {}
+            AuthenticationWriteOutcome::CapacityReached => {
+                self.fail_exchange(
+                    poller,
+                    identity,
+                    effect_id,
+                    round,
+                    AuthenticationFailure::LocalCapacity,
+                )?;
+                return Ok(false);
+            }
+            AuthenticationWriteOutcome::ConnectionLost => return Ok(false),
         }
         Ok(true)
-    }
-
-    fn admit_authentication_write(
-        &mut self,
-        poller: &Poller,
-        identity: ResourceIdentity,
-        effect_id: EffectId,
-        frame: Bytes,
-    ) -> Result<bool, BrokerError> {
-        let token = self.resource_token.ok_or(BrokerError::MissingEffect)?;
-        let (observed, connection) = self
-            .resources
-            .get_mut(token)
-            .ok_or(BrokerError::MissingEffect)?;
-        if observed != identity {
-            return Err(BrokerError::MissingEffect);
-        }
-        let admitted = match connection.admit_write(AUTHENTICATION_CALL, effect_id, frame) {
-            Ok(_) => true,
-            Err(error) => match error.failure() {
-                WriteAdmissionFailure::FrameCapacityReached { .. }
-                | WriteAdmissionFailure::ByteCapacityReached { .. } => false,
-                failure @ (WriteAdmissionFailure::FrameTooShort { .. }
-                | WriteAdmissionFailure::IdentityInUse(_)) => {
-                    return Err(BrokerError::AuthenticationWrite(failure));
-                }
-            },
-        };
-        if admitted {
-            self.resources
-                .reregister(poller, token, PollInterest::ReadWrite)
-                .map_err(BrokerError::ResourceInterest)?;
-        }
-        Ok(admitted)
     }
 }

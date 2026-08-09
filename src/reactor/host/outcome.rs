@@ -2,6 +2,7 @@
 
 /// Result of one bounded reactor turn.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum TurnOutcome {
     /// No command was available before the host's wait limit.
     Idle,

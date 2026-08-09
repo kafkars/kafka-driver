@@ -28,10 +28,12 @@ impl BrokerSet {
             self.owner_capacity.get(),
         ) == Some(0)
         {
-            return self.seed.as_mut().map_or(Ok(false), |seed| {
+            let progress = self.seed.as_mut().map_or(Ok(false), |seed| {
                 seed.observe(poller, event, now, observed_at)
                     .map_err(BrokerSetError::Broker)
-            });
+            })?;
+            let settled = self.settle_terminal_seed_waiting(Some(observed_at));
+            return Ok(progress || settled != 0);
         }
         let Some(owner) = token.owner(
             self.broker_limits.resource_capacity().get(),
@@ -61,6 +63,7 @@ impl BrokerSet {
             seed.continue_io(poller, now, observed_at)
                 .map_err(BrokerSetError::Broker)
         })?;
+        progress |= self.settle_terminal_seed_waiting(Some(observed_at)) != 0;
         progress |= self.admit_seed_waiting(poller, now)?;
         progress |= self.continue_runnable_lanes(poller, now, observed_at)?;
         Ok(progress)
@@ -81,6 +84,8 @@ impl BrokerSet {
                     seed.fire_due(poller, now).map_err(BrokerSetError::Broker)
                 })?,
         );
+        let terminal_settled = self.settle_terminal_seed_waiting(None);
+        progress = progress.merge(DeadlineProgress::from_work(terminal_settled, false));
         let mut progressed_lanes = 0;
         while progressed_lanes < self.lane_turn_budget.get() {
             let Some(lane) = self.deadlines.take_due(now) else {

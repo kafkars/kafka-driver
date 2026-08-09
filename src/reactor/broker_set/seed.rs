@@ -1,6 +1,8 @@
 //! Seed-connection installation, submission, and diagnostics.
 
-use kafka_driver_core::{BrokerPhase, BrokerState, ConnectionPhase, ConnectionState, Moment};
+use kafka_driver_core::{
+    BrokerPhase, BrokerState, ConnectionPhase, ConnectionState, Moment, OutcomeStamp,
+};
 
 use crate::{
     config::BrokerConfig,
@@ -8,7 +10,10 @@ use crate::{
     request::ErasedRequest,
 };
 
-use super::{BrokerSet, BrokerSetError, waiting::WaitingCallOutcome};
+use super::{
+    BrokerSet, BrokerSetError,
+    waiting::{WaitingCallOutcome, terminal},
+};
 
 impl BrokerSet {
     pub(in crate::reactor) fn install_seed(
@@ -105,6 +110,10 @@ impl BrokerSet {
         request: Box<dyn ErasedRequest>,
         now: Moment,
     ) -> Result<(), BrokerSetError> {
+        if let Some(BrokerState::Closed { reason }) = self.seed_broker_state() {
+            request.fail(terminal(reason));
+            return Ok(());
+        }
         if self.seed_is_ready() {
             let Some(seed) = &mut self.seed else {
                 return Err(BrokerSetError::SeedMissing);
@@ -145,6 +154,20 @@ impl BrokerSet {
 
     pub(super) fn seed_waiting_has_local_work(&self) -> bool {
         self.seed_is_ready() && !self.seed_waiting.is_empty()
+    }
+
+    pub(super) fn settle_terminal_seed_waiting(
+        &mut self,
+        observed_at: Option<OutcomeStamp>,
+    ) -> usize {
+        let Some(BrokerState::Closed { reason }) = self.seed_broker_state() else {
+            return 0;
+        };
+        let settled = self.seed_waiting.len();
+        if settled != 0 {
+            self.seed_waiting.fail_all(&terminal(reason), observed_at);
+        }
+        settled
     }
 
     fn seed_is_ready(&self) -> bool {
