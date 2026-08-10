@@ -1,10 +1,10 @@
-//! Public real-loop scenario for bootstrap failover after a resolved socket refuses.
+//! Public real-loop scenarios for bootstrap failover after one resolved endpoint fails.
 
 mod support;
 
 use std::{
     io::{Read, Write},
-    net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
+    net::{TcpListener, TcpStream},
     num::NonZeroU16,
     time::Duration,
 };
@@ -17,17 +17,19 @@ use kafka_driver::{
 use support::complete_negotiation;
 
 #[test]
-fn refused_first_bootstrap_endpoint_rotates_after_complete_dial_failure() {
+fn reset_first_bootstrap_endpoint_rotates_after_complete_dial_failure() {
     // Given
-    let refused_port = refused_loopback_port();
+    let reset = listener();
     let available = listener();
     let available_port = local_port(&available);
     let (_driver, mut reactor) = Driver::builder()
-        .bootstrap(bootstrap(refused_port, available_port))
+        .bootstrap(bootstrap(local_port(&reset), available_port))
         .build_reactor()
         .unwrap_or_else(|error| panic!("build bootstrap reactor: {error}"));
 
     // When
+    let reset_peer = accept_after_driving(&reset, &mut reactor);
+    drop(reset_peer);
     let mut peer = accept_after_driving(&available, &mut reactor);
     complete_negotiation(&mut peer, &mut reactor);
 
@@ -105,22 +107,6 @@ fn bootstrap(first_port: u16, second_port: u16) -> BootstrapSet {
 
 fn listener() -> TcpListener {
     TcpListener::bind("127.0.0.1:0").unwrap_or_else(|error| panic!("bind loopback broker: {error}"))
-}
-
-fn refused_loopback_port() -> u16 {
-    for _ in 0..16 {
-        let probe = UdpSocket::bind("127.0.0.1:0")
-            .unwrap_or_else(|error| panic!("reserve loopback probe port: {error}"));
-        let port = probe
-            .local_addr()
-            .unwrap_or_else(|error| panic!("read loopback probe address: {error}"))
-            .port();
-        let address = SocketAddr::from(([127, 0, 0, 1], port));
-        if TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_err() {
-            return port;
-        }
-    }
-    panic!("find an unbound loopback TCP port");
 }
 
 fn local_port(listener: &TcpListener) -> u16 {

@@ -1,9 +1,12 @@
-//! Real-loop proof that terminal reconnect policy never arms endpoint refresh.
+//! Registered-transport proof that terminal reconnect policy never arms endpoint refresh.
 
-use std::num::{NonZeroU16, NonZeroUsize};
+use std::{
+    net::TcpListener,
+    num::{NonZeroU16, NonZeroUsize},
+};
 
 use kafka_driver_core::{
-    BrokerCloseReason, BrokerPhase, BrokerState, ConnectionEpoch, DnsFailure, IpAddress, Moment,
+    BrokerCloseReason, BrokerState, ConnectionEpoch, DnsFailure, IpAddress, Moment,
     ResolutionLimits, ResolvedAddress, ResolvedAddressSet,
 };
 
@@ -12,17 +15,15 @@ use crate::{
     reactor::{Poller, resource::ResourceNamespace},
 };
 
-use super::{
-    BrokerLimits, SingleBroker,
-    scenario_support_test::{observe_once, refused_loopback_port},
-};
+use super::{BrokerLimits, SingleBroker, scenario_support_test::refuse_pending_connect};
 
 #[test]
 fn epoch_exhaustion_closes_without_arming_endpoint_refresh() {
     // Given
-    let port = refused_loopback_port();
+    let listener = listener();
+    let port = local_port(&listener);
     let config = BrokerTemplate::plaintext().at_resolved(endpoint(port), addresses(port));
-    let mut poller = Poller::new(NonZeroUsize::MIN)
+    let poller = Poller::new(NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));
     let mut broker = SingleBroker::new_configured_in_epoch(
         config,
@@ -36,9 +37,7 @@ fn epoch_exhaustion_closes_without_arming_endpoint_refresh() {
     broker
         .start(&poller, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("start terminal broker epoch: {error}"));
-    if broker.broker_state().phase() == BrokerPhase::Connecting {
-        observe_once(&mut poller, &mut broker);
-    }
+    refuse_pending_connect(&poller, &mut broker);
 
     // Then
     assert_eq!(
@@ -54,17 +53,16 @@ fn epoch_exhaustion_closes_without_arming_endpoint_refresh() {
 #[test]
 fn unusable_dns_answer_closes_without_reserving_a_retry_timer() {
     // Given
-    let port = refused_loopback_port();
+    let listener = listener();
+    let port = local_port(&listener);
     let config = BrokerTemplate::plaintext().at_resolved(endpoint(port), addresses(port));
-    let mut poller = Poller::new(NonZeroUsize::MIN)
+    let poller = Poller::new(NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));
     let mut broker = SingleBroker::new_configured(config, BrokerLimits::default());
     broker
         .start(&poller, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("start refused broker: {error}"));
-    if broker.broker_state().phase() == BrokerPhase::Connecting {
-        observe_once(&mut poller, &mut broker);
-    }
+    refuse_pending_connect(&poller, &mut broker);
     assert!(broker.address_refresh_needed());
     assert!(
         broker
@@ -108,4 +106,15 @@ fn addresses(port: u16) -> ResolvedAddressSet {
 
 fn nonzero_port(port: u16) -> NonZeroU16 {
     NonZeroU16::new(port).unwrap_or_else(|| panic!("listener port is nonzero"))
+}
+
+fn listener() -> TcpListener {
+    TcpListener::bind("127.0.0.1:0").unwrap_or_else(|error| panic!("bind inert broker: {error}"))
+}
+
+fn local_port(listener: &TcpListener) -> u16 {
+    listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read inert broker address: {error}"))
+        .port()
 }

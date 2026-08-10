@@ -1,4 +1,4 @@
-//! Real-loop scenario for discovered-broker re-resolution after candidate exhaustion.
+//! Registered-transport scenario for broker re-resolution after candidate exhaustion.
 
 use std::{
     net::TcpListener,
@@ -21,12 +21,13 @@ use crate::{
 };
 
 use super::{BrokerLane, BrokerSet};
-use crate::reactor::broker::scenario_support_test::{complete_negotiation, refused_loopback_port};
+use crate::reactor::broker::scenario_support_test::{complete_negotiation, refuse_pending_connect};
 
 #[test]
 fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
     // Given
-    let refused_port = refused_loopback_port();
+    let refused = listener();
+    let refused_port = local_port(&refused);
     let available = listener();
     let available_port = local_port(&available);
     let mut poller = Poller::new(NonZeroUsize::MIN)
@@ -62,7 +63,10 @@ fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
             Moment::ORIGIN,
         )
         .unwrap_or_else(|error| panic!("complete initial resolution: {error}"));
-    observe_refusal_if_needed(&mut poller, &mut brokers, lane);
+    refuse_pending_connect(&poller, connection_mut(&mut brokers, lane));
+    brokers
+        .sync_lane(lane)
+        .unwrap_or_else(|error| panic!("sync refused broker lane: {error}"));
     assert_eq!(
         connection(&brokers, lane).broker_state().phase(),
         kafka_driver_core::BrokerPhase::Refreshing
@@ -147,47 +151,6 @@ fn retry_after_temporary_failure(
     brokers
         .start_address_refresh(lane, EffectId::from_raw(3))
         .unwrap_or_else(|error| panic!("retry address refresh: {error}"))
-}
-
-fn observe_refusal_if_needed(poller: &mut Poller, brokers: &mut BrokerSet, lane: BrokerLane) {
-    if connection(brokers, lane).broker_state().phase()
-        == kafka_driver_core::BrokerPhase::Refreshing
-    {
-        return;
-    }
-    let mut events = Vec::with_capacity(2);
-    for _ in 0..4 {
-        if brokers.has_local_io()
-            && brokers
-                .continue_io(
-                    poller,
-                    Moment::ORIGIN,
-                    kafka_driver_core::OutcomeStamp::ORIGIN,
-                )
-                .unwrap_or_else(|error| panic!("continue refused candidate: {error}"))
-        {
-            return;
-        }
-        events.clear();
-        poller
-            .poll_into(Some(Duration::from_secs(1)), &mut events)
-            .unwrap_or_else(|error| panic!("poll refused candidate: {error}"));
-        let mut progress = false;
-        for event in events.drain(..) {
-            progress |= brokers
-                .observe(
-                    poller,
-                    event,
-                    Moment::ORIGIN,
-                    kafka_driver_core::OutcomeStamp::ORIGIN,
-                )
-                .unwrap_or_else(|error| panic!("observe refused candidate: {error}"));
-        }
-        if progress {
-            return;
-        }
-    }
-    panic!("expected refused candidate progress before timeout");
 }
 
 fn connection(brokers: &BrokerSet, lane: BrokerLane) -> &super::super::broker::SingleBroker {

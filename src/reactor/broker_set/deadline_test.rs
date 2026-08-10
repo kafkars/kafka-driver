@@ -13,8 +13,8 @@ use crate::{
     MetadataLimits, RequestError,
     config::BrokerTemplate,
     reactor::{
-        PollEvent, Poller,
-        broker::{BrokerLimits, scenario_support_test::refused_loopback_port},
+        Poller,
+        broker::{BrokerLimits, scenario_support_test::refuse_pending_connect},
     },
     request::erased_request,
 };
@@ -83,14 +83,19 @@ fn dns_success_without_socket_readiness_still_expires_the_waiting_call() {
 #[test]
 fn endpoint_refresh_cannot_outlive_a_waiting_call_deadline() {
     // Given: the selected address refuses its initial connection and enters backoff.
-    let port = refused_loopback_port();
+    let refused = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind refused broker: {error}"));
+    let port = refused
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read refused broker address: {error}"))
+        .port();
     let directory = directory(port);
     let route = directory
         .route_to(broker_id())
         .unwrap_or_else(|| panic!("known broker route"));
     let mut brokers = broker_set();
     assert!(brokers.install_directory(&directory).is_ok());
-    let mut poller = Poller::new(nonzero(1)).unwrap_or_else(|error| panic!("test poller: {error}"));
+    let poller = Poller::new(nonzero(1)).unwrap_or_else(|error| panic!("test poller: {error}"));
     let (call, request) = erased_request(
         kafka_driver_core::CallId::from_raw(1),
         ApiVersionsRequest::default(),
@@ -114,7 +119,18 @@ fn endpoint_refresh_cannot_outlive_a_waiting_call_deadline() {
             Moment::ORIGIN,
         )
         .unwrap_or_else(|error| panic!("complete DNS: {error}"));
-    observe_once(&mut poller, &mut brokers);
+    let index = brokers
+        .child_index(lane)
+        .unwrap_or_else(|| panic!("broker child slot"));
+    let connection = brokers
+        .children
+        .get_mut(index)
+        .and_then(|child| child.connection.as_mut())
+        .unwrap_or_else(|| panic!("broker child connection"));
+    refuse_pending_connect(&poller, connection);
+    brokers
+        .sync_lane(lane)
+        .unwrap_or_else(|error| panic!("sync refused broker lane: {error}"));
     assert_eq!(
         brokers.child_broker_phase(lane),
         Some(BrokerPhase::Refreshing)
@@ -140,42 +156,6 @@ fn endpoint_refresh_cannot_outlive_a_waiting_call_deadline() {
             delivery: Delivery::NotSent,
         }))
     ));
-}
-
-fn observe_once(poller: &mut Poller, brokers: &mut BrokerSet) {
-    let mut events = Vec::<PollEvent>::with_capacity(1);
-    for _ in 0..4 {
-        if brokers.has_local_io()
-            && brokers
-                .continue_io(
-                    poller,
-                    Moment::ORIGIN,
-                    kafka_driver_core::OutcomeStamp::ORIGIN,
-                )
-                .unwrap_or_else(|error| panic!("continue refused broker: {error}"))
-        {
-            return;
-        }
-        events.clear();
-        poller
-            .poll_into(Some(Duration::from_secs(1)), &mut events)
-            .unwrap_or_else(|error| panic!("poll refused broker: {error}"));
-        let mut progress = false;
-        for event in events.drain(..) {
-            progress |= brokers
-                .observe(
-                    poller,
-                    event,
-                    Moment::ORIGIN,
-                    kafka_driver_core::OutcomeStamp::ORIGIN,
-                )
-                .unwrap_or_else(|error| panic!("observe connect failure: {error}"));
-        }
-        if progress {
-            return;
-        }
-    }
-    panic!("expected connect failure before timeout");
 }
 
 fn broker_set() -> BrokerSet {

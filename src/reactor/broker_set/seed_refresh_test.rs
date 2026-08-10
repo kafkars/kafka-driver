@@ -1,9 +1,8 @@
-//! Real-loop seed refresh race fenced by bootstrap and connection generations.
+//! Registered-transport seed refresh race fenced by bootstrap and connection generations.
 
 use std::{
     net::TcpListener,
     num::{NonZeroU16, NonZeroUsize},
-    time::Duration,
 };
 
 use kafka_driver_core::{
@@ -19,7 +18,7 @@ use crate::{
         bootstrap::ResolvedSeed,
         broker::{
             BrokerLimits,
-            scenario_support_test::{complete_negotiation, refused_loopback_port},
+            scenario_support_test::{complete_negotiation, refuse_pending_connect},
         },
     },
 };
@@ -29,7 +28,8 @@ use super::BrokerSet;
 #[test]
 fn seed_refresh_suspends_old_reconnect_and_ignores_stale_configuration() {
     // Given: the only address for generation one has failed.
-    let refused_port = refused_loopback_port();
+    let refused = listener();
+    let refused_port = local_port(&refused);
     let available = listener();
     let available_port = local_port(&available);
     let mut poller = Poller::new(NonZeroUsize::MIN)
@@ -38,7 +38,12 @@ fn seed_refresh_suspends_old_reconnect_and_ignores_stale_configuration() {
     brokers
         .install_resolved_seed(seed(1, "old.test", refused_port), &poller, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("install first seed: {error}"));
-    observe_refusal(&mut poller, &mut brokers);
+    refuse_pending_connect(
+        &poller,
+        brokers
+            .seed_mut()
+            .unwrap_or_else(|| panic!("installed seed owner")),
+    );
     assert_eq!(
         brokers.seed_mut().map(|seed| seed.broker_state().phase()),
         Some(BrokerPhase::Refreshing)
@@ -125,42 +130,6 @@ fn addresses(port: u16) -> ResolvedAddressSet {
         ResolutionLimits::default(),
     )
     .unwrap_or_else(|error| panic!("valid addresses: {error}"))
-}
-
-fn observe_refusal(poller: &mut Poller, brokers: &mut BrokerSet) {
-    let mut events = Vec::with_capacity(1);
-    for _ in 0..4 {
-        if brokers.has_local_io()
-            && brokers
-                .continue_io(
-                    poller,
-                    Moment::ORIGIN,
-                    kafka_driver_core::OutcomeStamp::ORIGIN,
-                )
-                .unwrap_or_else(|error| panic!("continue refused connection: {error}"))
-        {
-            return;
-        }
-        events.clear();
-        poller
-            .poll_into(Some(Duration::from_secs(1)), &mut events)
-            .unwrap_or_else(|error| panic!("poll refused connection: {error}"));
-        let mut progress = false;
-        for event in events.drain(..) {
-            progress |= brokers
-                .observe(
-                    poller,
-                    event,
-                    Moment::ORIGIN,
-                    kafka_driver_core::OutcomeStamp::ORIGIN,
-                )
-                .unwrap_or_else(|error| panic!("observe refused connection: {error}"));
-        }
-        if progress {
-            return;
-        }
-    }
-    panic!("expected refused connection progress before timeout");
 }
 
 fn listener() -> TcpListener {

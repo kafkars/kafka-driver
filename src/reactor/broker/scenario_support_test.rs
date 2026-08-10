@@ -1,20 +1,20 @@
-//! Shared loopback fixtures for completing initial broker API negotiation.
+//! Shared loopback and exact transport-outcome fixtures for broker scenarios.
 
 use std::{
     io::{Read, Write},
-    net::{SocketAddr, TcpStream, UdpSocket},
+    net::TcpStream,
     time::Duration,
 };
 
 use bytes::BytesMut;
-use kafka_driver_core::{ConnectionPhase, Moment};
+use kafka_driver_core::{ConnectionPhase, ConnectionState, Moment, OutcomeStamp, TransportFailure};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsResponse, ResponseHeader,
     api_versions_response::ApiVersion as AdvertisedApi,
 };
 use kafka_wire_core::{ApiVersion, KafkaEncode};
 
-use crate::reactor::Poller;
+use crate::reactor::{Poller, resource::ResourceIdentity};
 
 use super::owner::SingleBroker;
 
@@ -70,20 +70,27 @@ pub(super) fn observe_once(poller: &mut Poller, broker: &mut SingleBroker) {
     panic!("expected broker readiness before timeout");
 }
 
-pub(in crate::reactor) fn refused_loopback_port() -> u16 {
-    for _ in 0..16 {
-        let probe = UdpSocket::bind("127.0.0.1:0")
-            .unwrap_or_else(|error| panic!("reserve loopback probe port: {error}"));
-        let port = probe
-            .local_addr()
-            .unwrap_or_else(|error| panic!("read loopback probe port: {error}"))
-            .port();
-        let address = SocketAddr::from(([127, 0, 0, 1], port));
-        if TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_err() {
-            return port;
-        }
-    }
-    panic!("find an unbound loopback TCP port");
+pub(in crate::reactor) fn refuse_pending_connect(poller: &Poller, broker: &mut SingleBroker) {
+    let ConnectionState::Opening {
+        epoch,
+        effect_id,
+        transport_id,
+        ..
+    } = broker.state()
+    else {
+        panic!("scripted refusal requires one pending transport open");
+    };
+    let identity = ResourceIdentity::new(transport_id, epoch);
+    broker
+        .apply_open_failed(epoch, effect_id, transport_id, TransportFailure::Refused)
+        .unwrap_or_else(|error| panic!("apply scripted transport refusal: {error}"));
+    broker
+        .close_resource(poller, identity)
+        .unwrap_or_else(|error| panic!("close refused transport resource: {error}"));
+    broker.pending_transport_failure_at = Some(OutcomeStamp::ORIGIN);
+    broker
+        .reconcile_connection(poller, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("reconcile scripted transport refusal: {error}"));
 }
 
 fn negotiation_response() -> Vec<u8> {

@@ -17,13 +17,18 @@ use crate::{
 
 use super::{
     owner::SingleBroker,
-    scenario_support_test::{complete_negotiation, observe_once, refused_loopback_port},
+    scenario_support_test::{complete_negotiation, observe_once, refuse_pending_connect},
 };
 
 #[test]
-fn given_multiple_resolved_addresses_when_the_first_refuses_then_reconnect_uses_the_second() {
+fn given_multiple_resolved_addresses_when_the_first_fails_then_reconnect_uses_the_second() {
     // Given
-    let refused_port = refused_loopback_port();
+    let refused = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind refused loopback broker: {error}"));
+    let refused_port = refused
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read refused broker address: {error}"))
+        .port();
     let listener = TcpListener::bind("127.0.0.1:0")
         .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
     let port = listener
@@ -40,9 +45,7 @@ fn given_multiple_resolved_addresses_when_the_first_refuses_then_reconnect_uses_
     broker
         .start(&poller, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("start first address: {error}"));
-    if broker.broker_state().phase() == BrokerPhase::Connecting {
-        observe_once(&mut poller, &mut broker);
-    }
+    refuse_pending_connect(&poller, &mut broker);
     let BrokerState::Backoff { deadline, .. } = broker.broker_state() else {
         panic!("refused first address must enter reconnect backoff");
     };
