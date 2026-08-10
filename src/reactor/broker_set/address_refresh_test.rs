@@ -21,16 +21,14 @@ use crate::{
 };
 
 use super::{BrokerLane, BrokerSet};
-use crate::reactor::broker::scenario_support_test::complete_negotiation;
+use crate::reactor::broker::scenario_support_test::{complete_negotiation, refused_loopback_port};
 
 #[test]
 fn exhausted_discovered_addresses_reresolve_before_the_next_connection_epoch() {
     // Given
-    let refused = listener();
-    let refused_port = local_port(&refused);
+    let refused_port = refused_loopback_port();
     let available = listener();
     let available_port = local_port(&available);
-    drop(refused);
     let mut poller = Poller::new(NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));
     let mut brokers = broker_set();

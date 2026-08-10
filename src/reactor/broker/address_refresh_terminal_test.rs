@@ -1,9 +1,6 @@
 //! Real-loop proof that terminal reconnect policy never arms endpoint refresh.
 
-use std::{
-    net::TcpListener,
-    num::{NonZeroU16, NonZeroUsize},
-};
+use std::num::{NonZeroU16, NonZeroUsize};
 
 use kafka_driver_core::{
     BrokerCloseReason, BrokerPhase, BrokerState, ConnectionEpoch, DnsFailure, IpAddress, Moment,
@@ -15,18 +12,15 @@ use crate::{
     reactor::{Poller, resource::ResourceNamespace},
 };
 
-use super::{BrokerLimits, SingleBroker, scenario_support_test::observe_once};
+use super::{
+    BrokerLimits, SingleBroker,
+    scenario_support_test::{observe_once, refused_loopback_port},
+};
 
 #[test]
 fn epoch_exhaustion_closes_without_arming_endpoint_refresh() {
     // Given
-    let refused = TcpListener::bind("127.0.0.1:0")
-        .unwrap_or_else(|error| panic!("reserve refused loopback address: {error}"));
-    let port = refused
-        .local_addr()
-        .unwrap_or_else(|error| panic!("read refused loopback address: {error}"))
-        .port();
-    drop(refused);
+    let port = refused_loopback_port();
     let config = BrokerTemplate::plaintext().at_resolved(endpoint(port), addresses(port));
     let mut poller = Poller::new(NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));
@@ -60,13 +54,7 @@ fn epoch_exhaustion_closes_without_arming_endpoint_refresh() {
 #[test]
 fn unusable_dns_answer_closes_without_reserving_a_retry_timer() {
     // Given
-    let refused = TcpListener::bind("127.0.0.1:0")
-        .unwrap_or_else(|error| panic!("reserve refused loopback address: {error}"));
-    let port = refused
-        .local_addr()
-        .unwrap_or_else(|error| panic!("read refused loopback address: {error}"))
-        .port();
-    drop(refused);
+    let port = refused_loopback_port();
     let config = BrokerTemplate::plaintext().at_resolved(endpoint(port), addresses(port));
     let mut poller = Poller::new(NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("create broker poller: {error}"));

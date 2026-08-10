@@ -17,25 +17,19 @@ use crate::{
 
 use super::{
     owner::SingleBroker,
-    scenario_support_test::{complete_negotiation, observe_once},
+    scenario_support_test::{complete_negotiation, observe_once, refused_loopback_port},
 };
 
 #[test]
 fn given_multiple_resolved_addresses_when_the_first_refuses_then_reconnect_uses_the_second() {
     // Given
-    let refused = TcpListener::bind("127.0.0.1:0")
-        .unwrap_or_else(|error| panic!("reserve refused loopback address: {error}"));
-    let refused_port = refused
-        .local_addr()
-        .unwrap_or_else(|error| panic!("read refused loopback address: {error}"))
-        .port();
+    let refused_port = refused_loopback_port();
     let listener = TcpListener::bind("127.0.0.1:0")
         .unwrap_or_else(|error| panic!("bind loopback broker: {error}"));
     let port = listener
         .local_addr()
         .unwrap_or_else(|error| panic!("read loopback broker address: {error}"))
         .port();
-    drop(refused);
     let config = BrokerTemplate::plaintext().at_resolved(
         resolved_endpoint(port),
         resolved_addresses(refused_port, port),

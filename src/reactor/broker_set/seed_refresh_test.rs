@@ -17,7 +17,10 @@ use crate::{
     reactor::{
         Poller,
         bootstrap::ResolvedSeed,
-        broker::{BrokerLimits, scenario_support_test::complete_negotiation},
+        broker::{
+            BrokerLimits,
+            scenario_support_test::{complete_negotiation, refused_loopback_port},
+        },
     },
 };
 
@@ -26,9 +29,7 @@ use super::BrokerSet;
 #[test]
 fn seed_refresh_suspends_old_reconnect_and_ignores_stale_configuration() {
     // Given: the only address for generation one has failed.
-    let refused = listener();
-    let refused_port = local_port(&refused);
-    drop(refused);
+    let refused_port = refused_loopback_port();
     let available = listener();
     let available_port = local_port(&available);
     let mut poller = Poller::new(NonZeroUsize::MIN)

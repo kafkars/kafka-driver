@@ -4,7 +4,7 @@ mod support;
 
 use std::{
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
     num::NonZeroU16,
     time::Duration,
 };
@@ -19,11 +19,9 @@ use support::complete_negotiation;
 #[test]
 fn refused_first_bootstrap_endpoint_rotates_after_complete_dial_failure() {
     // Given
-    let refused = listener();
-    let refused_port = local_port(&refused);
+    let refused_port = refused_loopback_port();
     let available = listener();
     let available_port = local_port(&available);
-    drop(refused);
     let (_driver, mut reactor) = Driver::builder()
         .bootstrap(bootstrap(refused_port, available_port))
         .build_reactor()
@@ -107,6 +105,24 @@ fn bootstrap(first_port: u16, second_port: u16) -> BootstrapSet {
 
 fn listener() -> TcpListener {
     TcpListener::bind("127.0.0.1:0").unwrap_or_else(|error| panic!("bind loopback broker: {error}"))
+}
+
+fn refused_loopback_port() -> u16 {
+    for _ in 0..16 {
+        let probe = UdpSocket::bind("127.0.0.1:0")
+            .unwrap_or_else(|error| panic!("reserve loopback probe port: {error}"));
+        let port = probe
+            .local_addr()
+            .unwrap_or_else(|error| panic!("read loopback probe address: {error}"))
+            .port();
+        let address = SocketAddr::from(([127, 0, 0, 1], port));
+        match TcpStream::connect_timeout(&address, Duration::from_millis(100)) {
+            Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => return port,
+            Ok(stream) => drop(stream),
+            Err(_) => {}
+        }
+    }
+    panic!("find an unbound loopback TCP port");
 }
 
 fn local_port(listener: &TcpListener) -> u16 {

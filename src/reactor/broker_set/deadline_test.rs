@@ -12,7 +12,10 @@ use kafka_wire::ApiVersionsRequest;
 use crate::{
     MetadataLimits, RequestError,
     config::BrokerTemplate,
-    reactor::{PollEvent, Poller, broker::BrokerLimits},
+    reactor::{
+        PollEvent, Poller,
+        broker::{BrokerLimits, scenario_support_test::refused_loopback_port},
+    },
     request::erased_request,
 };
 
@@ -80,13 +83,7 @@ fn dns_success_without_socket_readiness_still_expires_the_waiting_call() {
 #[test]
 fn endpoint_refresh_cannot_outlive_a_waiting_call_deadline() {
     // Given: the selected address refuses its initial connection and enters backoff.
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .unwrap_or_else(|error| panic!("reserve refused broker address: {error}"));
-    let port = listener
-        .local_addr()
-        .unwrap_or_else(|error| panic!("read refused broker address: {error}"))
-        .port();
-    drop(listener);
+    let port = refused_loopback_port();
     let directory = directory(port);
     let route = directory
         .route_to(broker_id())

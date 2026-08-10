@@ -2,7 +2,7 @@
 
 use std::{
     io::{Read, Write},
-    net::TcpStream,
+    net::{SocketAddr, TcpStream, UdpSocket},
     time::Duration,
 };
 
@@ -68,6 +68,24 @@ pub(super) fn observe_once(poller: &mut Poller, broker: &mut SingleBroker) {
         }
     }
     panic!("expected broker readiness before timeout");
+}
+
+pub(in crate::reactor) fn refused_loopback_port() -> u16 {
+    for _ in 0..16 {
+        let probe = UdpSocket::bind("127.0.0.1:0")
+            .unwrap_or_else(|error| panic!("reserve loopback probe port: {error}"));
+        let port = probe
+            .local_addr()
+            .unwrap_or_else(|error| panic!("read loopback probe port: {error}"))
+            .port();
+        let address = SocketAddr::from(([127, 0, 0, 1], port));
+        match TcpStream::connect_timeout(&address, Duration::from_millis(100)) {
+            Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => return port,
+            Ok(stream) => drop(stream),
+            Err(_) => {}
+        }
+    }
+    panic!("find an unbound loopback TCP port");
 }
 
 fn negotiation_response() -> Vec<u8> {
