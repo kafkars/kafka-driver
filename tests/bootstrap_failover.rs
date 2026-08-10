@@ -116,10 +116,8 @@ fn refused_loopback_port() -> u16 {
             .unwrap_or_else(|error| panic!("read loopback probe address: {error}"))
             .port();
         let address = SocketAddr::from(([127, 0, 0, 1], port));
-        match TcpStream::connect_timeout(&address, Duration::from_millis(100)) {
-            Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => return port,
-            Ok(stream) => drop(stream),
-            Err(_) => {}
+        if TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_err() {
+            return port;
         }
     }
     panic!("find an unbound loopback TCP port");
