@@ -6,5 +6,6 @@ mod facade;
 mod file_size;
 mod module_contract;
 mod qualification;
+mod release_metadata;
 mod support;
 mod test_location;

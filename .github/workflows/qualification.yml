@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kafkars/kafka-wire
-          ref: 3c3ec1e9cc44f47c00f5e5ba6bfb2012e30aa0f5
+          ref: 2e052d8525121ab2ec2fef96f5080740ef4e3ed0
           path: kafka-protocol
 
       - name: Install pinned Rust toolchain
