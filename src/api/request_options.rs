@@ -22,6 +22,7 @@ pub struct RequestOptions {
     traffic_class: TrafficClass,
     minimum_version: Option<ApiVersion>,
     maximum_version: Option<ApiVersion>,
+    reject_after_route_failure: bool,
 }
 
 impl RequestOptions {
@@ -32,6 +33,7 @@ impl RequestOptions {
             traffic_class: TrafficClass::Interactive,
             minimum_version: None,
             maximum_version: None,
+            reject_after_route_failure: false,
         }
     }
 
@@ -56,6 +58,16 @@ impl RequestOptions {
         self
     }
 
+    /// Rejects work submitted behind an observed failure of the same route.
+    ///
+    /// A rejected tracked call settles as definitely unsent and retains the
+    /// causal route token. The default waits behind connection recovery.
+    #[must_use]
+    pub const fn with_route_failure_rejection(mut self) -> Self {
+        self.reject_after_route_failure = true;
+        self
+    }
+
     /// Returns the caller-owned absolute deadline.
     pub const fn deadline(self) -> Instant {
         self.deadline
@@ -74,6 +86,11 @@ impl RequestOptions {
     /// Returns the caller's optional per-request API version ceiling.
     pub const fn maximum_version(self) -> Option<ApiVersion> {
         self.maximum_version
+    }
+
+    /// Returns whether an observed route failure rejects later work.
+    pub const fn rejects_after_route_failure(self) -> bool {
+        self.reject_after_route_failure
     }
 
     fn validate_for<R>(self) -> Result<Self, SubmitError>
@@ -180,5 +197,6 @@ const fn request_policy(options: RequestOptions, submitted_at: Instant) -> Reque
         submitted_at,
         options.minimum_version,
         options.maximum_version,
+        options.reject_after_route_failure,
     )
 }

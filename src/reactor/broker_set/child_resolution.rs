@@ -31,7 +31,9 @@ impl BrokerChild {
                 self.route_failure_at = None;
                 return Ok(None);
             }
-            if let Some(observed_at) = self.route_failure_at {
+            if request.rejects_after_route_failure()
+                && let Some(observed_at) = self.route_failure_at
+            {
                 request.fail_observed(
                     RequestError::Rejected {
                         failure: CallFailure::NotReady,

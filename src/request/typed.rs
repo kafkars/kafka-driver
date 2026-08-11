@@ -90,6 +90,10 @@ where
         self.traffic_class
     }
 
+    fn rejects_after_route_failure(&self) -> bool {
+        self.policy.rejects_after_route_failure()
+    }
+
     fn select_version(
         &mut self,
         negotiated: kafka_driver_core::NegotiatedApi,

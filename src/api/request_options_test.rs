@@ -53,3 +53,14 @@ fn reversed_version_bounds_do_not_allocate_a_call_identity() {
         Ok(TurnOutcome::Idle)
     ));
 }
+
+#[test]
+fn route_failure_rejection_is_explicit_and_disabled_by_default() {
+    let deadline = Instant::now();
+    assert!(!RequestOptions::new(deadline).rejects_after_route_failure());
+    assert!(
+        RequestOptions::new(deadline)
+            .with_route_failure_rejection()
+            .rejects_after_route_failure()
+    );
+}

@@ -12,6 +12,7 @@ use super::{RequestDeadline, VersionSelection};
 pub(crate) struct RequestPolicy {
     deadline: RequestDeadline,
     version: VersionSelection,
+    reject_after_route_failure: bool,
 }
 
 impl RequestPolicy {
@@ -19,6 +20,7 @@ impl RequestPolicy {
         Self {
             deadline: RequestDeadline::new(timeout),
             version: VersionSelection::Highest,
+            reject_after_route_failure: false,
         }
     }
 
@@ -27,10 +29,12 @@ impl RequestPolicy {
         submitted_at: Instant,
         minimum_version: Option<ApiVersion>,
         maximum_version: Option<ApiVersion>,
+        reject_after_route_failure: bool,
     ) -> Self {
         Self {
             deadline: RequestDeadline::until(deadline, submitted_at),
             version: VersionSelection::from_bounds(minimum_version, maximum_version),
+            reject_after_route_failure,
         }
     }
 
@@ -43,5 +47,9 @@ impl RequestPolicy {
         negotiated: NegotiatedApi,
     ) -> Result<ApiVersion, RequestError> {
         self.version.select(negotiated)
+    }
+
+    pub(crate) const fn rejects_after_route_failure(&self) -> bool {
+        self.reject_after_route_failure
     }
 }

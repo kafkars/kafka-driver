@@ -19,6 +19,9 @@ pub(crate) trait ErasedRequest: Send {
     /// Returns the semantic connection lane that must own this call.
     fn traffic_class(&self) -> TrafficClass;
 
+    /// Returns whether a prior failure of the same route rejects this call.
+    fn rejects_after_route_failure(&self) -> bool;
+
     /// Selects this request's version within the active negotiated overlap.
     fn select_version(&mut self, negotiated: NegotiatedApi) -> Result<ApiVersion, RequestError>;
 

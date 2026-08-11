@@ -4,11 +4,15 @@
 mod broker;
 mod support;
 
-use std::{io::Write, net::Shutdown, time::Duration};
+use std::{
+    io::Write,
+    net::Shutdown,
+    time::{Duration, Instant},
+};
 
 use kafka_driver::{
     CallFailure, ConnectionCloseReason, CoordinatorKey, CoordinatorKind, Delivery, Driver,
-    RequestError, Route, RouteKind,
+    RequestError, RequestOptions, Route, RouteKind,
 };
 use kafka_wire::{API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse};
 
@@ -54,7 +58,7 @@ fn tracked_coordinator_transport_loss_retains_exact_route_evidence() {
         .unwrap_or_else(|error| panic!("valid coordinator key rejected: {error}"));
     let call = driver
         .request_tracked(
-            Route::Coordinator { key },
+            Route::Coordinator { key: key.clone() },
             ApiVersionsRequest::default(),
             Duration::from_secs(10),
         )
@@ -96,7 +100,7 @@ fn tracked_coordinator_transport_loss_retains_exact_route_evidence() {
 }
 
 #[test]
-fn call_after_coordinator_loss_fails_unsent_with_prior_transport_evidence() {
+fn calls_after_coordinator_loss_honor_the_selected_reconnect_policy() {
     let seed_listener = listener();
     let coordinator_listener = listener();
     let seed_port = local_port(&seed_listener);
@@ -176,30 +180,40 @@ fn call_after_coordinator_loss_fails_unsent_with_prior_transport_evidence() {
         Duration::from_secs(1),
         "observe idle coordinator transport loss",
     );
-    let call = driver
+    let waiting = driver
         .request_tracked(
+            Route::Coordinator { key: key.clone() },
+            ApiVersionsRequest::default(),
+            Duration::from_millis(50),
+        )
+        .unwrap_or_else(|error| panic!("admit reconnect-waiting call: {error}"));
+    let call = driver
+        .request_tracked_with(
             Route::Coordinator { key },
             ApiVersionsRequest::default(),
-            Duration::from_secs(10),
+            RequestOptions::new(Instant::now() + Duration::from_secs(10))
+                .with_route_failure_rejection(),
         )
-        .unwrap_or_else(|error| panic!("admit call after coordinator loss: {error}"));
-    let mut outcome = None;
+        .unwrap_or_else(|error| panic!("admit route-fenced call: {error}"));
+    let outcome = drive_until_ready(&mut reactor, &call, "settle route-fenced call");
+    assert_not_ready(&outcome);
+    let waiting = drive_until_ready(&mut reactor, &waiting, "expire reconnect-waiting call");
+    assert_queued_deadline(&waiting);
+}
+
+fn drive_until_ready(
+    reactor: &mut kafka_driver::Reactor,
+    call: &kafka_driver::RoutedCall<ApiVersionsResponse>,
+    phase: &str,
+) -> kafka_driver::RoutedOutcome<ApiVersionsResponse> {
     for _ in 0..32 {
-        drive(
-            &mut reactor,
-            Duration::from_millis(10),
-            "settle call after coordinator loss",
-        );
+        drive(reactor, Duration::from_millis(10), phase);
         let Some(result) = call.try_result() else {
             continue;
         };
-        outcome = Some(
-            result.unwrap_or_else(|error| panic!("observe queued coordinator failure: {error}")),
-        );
-        break;
+        return result.unwrap_or_else(|error| panic!("observe {phase}: {error}"));
     }
-    let outcome = outcome.unwrap_or_else(|| panic!("coordinator call remained pending"));
-    assert_not_ready(&outcome);
+    panic!("{phase} remained pending")
 }
 
 fn assert_transport_loss(outcome: &kafka_driver::RoutedOutcome<ApiVersionsResponse>) {
@@ -220,6 +234,17 @@ fn assert_not_ready(outcome: &kafka_driver::RoutedOutcome<ApiVersionsResponse>) 
         outcome.result(),
         Err(RequestError::Rejected {
             failure: CallFailure::NotReady,
+            delivery: Delivery::NotSent,
+        })
+    ));
+    assert_coordinator_evidence(outcome);
+}
+
+fn assert_queued_deadline(outcome: &kafka_driver::RoutedOutcome<ApiVersionsResponse>) {
+    assert!(matches!(
+        outcome.result(),
+        Err(RequestError::Rejected {
+            failure: CallFailure::DeadlineExceeded,
             delivery: Delivery::NotSent,
         })
     ));
