@@ -96,7 +96,7 @@ fn tracked_coordinator_transport_loss_retains_exact_route_evidence() {
 }
 
 #[test]
-fn call_waiting_after_coordinator_loss_retains_the_prior_transport_evidence() {
+fn call_after_coordinator_loss_fails_unsent_with_prior_transport_evidence() {
     let seed_listener = listener();
     let coordinator_listener = listener();
     let seed_port = local_port(&seed_listener);
@@ -180,15 +180,15 @@ fn call_waiting_after_coordinator_loss_retains_the_prior_transport_evidence() {
         .request_tracked(
             Route::Coordinator { key },
             ApiVersionsRequest::default(),
-            Duration::from_millis(50),
+            Duration::from_secs(10),
         )
-        .unwrap_or_else(|error| panic!("admit call behind coordinator reconnect: {error}"));
+        .unwrap_or_else(|error| panic!("admit call after coordinator loss: {error}"));
     let mut outcome = None;
     for _ in 0..32 {
         drive(
             &mut reactor,
             Duration::from_millis(10),
-            "expire call behind coordinator reconnect",
+            "settle call after coordinator loss",
         );
         let Some(result) = call.try_result() else {
             continue;
@@ -198,8 +198,8 @@ fn call_waiting_after_coordinator_loss_retains_the_prior_transport_evidence() {
         );
         break;
     }
-    let outcome = outcome.unwrap_or_else(|| panic!("queued coordinator call remained pending"));
-    assert_queued_deadline(&outcome);
+    let outcome = outcome.unwrap_or_else(|| panic!("coordinator call remained pending"));
+    assert_not_ready(&outcome);
 }
 
 fn assert_transport_loss(outcome: &kafka_driver::RoutedOutcome<ApiVersionsResponse>) {
@@ -215,11 +215,11 @@ fn assert_transport_loss(outcome: &kafka_driver::RoutedOutcome<ApiVersionsRespon
     assert_coordinator_evidence(outcome);
 }
 
-fn assert_queued_deadline(outcome: &kafka_driver::RoutedOutcome<ApiVersionsResponse>) {
+fn assert_not_ready(outcome: &kafka_driver::RoutedOutcome<ApiVersionsResponse>) {
     assert!(matches!(
         outcome.result(),
         Err(RequestError::Rejected {
-            failure: CallFailure::DeadlineExceeded,
+            failure: CallFailure::NotReady,
             delivery: Delivery::NotSent,
         })
     ));

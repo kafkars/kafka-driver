@@ -2,8 +2,8 @@
 
 use kafka_driver_core::{
     BrokerEndpoint, BrokerPhase, BrokerResolutionEffect, BrokerResolutionInput,
-    BrokerResolutionState, BrokerRoute, ConnectionEpoch, ConnectionPhase, DnsOutcome, DnsRequest,
-    EffectId, Moment,
+    BrokerResolutionState, BrokerRoute, CallFailure, ConnectionEpoch, ConnectionPhase, Delivery,
+    DnsOutcome, DnsRequest, EffectId, Moment,
 };
 
 use crate::{RequestError, reactor::Poller, request::ErasedRequest};
@@ -29,6 +29,16 @@ impl BrokerChild {
                     .submit(poller, request, now)
                     .map_err(BrokerSetError::Broker)?;
                 self.route_failure_at = None;
+                return Ok(None);
+            }
+            if let Some(observed_at) = self.route_failure_at {
+                request.fail_observed(
+                    RequestError::Rejected {
+                        failure: CallFailure::NotReady,
+                        delivery: Delivery::NotSent,
+                    },
+                    observed_at,
+                );
                 return Ok(None);
             }
             if !connection.is_terminal()
