@@ -1,6 +1,7 @@
 //! Bounded multi-producer, single-consumer storage for reactor commands.
 
 mod invalidation_admission;
+mod notification;
 mod observation;
 mod ownership;
 
@@ -11,6 +12,7 @@ use std::{
 };
 
 use super::WakeHandle;
+use notification::MailboxNotification;
 use ownership::{MailboxLane, Shared, State, increment};
 
 pub(crate) fn mailbox<T>(
@@ -30,7 +32,7 @@ pub(crate) fn mailbox<T>(
         closed_rejections: AtomicU64::new(0),
         wake_failures: AtomicU64::new(0),
         weight,
-        wake,
+        wake: MailboxNotification::new(wake),
     });
     (
         MailboxSender {
@@ -59,7 +61,7 @@ impl<T> Drop for MailboxSender<T> {
     fn drop(&mut self) {
         let mut state = self.shared.lock();
         if state.senders == 1 {
-            drop(self.shared.wake.wake());
+            drop(self.shared.wake.request());
         }
         state.senders = state.senders.saturating_sub(1);
     }
@@ -114,7 +116,7 @@ impl<T> MailboxSender<T> {
         }
         // The state lock prevents the reactor from observing this wake until
         // publication below either succeeds or the command is returned.
-        if let Err(source) = self.shared.wake.wake() {
+        if let Err(source) = self.shared.wake.request() {
             increment(&self.shared.wake_failures);
             return Err(TrySendError::Wake {
                 command: owner,
@@ -165,7 +167,12 @@ impl<T> MailboxReceiver<T> {
     }
 
     pub(crate) fn wake_handle(&self) -> WakeHandle {
-        self.shared.wake.clone()
+        self.shared.wake.handle()
+    }
+
+    #[cfg(test)]
+    pub(super) fn notification_is_requested(&self) -> bool {
+        self.shared.wake.is_requested()
     }
 
     pub(crate) fn close(&self) -> Vec<T> {

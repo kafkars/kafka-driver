@@ -1,9 +1,9 @@
-//! Scenarios for bounded admission, FIFO draining, closure, and wake coalescing.
+//! Scenarios for bounded admission, FIFO draining, and domain-safe wake coalescing.
 
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, time::Duration};
 
 use super::{
-    Poller, WakeHandle,
+    PollEvent, Poller, WakeHandle,
     mailbox::{DrainStatus, MailboxReceiver, TrySendError, mailbox},
 };
 
@@ -30,12 +30,12 @@ fn bounded_drains_preserve_fifo_and_report_remaining_work() {
 
     assert_eq!(first, DrainStatus::MorePending);
     assert_eq!(batch, vec![1]);
-    assert!(receiver.wake_handle().is_requested());
+    assert!(receiver.notification_is_requested());
     batch.clear();
     let second = receiver.drain_into(&mut batch, nonzero(2));
     assert_eq!(second, DrainStatus::Idle);
     assert_eq!(batch, vec![2, 3]);
-    assert!(!receiver.wake_handle().is_requested());
+    assert!(!receiver.notification_is_requested());
 }
 
 #[test]
@@ -101,16 +101,37 @@ fn repeated_wakes_coalesce_until_the_mailbox_is_drained() {
     let (sender, receiver, _poller) = test_mailbox(nonzero(2));
     assert!(sender.try_send(1).is_ok());
     assert!(sender.try_send(2).is_ok());
-    let wake = receiver.wake_handle();
-    assert!(wake.is_requested());
+    assert!(receiver.notification_is_requested());
     let mut batch = Vec::new();
 
     let status = receiver.drain_into(&mut batch, nonzero(2));
 
     assert_eq!(status, DrainStatus::Idle);
-    assert!(!wake.is_requested());
-    assert!(wake.wake().is_ok());
-    assert!(wake.is_requested());
+    assert!(!receiver.notification_is_requested());
+}
+
+#[test]
+fn external_wake_is_not_suppressed_by_pending_mailbox_notification() {
+    let (sender, receiver, mut poller) = test_mailbox(NonZeroUsize::MIN);
+    assert!(sender.try_send(1).is_ok());
+    let mut events = Vec::with_capacity(1);
+    let first = poller.poll_into(Some(Duration::from_secs(1)), &mut events);
+    let Ok(first) = first else {
+        panic!("mailbox notification must reach the selector");
+    };
+    assert_eq!(first, 1);
+    assert_eq!(events, vec![PollEvent::Wake]);
+    assert!(receiver.notification_is_requested());
+    events.clear();
+
+    assert!(receiver.wake_handle().wake().is_ok());
+
+    let second = poller.poll_into(Some(Duration::from_secs(1)), &mut events);
+    let Ok(second) = second else {
+        panic!("independent notification must reach the selector");
+    };
+    assert_eq!(second, 1);
+    assert_eq!(events, vec![PollEvent::Wake]);
 }
 
 fn test_mailbox<T>(

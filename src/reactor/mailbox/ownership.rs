@@ -9,7 +9,7 @@ use std::{
     },
 };
 
-use crate::reactor::WakeHandle;
+use super::notification::MailboxNotification;
 
 pub(super) struct Shared<T> {
     pub(super) capacity: usize,
@@ -22,7 +22,7 @@ pub(super) struct Shared<T> {
     pub(super) closed_rejections: AtomicU64,
     pub(super) wake_failures: AtomicU64,
     pub(super) weight: fn(&T) -> usize,
-    pub(super) wake: WakeHandle,
+    pub(super) wake: MailboxNotification,
 }
 
 impl<T> Shared<T> {
