@@ -3,7 +3,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PERFORMANCE_POLICY, assertPerformancePolicy } from "./performance-policy.mjs";
+import {
+  PERFORMANCE_POLICY,
+  assertPerformanceEvidence,
+  assertPerformancePolicy,
+} from "./performance-policy.mjs";
 
 function boundaryReport() {
   return {
@@ -41,4 +45,38 @@ test("pipelining must retain its minimum gain over sequential calls", () => {
   };
 
   assert.throws(() => assertPerformancePolicy(report), /pipeline gain/);
+});
+
+test("repeated evidence tolerates one runner-noise regression", () => {
+  const noisy = {
+    ...boundaryReport(),
+    sequential_rps: 1200,
+    pipelined_rps: 2399,
+  };
+
+  assert.doesNotThrow(() =>
+    assertPerformanceEvidence([boundaryReport(), noisy, boundaryReport()]),
+  );
+});
+
+test("repeated evidence rejects two performance regressions", () => {
+  const noisy = {
+    ...boundaryReport(),
+    sequential_rps: 1200,
+    pipelined_rps: 2399,
+  };
+
+  assert.throws(
+    () => assertPerformanceEvidence([noisy, boundaryReport(), noisy]),
+    /1 passing runs; expected at least 2.*run 1:.*run 3:/,
+  );
+});
+
+test("every evidence run retains the fixed workload", () => {
+  const changed = { ...boundaryReport(), samples: PERFORMANCE_POLICY.samples - 1 };
+
+  assert.throws(
+    () => assertPerformanceEvidence([boundaryReport(), boundaryReport(), changed]),
+    /run 3 changed the workload: samples=/,
+  );
 });

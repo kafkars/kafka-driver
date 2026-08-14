@@ -1,9 +1,11 @@
 import { expect, smoke } from "smoque";
 
-import { assertPerformancePolicy } from "./performance-policy.mjs";
+import {
+  PERFORMANCE_POLICY,
+  assertPerformanceEvidence,
+} from "./performance-policy.mjs";
 
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
-const SAMPLES = 1000;
 
 smoke.suite(
   "real Kafka RPC performance",
@@ -61,16 +63,31 @@ smoke.suite(
     });
 
     await t.step("measure bounded generated RPC progress", async () => {
-      const result = await t.cmd(probe, ["measure", endpoint, String(SAMPLES)], {
-        cwd: root,
-        timeout: "2m",
-      });
-      await expect.command(result).stdoutJsonPath("$.schema").toBe(1);
-      await expect.command(result).stdoutJsonPath("$.samples").toBe(SAMPLES);
-      await expect.command(result).stdoutJsonPath("$.pipeline_width").toBe(128);
-      assertPerformancePolicy(JSON.parse(result.stdout));
-      await t.log(result.stdout.trim());
-      await t.attach.text("real-kafka-performance.json", result.stdout.trim());
+      const reports = [];
+      for (let run = 1; run <= PERFORMANCE_POLICY.measurementRuns; run += 1) {
+        const result = await t.cmd(
+          probe,
+          ["measure", endpoint, String(PERFORMANCE_POLICY.samples)],
+          { cwd: root, timeout: "2m" },
+        );
+        await expect.command(result).stdoutJsonPath("$.schema").toBe(PERFORMANCE_POLICY.schema);
+        await expect
+          .command(result)
+          .stdoutJsonPath("$.samples")
+          .toBe(PERFORMANCE_POLICY.samples);
+        await expect
+          .command(result)
+          .stdoutJsonPath("$.pipeline_width")
+          .toBe(PERFORMANCE_POLICY.pipelineWidth);
+        reports.push(JSON.parse(result.stdout));
+        await t.log(`performance evidence run ${run}: ${result.stdout.trim()}`);
+      }
+
+      assertPerformanceEvidence(reports);
+      await t.attach.text(
+        "real-kafka-performance.json",
+        JSON.stringify({ reports }, null, 2),
+      );
     });
   },
 );
