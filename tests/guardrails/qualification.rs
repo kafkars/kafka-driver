@@ -85,6 +85,8 @@ fn release_qualification_builds_normalized_public_archives() {
     assert!(prefetch.contains("cargo fetch --locked"));
     assert!(script.contains("cargo package"));
     assert!(script.contains("--no-verify"));
+    assert!(script.contains("version=$(sed -n"));
+    assert!(script.contains("$package-$version.crate"));
     assert_eq!(script.matches("cargo check").count(), 3);
     for package in [
         "kafka-driver-core",
@@ -107,6 +109,7 @@ fn release_qualification_resolves_latest_compatible_from_a_clean_registry() {
     let script = read(&root.join("scripts/qualify-latest-compatible"));
 
     assert!(workflow.contains("run: scripts/qualify-latest-compatible"));
+    assert!(script.contains("version=$(sed -n"));
     assert!(script.contains("mktemp -d"));
     assert!(script.contains("export CARGO_HOME"));
     assert!(script.contains("unset CARGO_NET_OFFLINE"));

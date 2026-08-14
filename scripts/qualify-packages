@@ -4,6 +4,11 @@ set -euo pipefail
 qualification_root=target/package-qualification
 archive_root=target/package
 packages=(kafka-driver-core kafka-driver-transport kafka-driver)
+version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml)
+if [[ -z "$version" ]]; then
+  echo "workspace release version is missing" >&2
+  exit 1
+fi
 workspace_root=$(pwd -P)
 source_core_patch="patch.crates-io.kafka-driver-core.path='$workspace_root/crates/kafka-driver-core'"
 source_transport_patch="patch.crates-io.kafka-driver-transport.path='$workspace_root/crates/kafka-driver-transport'"
@@ -11,9 +16,9 @@ source_transport_patch="patch.crates-io.kafka-driver-transport.path='$workspace_
 rm -rf "$qualification_root"
 mkdir -p "$qualification_root"
 rm -f \
-  "$archive_root/kafka-driver-core-0.1.0.crate" \
-  "$archive_root/kafka-driver-transport-0.1.0.crate" \
-  "$archive_root/kafka-driver-0.1.0.crate"
+  "$archive_root/kafka-driver-core-$version.crate" \
+  "$archive_root/kafka-driver-transport-$version.crate" \
+  "$archive_root/kafka-driver-$version.crate"
 
 for package in "${packages[@]}"; do
   case "$package" in
@@ -38,8 +43,8 @@ for package in "${packages[@]}"; do
         --config "$source_transport_patch"
       ;;
   esac
-  archive="$archive_root/$package-0.1.0.crate"
-  package_root="$qualification_root/$package-0.1.0"
+  archive="$archive_root/$package-$version.crate"
+  package_root="$qualification_root/$package-$version"
 
   tar -xzf "$archive" -C "$qualification_root"
   test -f "$package_root/Cargo.toml"
@@ -53,7 +58,7 @@ for package in "${packages[@]}"; do
   fi
   markdown_entries=$(printf '%s\n' "$archive_entries" | grep -Ei '\.md$' || true)
   if [[ "$package" == kafka-driver ]]; then
-    expected_readme="$package-0.1.0/README.md"
+    expected_readme="$package-$version/README.md"
     if [[ "$markdown_entries" != "$expected_readme" ]]; then
       echo "$package archive must contain only its public README" >&2
       exit 1
@@ -90,9 +95,9 @@ for package in "${packages[@]}"; do
     >/dev/null
 done
 
-core_root="$qualification_root/kafka-driver-core-0.1.0"
-transport_root="$qualification_root/kafka-driver-transport-0.1.0"
-driver_root="$qualification_root/kafka-driver-0.1.0"
+core_root="$qualification_root/kafka-driver-core-$version"
+transport_root="$qualification_root/kafka-driver-transport-$version"
+driver_root="$qualification_root/kafka-driver-$version"
 core_patch="patch.crates-io.kafka-driver-core.path='$core_root'"
 transport_patch="patch.crates-io.kafka-driver-transport.path='$transport_root'"
 

@@ -15,7 +15,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.0-rc.1"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -24,10 +24,10 @@ repository = "https://github.com/kafkars/kafka-driver"
 [workspace.dependencies]
 base64 = "0.22.1"
 bytes = "1.10"
-kafka-driver = { version = "0.1.0", path = "." }
-kafka-driver-core = { version = "0.1.0", path = "crates/kafka-driver-core" }
+kafka-driver = { version = "0.1.0-rc.1", path = "." }
+kafka-driver-core = { version = "0.1.0-rc.1", path = "crates/kafka-driver-core" }
 kafka-driver-sim = { path = "crates/kafka-driver-sim" }
-kafka-driver-transport = { version = "0.1.0", path = "crates/kafka-driver-transport" }
+kafka-driver-transport = { version = "0.1.0-rc.1", path = "crates/kafka-driver-transport" }
 kafka-wire-core = { version = "0.1.0-rc.2", path = "../kafka-protocol/crates/kafka-wire-core" }
 mio = { version = "1.2", default-features = false, features = ["net", "os-poll"] }
 ring = "0.17.14"

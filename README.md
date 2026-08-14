@@ -131,9 +131,8 @@ scripts/check
 
 ## Status
 
-`kafka-driver` is in release-candidate qualification. Its current protocol
-authority is `kafka-wire` 0.1.0-rc.2. Public APIs may still change before
-0.1.0.
+`kafka-driver` 0.1.0-rc.1 is the first release candidate. Its protocol authority
+is `kafka-wire` 0.1.0-rc.2. Public APIs may still change before 0.1.0.
 
 ## License
 

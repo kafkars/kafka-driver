@@ -2,9 +2,14 @@
 set -euo pipefail
 
 qualification_root=target/package-qualification
-core_root="$qualification_root/kafka-driver-core-0.1.0"
-transport_root="$qualification_root/kafka-driver-transport-0.1.0"
-driver_root="$qualification_root/kafka-driver-0.1.0"
+version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml)
+if [[ -z "$version" ]]; then
+  echo "workspace release version is missing" >&2
+  exit 1
+fi
+core_root="$qualification_root/kafka-driver-core-$version"
+transport_root="$qualification_root/kafka-driver-transport-$version"
+driver_root="$qualification_root/kafka-driver-$version"
 
 for package_root in "$core_root" "$transport_root" "$driver_root"; do
   if [[ ! -f "$package_root/Cargo.toml" ]]; then
