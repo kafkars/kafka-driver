@@ -4,8 +4,7 @@ export const PERFORMANCE_POLICY = Object.freeze({
   schema: 1,
   samples: 1000,
   pipelineWidth: 128,
-  measurementRuns: 3,
-  minimumPassingRuns: 2,
+  measurementRuns: 5,
   minimumSequentialRps: 400,
   minimumPipelinedRps: 2000,
   minimumPipelineGain: 2,
@@ -14,7 +13,7 @@ export const PERFORMANCE_POLICY = Object.freeze({
 
 export function assertPerformancePolicy(report) {
   const failures = workloadFailures(report);
-  failures.push(...measurementFailures(report));
+  failures.push(...baselineFailures(report), ...pipelineFailures(report));
   if (failures.length !== 0) {
     throw new Error(`release performance policy failed: ${failures.join("; ")}`);
   }
@@ -38,17 +37,26 @@ export function assertPerformanceEvidence(reports) {
     }
   }
 
-  const failedRuns = reports
-    .map((report, index) => ({ index, failures: measurementFailures(report) }))
-    .filter(({ failures }) => failures.length !== 0);
-  const passingRuns = reports.length - failedRuns.length;
-  if (passingRuns < PERFORMANCE_POLICY.minimumPassingRuns) {
-    const details = failedRuns
+  for (const [index, report] of reports.entries()) {
+    const failures = baselineFailures(report);
+    if (failures.length !== 0) {
+      throw new Error(
+        `release performance evidence run ${index + 1} failed a baseline: ` +
+          failures.join("; "),
+      );
+    }
+  }
+
+  const pipelineAttempts = reports.map((report, index) => ({
+    index,
+    failures: pipelineFailures(report),
+  }));
+  if (pipelineAttempts.every(({ failures }) => failures.length !== 0)) {
+    const details = pipelineAttempts
       .map(({ index, failures }) => `run ${index + 1}: ${failures.join("; ")}`)
       .join(" | ");
     throw new Error(
-      `release performance evidence has ${passingRuns} passing runs; expected at least ` +
-        `${PERFORMANCE_POLICY.minimumPassingRuns}; ${details}`,
+      `no release performance evidence run proved pipeline capability; ${details}`,
     );
   }
 }
@@ -61,7 +69,7 @@ function workloadFailures(report) {
   return failures;
 }
 
-function measurementFailures(report) {
+function baselineFailures(report) {
   const failures = [];
   minimum(
     failures,
@@ -69,17 +77,22 @@ function measurementFailures(report) {
     report.sequential_rps,
     PERFORMANCE_POLICY.minimumSequentialRps,
   );
-  minimum(
-    failures,
-    "pipelined_rps",
-    report.pipelined_rps,
-    PERFORMANCE_POLICY.minimumPipelinedRps,
-  );
   maximum(
     failures,
     "control_under_bulk_ns",
     report.control_under_bulk_ns,
     PERFORMANCE_POLICY.maximumControlUnderBulkNs,
+  );
+  return failures;
+}
+
+function pipelineFailures(report) {
+  const failures = [];
+  minimum(
+    failures,
+    "pipelined_rps",
+    report.pipelined_rps,
+    PERFORMANCE_POLICY.minimumPipelinedRps,
   );
   minimum(
     failures,

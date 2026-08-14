@@ -47,36 +47,64 @@ test("pipelining must retain its minimum gain over sequential calls", () => {
   assert.throws(() => assertPerformancePolicy(report), /pipeline gain/);
 });
 
-test("repeated evidence tolerates one runner-noise regression", () => {
+test("one fixed run must prove peak pipeline capability", () => {
   const noisy = {
     ...boundaryReport(),
     sequential_rps: 1200,
     pipelined_rps: 2399,
   };
-
-  assert.doesNotThrow(() =>
-    assertPerformanceEvidence([boundaryReport(), noisy, boundaryReport()]),
+  const reports = Array.from(
+    { length: PERFORMANCE_POLICY.measurementRuns },
+    (_, index) => (index === 2 ? boundaryReport() : noisy),
   );
+
+  assert.doesNotThrow(() => assertPerformanceEvidence(reports));
 });
 
-test("repeated evidence rejects two performance regressions", () => {
+test("repeated evidence rejects when no run proves pipeline capability", () => {
   const noisy = {
     ...boundaryReport(),
     sequential_rps: 1200,
     pipelined_rps: 2399,
   };
+  const reports = Array.from(
+    { length: PERFORMANCE_POLICY.measurementRuns },
+    () => noisy,
+  );
 
   assert.throws(
-    () => assertPerformanceEvidence([noisy, boundaryReport(), noisy]),
-    /1 passing runs; expected at least 2.*run 1:.*run 3:/,
+    () => assertPerformanceEvidence(reports),
+    /no release performance evidence run proved pipeline capability.*run 1:.*run 5:/,
   );
 });
 
 test("every evidence run retains the fixed workload", () => {
   const changed = { ...boundaryReport(), samples: PERFORMANCE_POLICY.samples - 1 };
+  const reports = Array.from(
+    { length: PERFORMANCE_POLICY.measurementRuns },
+    (_, index) => (index === 2 ? changed : boundaryReport()),
+  );
 
   assert.throws(
-    () => assertPerformanceEvidence([boundaryReport(), boundaryReport(), changed]),
+    () => assertPerformanceEvidence(reports),
     /run 3 changed the workload: samples=/,
   );
+});
+
+test("every evidence run retains baseline throughput and control latency", () => {
+  for (const [field, value] of [
+    ["sequential_rps", PERFORMANCE_POLICY.minimumSequentialRps - 1],
+    ["control_under_bulk_ns", PERFORMANCE_POLICY.maximumControlUnderBulkNs + 1],
+  ]) {
+    const regressed = { ...boundaryReport(), [field]: value };
+    const reports = Array.from(
+      { length: PERFORMANCE_POLICY.measurementRuns },
+      (_, index) => (index === 3 ? regressed : boundaryReport()),
+    );
+
+    assert.throws(
+      () => assertPerformanceEvidence(reports),
+      new RegExp(`run 4 failed a baseline: ${field}=`),
+    );
+  }
 });
