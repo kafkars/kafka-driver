@@ -66,6 +66,12 @@ fn public_package_metadata_is_complete() {
     }
 
     assert!(root.join("LICENSE").is_file(), "missing workspace license");
+    assert!(root.join("README.md").is_file(), "missing public README");
+    assert!(
+        root.join("kafka-driver-logo.svg").is_file(),
+        "missing public logo"
+    );
+    assert_eq!(workspace["package"]["readme"].as_str(), Some("README.md"));
 
     let package_qualification = read(&root.join("scripts/qualify-packages"));
     assert!(package_qualification.contains(CANONICAL_REPOSITORY));

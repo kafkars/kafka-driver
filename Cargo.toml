@@ -47,6 +47,7 @@ license.workspace = true
 repository.workspace = true
 description = "A deterministic, runtime-neutral Kafka broker and cluster RPC engine"
 publish = ["crates-io"]
+readme = "README.md"
 keywords = ["kafka", "client", "runtime-neutral", "networking"]
 categories = ["network-programming"]
 

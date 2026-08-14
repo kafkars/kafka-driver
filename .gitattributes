@@ -1,2 +1,4 @@
+*.md text eol=lf
 *.rs text eol=lf
+*.svg text eol=lf
 scripts/* text eol=lf

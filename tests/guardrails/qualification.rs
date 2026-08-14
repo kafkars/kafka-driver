@@ -95,6 +95,9 @@ fn release_qualification_builds_normalized_public_archives() {
     }
     assert!(script.contains("normalized manifest retains a dependency path"));
     assert!(script.contains("cmp LICENSE"));
+    assert!(script.contains("readme = \"README.md\""));
+    assert!(script.contains("cmp README.md"));
+    assert!(script.contains("cmp kafka-driver-logo.svg"));
 }
 
 #[test]

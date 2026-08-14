@@ -46,8 +46,20 @@ for package in "${packages[@]}"; do
   test -f "$package_root/Cargo.lock"
   cmp LICENSE "$package_root/LICENSE"
 
-  if tar -tzf "$archive" | grep -Eiq '\.md$|(^|/)docs/|(^|/)AGENTS\.md$'; then
-    echo "$package archive contains documentation" >&2
+  archive_entries=$(tar -tzf "$archive")
+  if printf '%s\n' "$archive_entries" | grep -Eiq '(^|/)docs/|(^|/)AGENTS\.md$'; then
+    echo "$package archive contains internal documentation" >&2
+    exit 1
+  fi
+  markdown_entries=$(printf '%s\n' "$archive_entries" | grep -Ei '\.md$' || true)
+  if [[ "$package" == kafka-driver ]]; then
+    expected_readme="$package-0.1.0/README.md"
+    if [[ "$markdown_entries" != "$expected_readme" ]]; then
+      echo "$package archive must contain only its public README" >&2
+      exit 1
+    fi
+  elif [[ -n "$markdown_entries" ]]; then
+    echo "$package archive contains unexpected Markdown" >&2
     exit 1
   fi
   if awk '
@@ -58,7 +70,13 @@ for package in "${packages[@]}"; do
     echo "$package normalized manifest retains a dependency path" >&2
     exit 1
   fi
-  grep -Fxq 'readme = false' "$package_root/Cargo.toml"
+  if [[ "$package" == kafka-driver ]]; then
+    grep -Fxq 'readme = "README.md"' "$package_root/Cargo.toml"
+    cmp README.md "$package_root/README.md"
+    cmp kafka-driver-logo.svg "$package_root/kafka-driver-logo.svg"
+  else
+    grep -Fxq 'readme = false' "$package_root/Cargo.toml"
+  fi
   grep -Fxq \
     'repository = "https://github.com/kafkars/kafka-driver"' \
     "$package_root/Cargo.toml"
