@@ -45,7 +45,7 @@ jobs:
 
       - name: Install pinned Rust toolchain
         run: |
-          rustup toolchain install 1.88.0 --profile minimal
+          rustup toolchain install 1.88.0 --profile minimal --component clippy,rustfmt
           rustup default 1.88.0
 
       - name: Install pinned Node.js
@@ -60,6 +60,11 @@ jobs:
 
       - name: Fetch the locked dependency graph
         run: cargo fetch --locked
+
+      - name: Run the canonical repository gate
+        run: scripts/check
+        env:
+          CARGO_NET_OFFLINE: "true"
 
       - name: Fetch exact public protocol dependencies
         run: scripts/prefetch-release-dependencies

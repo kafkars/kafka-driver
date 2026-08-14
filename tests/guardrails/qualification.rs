@@ -28,6 +28,31 @@ fn ci_prefetches_before_running_the_gate_offline() {
 }
 
 #[test]
+fn release_qualification_runs_the_canonical_gate_before_packaging() {
+    let root = workspace_root();
+    let workflow = read(&root.join(".github/workflows/qualification.yml"));
+    let fetch = workflow
+        .find("run: cargo fetch --locked")
+        .unwrap_or_else(|| panic!("release qualification must fetch the locked graph"));
+    let gate = workflow
+        .find("run: scripts/check")
+        .unwrap_or_else(|| panic!("release qualification must run the canonical gate"));
+    let packages = workflow
+        .find("run: scripts/qualify-packages")
+        .unwrap_or_else(|| panic!("release qualification must qualify package archives"));
+
+    assert!(workflow.contains("tags: [\"v*\"]"));
+    assert!(
+        workflow.contains(
+            "rustup toolchain install 1.88.0 --profile minimal --component clippy,rustfmt"
+        )
+    );
+    assert!(fetch < gate);
+    assert!(gate < packages);
+    assert!(workflow[gate..packages].contains("CARGO_NET_OFFLINE: \"true\""));
+}
+
+#[test]
 fn ci_pins_the_verified_public_kafka_wire_source() {
     let root = workspace_root();
     let guardrails = load_guardrails(&root);
