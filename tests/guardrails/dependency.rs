@@ -67,11 +67,11 @@ fn local_path_dependencies_carry_the_release_version() {
     }
     assert_eq!(
         manifest["workspace"]["dependencies"]["kafka-wire-core"]["version"].as_str(),
-        Some("0.1.0-rc.1")
+        Some("0.1.0-rc.2")
     );
     assert_eq!(
         manifest["dependencies"]["kafka-wire"]["version"].as_str(),
-        Some("0.1.0-rc.1")
+        Some("0.1.0-rc.2")
     );
     assert_eq!(
         manifest["workspace"]["dependencies"]["kafka-driver-sim"]
@@ -82,7 +82,7 @@ fn local_path_dependencies_carry_the_release_version() {
     let probe = parse_manifest(&root.join("crates/kafka-driver-probe/Cargo.toml"));
     assert_eq!(
         probe["dependencies"]["kafka-wire"]["version"].as_str(),
-        Some("0.1.0-rc.1")
+        Some("0.1.0-rc.2")
     );
 }
 

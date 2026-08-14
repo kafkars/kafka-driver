@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+prefetch_root=target/release-dependency-prefetch
+manifest="$prefetch_root/Cargo.toml"
+
+rm -rf "$prefetch_root"
+mkdir -p "$prefetch_root/src"
+printf '%s\n' \
+  '[package]' \
+  'name = "kafka-driver-release-dependency-prefetch"' \
+  'version = "0.0.0"' \
+  'edition = "2024"' \
+  'publish = false' \
+  '' \
+  '[dependencies]' \
+  'kafka-wire = "=0.1.0-rc.2"' \
+  'kafka-wire-core = "=0.1.0-rc.2"' \
+  '' \
+  '[workspace]' \
+  >"$manifest"
+printf '%s\n' '// Release dependency prefetch probe.' >"$prefetch_root/src/lib.rs"
+
+cargo generate-lockfile --manifest-path "$manifest"
+cargo fetch --locked --manifest-path "$manifest"

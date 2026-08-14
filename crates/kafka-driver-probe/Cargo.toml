@@ -10,7 +10,7 @@ publish = false
 
 [dependencies]
 kafka-driver.workspace = true
-kafka-wire = { version = "0.1.0-rc.1", path = "../../../kafka-protocol/crates/kafka-wire" }
+kafka-wire = { version = "0.1.0-rc.2", path = "../../../kafka-protocol/crates/kafka-wire" }
 rustls.workspace = true
 
 [lints]

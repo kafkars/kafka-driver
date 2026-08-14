@@ -28,7 +28,7 @@ kafka-driver = { version = "0.1.0", path = "." }
 kafka-driver-core = { version = "0.1.0", path = "crates/kafka-driver-core" }
 kafka-driver-sim = { path = "crates/kafka-driver-sim" }
 kafka-driver-transport = { version = "0.1.0", path = "crates/kafka-driver-transport" }
-kafka-wire-core = { version = "0.1.0-rc.1", path = "../kafka-protocol/crates/kafka-wire-core" }
+kafka-wire-core = { version = "0.1.0-rc.2", path = "../kafka-protocol/crates/kafka-wire-core" }
 mio = { version = "1.2", default-features = false, features = ["net", "os-poll"] }
 ring = "0.17.14"
 rustls = { version = "0.23.42", default-features = false, features = ["ring", "std"] }
@@ -59,7 +59,7 @@ base64.workspace = true
 bytes.workspace = true
 kafka-driver-core.workspace = true
 kafka-driver-transport.workspace = true
-kafka-wire = { version = "0.1.0-rc.1", path = "../kafka-protocol/crates/kafka-wire" }
+kafka-wire = { version = "0.1.0-rc.2", path = "../kafka-protocol/crates/kafka-wire" }
 kafka-wire-core.workspace = true
 mio.workspace = true
 ring.workspace = true

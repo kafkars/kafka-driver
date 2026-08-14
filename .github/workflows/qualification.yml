@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: kafkars/kafka-wire
-          ref: 9fb021938607fd8d0f84b18ee8fdb71601d4e73b
+          ref: 59bc58425749386a1dc4a0c09ac1b67edf5b65af
           path: kafka-protocol
 
       - name: Verify canonical release repository
@@ -61,10 +61,16 @@ jobs:
       - name: Fetch the locked dependency graph
         run: cargo fetch --locked
 
+      - name: Fetch exact public protocol dependencies
+        run: scripts/prefetch-release-dependencies
+
       - name: Qualify publishable crate archives
         run: scripts/qualify-packages
         env:
           CARGO_NET_OFFLINE: "true"
+
+      - name: Qualify latest-compatible public dependency graph
+        run: scripts/qualify-latest-compatible
 
       - name: Run managed real-broker qualification
         run: npm run qualify:real-kafka

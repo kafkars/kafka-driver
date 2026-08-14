@@ -48,11 +48,16 @@ fn ci_pins_the_verified_public_kafka_wire_source() {
 fn release_qualification_builds_normalized_public_archives() {
     let root = workspace_root();
     let workflow = read(&root.join(".github/workflows/qualification.yml"));
+    let prefetch = read(&root.join("scripts/prefetch-release-dependencies"));
     let script = read(&root.join("scripts/qualify-packages"));
 
+    assert!(workflow.contains("run: scripts/prefetch-release-dependencies"));
     assert!(workflow.contains("run: scripts/qualify-packages"));
     assert!(workflow.contains("run: cargo fetch --locked"));
     assert!(workflow.contains("CARGO_NET_OFFLINE: \"true\""));
+    assert!(prefetch.contains("kafka-wire = \"=0.1.0-rc.2\""));
+    assert!(prefetch.contains("kafka-wire-core = \"=0.1.0-rc.2\""));
+    assert!(prefetch.contains("cargo fetch --locked"));
     assert!(script.contains("cargo package"));
     assert!(script.contains("--no-verify"));
     assert_eq!(script.matches("cargo check").count(), 3);
@@ -65,6 +70,22 @@ fn release_qualification_builds_normalized_public_archives() {
     }
     assert!(script.contains("normalized manifest retains a dependency path"));
     assert!(script.contains("cmp LICENSE"));
+}
+
+#[test]
+fn release_qualification_resolves_latest_compatible_from_a_clean_registry() {
+    let root = workspace_root();
+    let workflow = read(&root.join(".github/workflows/qualification.yml"));
+    let script = read(&root.join("scripts/qualify-latest-compatible"));
+
+    assert!(workflow.contains("run: scripts/qualify-latest-compatible"));
+    assert!(script.contains("mktemp -d"));
+    assert!(script.contains("export CARGO_HOME"));
+    assert!(script.contains("unset CARGO_NET_OFFLINE"));
+    assert_eq!(script.matches("cargo generate-lockfile").count(), 3);
+    assert_eq!(script.matches("cargo check").count(), 3);
+    assert!(script.contains("kafka-wire"));
+    assert!(script.contains("kafka-wire-core"));
 }
 
 #[test]
