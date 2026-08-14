@@ -40,6 +40,9 @@ jobs:
           ref: 9fb021938607fd8d0f84b18ee8fdb71601d4e73b
           path: kafka-protocol
 
+      - name: Verify canonical release repository
+        run: scripts/verify-release-repository
+
       - name: Install pinned Rust toolchain
         run: |
           rustup toolchain install 1.88.0 --profile minimal

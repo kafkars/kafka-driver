@@ -6,6 +6,8 @@ use toml::Value;
 
 use super::support::{read, workspace_root};
 
+const CANONICAL_REPOSITORY: &str = "https://github.com/kafkars/kafka-driver";
+
 const PUBLIC_PACKAGES: [(&str, &str); 3] = [
     ("kafka-driver", "Cargo.toml"),
     ("kafka-driver-core", "crates/kafka-driver-core/Cargo.toml"),
@@ -27,6 +29,10 @@ fn public_package_metadata_is_complete() {
     assert_eq!(
         workspace["workspace"]["package"]["license"].as_str(),
         Some("Apache-2.0")
+    );
+    assert_eq!(
+        workspace["workspace"]["package"]["repository"].as_str(),
+        Some(CANONICAL_REPOSITORY)
     );
 
     for (name, manifest_path) in PUBLIC_PACKAGES {
@@ -60,6 +66,16 @@ fn public_package_metadata_is_complete() {
     }
 
     assert!(root.join("LICENSE").is_file(), "missing workspace license");
+
+    let package_qualification = read(&root.join("scripts/qualify-packages"));
+    assert!(package_qualification.contains(CANONICAL_REPOSITORY));
+
+    let repository_verification = read(&root.join("scripts/verify-release-repository"));
+    assert!(repository_verification.contains(&format!("repository_url={CANONICAL_REPOSITORY}")));
+    assert!(repository_verification.contains("--fail"));
+
+    let release_workflow = read(&root.join(".github/workflows/qualification.yml"));
+    assert!(release_workflow.contains("run: scripts/verify-release-repository"));
 }
 
 fn parse(path: &Path) -> Value {

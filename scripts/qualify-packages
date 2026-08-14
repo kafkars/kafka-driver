@@ -59,6 +59,9 @@ for package in "${packages[@]}"; do
     exit 1
   fi
   grep -Fxq 'readme = false' "$package_root/Cargo.toml"
+  grep -Fxq \
+    'repository = "https://github.com/kafkars/kafka-driver"' \
+    "$package_root/Cargo.toml"
   printf '\n[workspace]\n' >>"$package_root/Cargo.toml"
   cargo metadata \
     --locked \
