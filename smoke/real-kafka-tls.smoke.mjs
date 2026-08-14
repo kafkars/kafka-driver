@@ -1,5 +1,8 @@
 import { expect, smoke } from "smoque";
 
+import { awaitBroker } from "./support/kafka-cluster.mjs";
+import { makeBrokerSecretsContainerReadable } from "./support/tls-identities.mjs";
+
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 const KEYSTORE_PASSWORD = "kafka-driver-keystore";
 
@@ -13,6 +16,10 @@ smoke.suite("real Kafka TLS verification", { tags: ["real-kafka-tls"] }, async (
   const secrets = await t.tempDir("kafka-tls-secrets");
   const port = await t.ports.reserve("kafka-tls");
   const endpoint = `${port.host}:${port.port}`;
+  const composeEnv = {
+    KAFKA_HOST_PORT: String(port.port),
+    KAFKA_SSL_SECRETS: secrets.toString(),
+  };
   const docker = await t.tools.docker();
 
   await t.step("required tools are available", async () => {
@@ -51,19 +58,21 @@ smoke.suite("real Kafka TLS verification", { tags: ["real-kafka-tls"] }, async (
     );
     await t.fs.writeText(secrets.path("key-password"), KEYSTORE_PASSWORD);
     await t.fs.writeText(secrets.path("store-password"), KEYSTORE_PASSWORD);
+    await makeBrokerSecretsContainerReadable(secrets);
   });
 
-  await t.step("start one TLS-protected Kafka listener", async () => {
+  const stack = await t.step("start one TLS-protected Kafka listener", async () => {
     return await t.compose.up({
       docker: docker.command,
       cwd: root,
       file: composeFile,
-      env: {
-        KAFKA_HOST_PORT: String(port.port),
-        KAFKA_SSL_SECRETS: secrets.toString(),
-      },
+      env: composeEnv,
       timeout: "5m",
     });
+  });
+
+  await t.step("require the broker to answer an internal health RPC", async () => {
+    await awaitBroker(t, docker.command, stack, composeFile, composeEnv, "kafka");
   });
 
   await t.step("reject a mismatched server identity", async () => {

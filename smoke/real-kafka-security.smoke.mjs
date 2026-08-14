@@ -1,5 +1,8 @@
 import { expect, smoke } from "smoque";
 
+import { awaitBroker } from "./support/kafka-cluster.mjs";
+import { makeBrokerSecretsContainerReadable } from "./support/tls-identities.mjs";
+
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 const USERNAME = "kafka_driver";
 const PASSWORD = "kafka-driver-smoke-secret";
@@ -17,6 +20,10 @@ smoke.suite("real Kafka SASL over TLS", { tags: ["real-kafka-security"] }, async
   const secrets = await t.tempDir("kafka-security-secrets");
   const port = await t.ports.reserve("kafka-security");
   const endpoint = `${port.host}:${port.port}`;
+  const composeEnv = {
+    KAFKA_HOST_PORT: String(port.port),
+    KAFKA_SSL_SECRETS: secrets.toString(),
+  };
   const docker = await t.tools.docker();
 
   await t.step("required tools are available", async () => {
@@ -55,6 +62,7 @@ smoke.suite("real Kafka SASL over TLS", { tags: ["real-kafka-security"] }, async
     );
     await t.fs.writeText(secrets.path("key-password"), KEYSTORE_PASSWORD);
     await t.fs.writeText(secrets.path("store-password"), KEYSTORE_PASSWORD);
+    await makeBrokerSecretsContainerReadable(secrets);
   });
 
   const stack = await t.step("start one SASL_SSL Kafka listener", async () => {
@@ -62,12 +70,13 @@ smoke.suite("real Kafka SASL over TLS", { tags: ["real-kafka-security"] }, async
       docker: docker.command,
       cwd: root,
       file: composeFile,
-      env: {
-        KAFKA_HOST_PORT: String(port.port),
-        KAFKA_SSL_SECRETS: secrets.toString(),
-      },
+      env: composeEnv,
       timeout: "5m",
     });
+  });
+
+  await t.step("require the broker to answer an internal health RPC", async () => {
+    await awaitBroker(t, docker.command, stack, composeFile, composeEnv, "kafka");
   });
 
   await t.step("install bounded SCRAM credentials", async () => {

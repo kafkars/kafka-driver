@@ -1,5 +1,9 @@
 // Suite-owned certificate authority and broker-exclusive TLS identities.
 
+import { chmod } from "node:fs/promises";
+
+const KAFKA_SECRET_FILES = ["kafka-driver.p12", "key-password", "store-password"];
+
 export async function createBrokerIdentities(t, root, brokerNames, password) {
   const authority = await t.tempDir("kafka-secure-cluster-authority");
   const authorityConfig = authority.path("authority.cnf");
@@ -123,7 +127,15 @@ async function createBrokerIdentity(t, root, authority, brokerName, serial, pass
   );
   await t.fs.writeText(secrets.path("key-password"), password);
   await t.fs.writeText(secrets.path("store-password"), password);
+  await makeBrokerSecretsContainerReadable(secrets);
   return secrets;
+}
+
+export async function makeBrokerSecretsContainerReadable(secrets) {
+  await chmod(secrets.toString(), 0o755);
+  await Promise.all(
+    KAFKA_SECRET_FILES.map((name) => chmod(secrets.path(name), 0o644)),
+  );
 }
 
 function certificateAuthorityConfig() {

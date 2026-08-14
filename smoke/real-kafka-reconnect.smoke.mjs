@@ -1,5 +1,7 @@
 import { expect, smoke } from "smoque";
 
+import { awaitBroker } from "./support/kafka-cluster.mjs";
+
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 
 smoke.suite("real Kafka reconnect", { tags: ["real-kafka-reconnect"] }, async (t) => {
@@ -35,6 +37,10 @@ smoke.suite("real Kafka reconnect", { tags: ["real-kafka-reconnect"] }, async (t
     });
   });
 
+  await t.step("require the broker to answer an internal health RPC", async () => {
+    await awaitBroker(t, docker.command, stack, composeFile, composeEnv, "kafka");
+  });
+
   const reconnect = await t.step("start one long-lived driver session", async () => {
     return await t.process.start(probe, ["reconnect", endpoint], {
       cwd: root,
@@ -63,6 +69,7 @@ smoke.suite("real Kafka reconnect", { tags: ["real-kafka-reconnect"] }, async (t
 
   await t.step("restart Kafka and require same-driver recovery", async () => {
     await composeCommand(t, docker.command, stack, composeFile, composeEnv, ["start", "kafka"]);
+    await awaitBroker(t, docker.command, stack, composeFile, composeEnv, "kafka");
     await t.poll(
       "existing driver completes after reconnect",
       async () => {
