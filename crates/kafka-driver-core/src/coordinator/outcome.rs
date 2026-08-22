@@ -25,7 +25,9 @@ impl CoordinatorMachine {
                 followup,
                 ..
             } => (*operation_id, *target_epoch, *followup),
-            CoordinatorState::Unknown { .. } | CoordinatorState::Ready { .. } => return stale(),
+            CoordinatorState::Unknown { .. }
+            | CoordinatorState::Retrying { .. }
+            | CoordinatorState::Ready { .. } => return stale(),
         };
         if operation_id != expected || epoch != target_epoch {
             return stale();
@@ -93,6 +95,14 @@ impl CoordinatorMachine {
                 operation_id,
                 target_epoch,
                 followup,
+                ..
+            }
+            | CoordinatorState::Retrying {
+                current,
+                operation_id,
+                target_epoch,
+                followup,
+                ..
             } => (current.clone(), *operation_id, *target_epoch, *followup),
             CoordinatorState::Unknown { .. } | CoordinatorState::Ready { .. } => return stale(),
         };

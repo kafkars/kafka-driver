@@ -1,6 +1,6 @@
 //! External coordinator work emitted by deterministic discovery policy.
 
-use crate::{CoordinatorEpoch, CoordinatorKey, OperationId};
+use crate::{CoordinatorEpoch, CoordinatorKey, Moment, OperationId};
 
 /// External work requested by one coordinator transition.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -13,6 +13,15 @@ pub enum CoordinatorEffect {
         key: CoordinatorKey,
         /// Epoch assigned only if this discovery succeeds.
         epoch: CoordinatorEpoch,
+    },
+    /// Retains discovery ownership until a positive retry delay elapses.
+    WaitUntil {
+        /// Failed discovery identity fencing the retry wake.
+        operation_id: OperationId,
+        /// Discovery epoch retained across retry.
+        epoch: CoordinatorEpoch,
+        /// Earliest driver-relative instant at which retry may start.
+        at: Moment,
     },
     /// No further discovery epoch can be represented.
     EpochExhausted,

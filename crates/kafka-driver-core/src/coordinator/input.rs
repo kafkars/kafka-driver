@@ -1,8 +1,8 @@
 //! Discovery demand, route invalidation, and identity-fenced external outcomes.
 
 use crate::{
-    BrokerEndpoint, BrokerId, CoordinatorEpoch, CoordinatorRoute, EvidenceStamp, OperationId,
-    OutcomeStamp,
+    BrokerEndpoint, BrokerId, CoordinatorEpoch, CoordinatorRoute, EvidenceStamp, Moment,
+    OperationId, OutcomeStamp,
 };
 
 /// One owner command or `FindCoordinator` result applied to coordinator policy.
@@ -57,5 +57,27 @@ pub enum CoordinatorInput {
         epoch: CoordinatorEpoch,
         /// Identity reserved if queued refresh demand must retry immediately.
         followup_operation_id: OperationId,
+    },
+    /// Reports an exact transient broker rejection eligible for bounded retry.
+    DiscoveryRejected {
+        /// Rejected discovery identity.
+        operation_id: OperationId,
+        /// Discovery epoch returned by external work.
+        epoch: CoordinatorEpoch,
+        /// Driver-relative instant at which the rejection was observed.
+        now: Moment,
+        /// Identity reserved if retry exhaustion must continue queued demand.
+        followup_operation_id: OperationId,
+    },
+    /// Reports that the host reached or approached one owned retry deadline.
+    RetryElapsed {
+        /// Failed discovery identity that authorized the retry.
+        operation_id: OperationId,
+        /// Discovery epoch retained across retry.
+        epoch: CoordinatorEpoch,
+        /// Driver-relative instant observed by the host.
+        now: Moment,
+        /// Fresh identity reserved for the retried external request.
+        retry_operation_id: OperationId,
     },
 }

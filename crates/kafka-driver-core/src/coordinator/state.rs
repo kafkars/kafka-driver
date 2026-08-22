@@ -1,6 +1,6 @@
 //! States containing only coordinator facts and discovery ownership valid together.
 
-use crate::{CoordinatorEpoch, CoordinatorRoute, OperationId};
+use crate::{CoordinatorEpoch, CoordinatorRoute, Moment, OperationId};
 
 /// Why a discovery result must be followed by another external query.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,6 +29,23 @@ pub enum CoordinatorState {
         target_epoch: CoordinatorEpoch,
         /// Strongest reason another discovery must follow this result.
         followup: Option<CoordinatorFollowup>,
+        /// Number of bounded transient retries already started in this pass.
+        retries: u8,
+    },
+    /// One transient discovery rejection owns a positive bounded retry delay.
+    Retrying {
+        /// Previous route retained until a newer discovery succeeds.
+        current: Option<CoordinatorRoute>,
+        /// Failed discovery identity fencing the retry wake.
+        operation_id: OperationId,
+        /// Epoch retained for a successful retry result.
+        target_epoch: CoordinatorEpoch,
+        /// Strongest reason another discovery must follow this result.
+        followup: Option<CoordinatorFollowup>,
+        /// Number of bounded transient retries already authorized in this pass.
+        retries: u8,
+        /// Earliest driver-relative instant at which retry may start.
+        at: Moment,
     },
     /// One discovered route is authoritative.
     Ready {

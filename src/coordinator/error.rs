@@ -69,3 +69,14 @@ impl Error for CoordinatorBuildError {
         }
     }
 }
+
+impl CoordinatorBuildError {
+    pub(crate) const fn is_transient_discovery_rejection(self) -> bool {
+        matches!(
+            self,
+            Self::Response {
+                error_code: 14..=16
+            }
+        )
+    }
+}

@@ -1,6 +1,6 @@
 //! Named coordinator transition results shared by admission and outcomes.
 
-use crate::{CoordinatorEpoch, CoordinatorKey, OperationId};
+use crate::{CoordinatorEpoch, CoordinatorKey, Moment, OperationId};
 
 use super::{CoordinatorDisposition, CoordinatorEffect, CoordinatorTransition};
 
@@ -42,6 +42,21 @@ pub(super) fn stale() -> CoordinatorTransition {
 pub(super) fn exhausted() -> CoordinatorTransition {
     CoordinatorTransition::new(
         vec![CoordinatorEffect::EpochExhausted],
+        CoordinatorDisposition::Applied,
+    )
+}
+
+pub(super) fn wait(
+    operation_id: OperationId,
+    epoch: CoordinatorEpoch,
+    at: Moment,
+) -> CoordinatorTransition {
+    CoordinatorTransition::new(
+        vec![CoordinatorEffect::WaitUntil {
+            operation_id,
+            epoch,
+            at,
+        }],
         CoordinatorDisposition::Applied,
     )
 }

@@ -63,7 +63,10 @@ impl CoordinatorOwner {
     pub(super) fn discovery_pending(&self, key: &CoordinatorKey) -> bool {
         self.entry(key).is_some_and(|entry| {
             entry.discovery_requested
-                || matches!(entry.machine.state(), CoordinatorState::Discovering { .. })
+                || matches!(
+                    entry.machine.state(),
+                    CoordinatorState::Discovering { .. } | CoordinatorState::Retrying { .. }
+                )
         })
     }
 

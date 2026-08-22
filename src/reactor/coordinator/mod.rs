@@ -2,6 +2,7 @@
 
 mod admission;
 mod drive;
+mod drive_retry;
 mod effect;
 mod entry;
 mod error;

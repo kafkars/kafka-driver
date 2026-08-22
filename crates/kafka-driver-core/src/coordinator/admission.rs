@@ -11,14 +11,15 @@ impl CoordinatorMachine {
     pub(super) fn resolve(&mut self, operation_id: OperationId) -> CoordinatorTransition {
         match &self.state {
             CoordinatorState::Unknown { next_epoch } => self.start(None, operation_id, *next_epoch),
-            CoordinatorState::Discovering { .. } => coalesced(),
+            CoordinatorState::Discovering { .. } | CoordinatorState::Retrying { .. } => coalesced(),
             CoordinatorState::Ready { .. } => known(),
         }
     }
 
     pub(super) fn refresh(&mut self, operation_id: OperationId) -> CoordinatorTransition {
         match &mut self.state {
-            CoordinatorState::Discovering { followup, .. } => {
+            CoordinatorState::Discovering { followup, .. }
+            | CoordinatorState::Retrying { followup, .. } => {
                 if followup.is_some() {
                     coalesced()
                 } else {
@@ -80,6 +81,7 @@ impl CoordinatorMachine {
                 self.start(None, operation_id, epoch)
             }
             CoordinatorState::Discovering { current, .. }
+            | CoordinatorState::Retrying { current, .. }
                 if current.as_ref().is_none_or(|current| {
                     !current.is_same_target(route) || current.evidence_stamp().is_after(observed_at)
                 }) =>
@@ -87,6 +89,9 @@ impl CoordinatorMachine {
                 stale()
             }
             CoordinatorState::Discovering {
+                current, followup, ..
+            }
+            | CoordinatorState::Retrying {
                 current, followup, ..
             } => {
                 *current = None;
@@ -118,10 +123,16 @@ impl CoordinatorMachine {
                 };
                 self.start(None, operation_id, epoch)
             }
-            CoordinatorState::Discovering { current, .. } if current.as_ref() != Some(route) => {
+            CoordinatorState::Discovering { current, .. }
+            | CoordinatorState::Retrying { current, .. }
+                if current.as_ref() != Some(route) =>
+            {
                 stale()
             }
             CoordinatorState::Discovering {
+                current, followup, ..
+            }
+            | CoordinatorState::Retrying {
                 current, followup, ..
             } => {
                 *current = None;
@@ -146,6 +157,7 @@ impl CoordinatorMachine {
             operation_id,
             target_epoch,
             followup: None,
+            retries: 0,
         };
         find(operation_id, self.key.clone(), target_epoch)
     }

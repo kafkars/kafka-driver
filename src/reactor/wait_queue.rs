@@ -95,6 +95,12 @@ impl<T> WaitQueue<T> {
         self.entries.values_mut().map(|entry| &mut entry.value)
     }
 
+    pub(in crate::reactor) fn iter(&self) -> impl Iterator<Item = (&T, Moment)> {
+        self.entries
+            .values()
+            .map(|entry| (&entry.value, entry.deadline))
+    }
+
     fn remove_deadline(&mut self, sequence: u64, deadline: Moment) {
         debug_assert_eq!(
             self.deadlines.remove(&DeadlineKey { deadline, sequence }),

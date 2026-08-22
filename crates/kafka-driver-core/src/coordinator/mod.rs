@@ -6,6 +6,7 @@ mod effect;
 mod input;
 mod machine;
 mod outcome;
+mod retry;
 mod revocation;
 mod route;
 mod state;
@@ -15,6 +16,8 @@ mod transition;
 mod causality_test;
 #[cfg(test)]
 mod machine_test;
+#[cfg(test)]
+mod retry_test;
 
 pub use effect::CoordinatorEffect;
 pub use input::CoordinatorInput;

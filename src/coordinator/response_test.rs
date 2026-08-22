@@ -55,6 +55,17 @@ fn invalid_host_is_rejected_without_retaining_advertised_text() {
     assert!(!format!("{error:?}").contains(&rejected));
 }
 
+#[test]
+fn only_exact_transient_coordinator_errors_authorize_discovery_retry() {
+    for error_code in [14, 15, 16] {
+        assert!(CoordinatorBuildError::Response { error_code }.is_transient_discovery_rejection());
+    }
+    for error_code in [0, 13, 17, 69] {
+        assert!(!CoordinatorBuildError::Response { error_code }.is_transient_discovery_rejection());
+    }
+    assert!(!CoordinatorBuildError::KeyMismatch.is_transient_discovery_rejection());
+}
+
 fn coordinator(raw_key: &str, node_id: i32) -> Coordinator {
     let mut coordinator = Coordinator::default();
     coordinator.key = StrBytes::from(raw_key);

@@ -1,8 +1,8 @@
 //! Interpretation of deterministic discovery effects as generated broker calls.
 
 use kafka_driver_core::{
-    CoordinatorEffect, CoordinatorEpoch, CoordinatorInput, CoordinatorKey, CoordinatorTransition,
-    EvidenceStamp, Moment, OperationId,
+    CoordinatorEffect, CoordinatorEpoch, CoordinatorInput, CoordinatorKey, CoordinatorState,
+    CoordinatorTransition, EvidenceStamp, Moment, OperationId,
 };
 use kafka_wire::FIND_COORDINATOR_API_DESCRIPTOR;
 
@@ -45,6 +45,25 @@ impl CoordinatorOwner {
                     now,
                     call_ids,
                 )?,
+                CoordinatorEffect::WaitUntil {
+                    operation_id,
+                    epoch,
+                    at,
+                } => {
+                    if !matches!(
+                        self.entries[index].machine.state(),
+                        CoordinatorState::Retrying {
+                            operation_id: expected,
+                            target_epoch,
+                            at: expected_at,
+                            ..
+                        } if *expected == operation_id
+                            && *target_epoch == epoch
+                            && *expected_at == at
+                    ) {
+                        return Err(CoordinatorOwnerError::UnexpectedEffect);
+                    }
+                }
                 CoordinatorEffect::EpochExhausted => {
                     return Err(CoordinatorOwnerError::EpochExhausted);
                 }
@@ -135,6 +154,9 @@ impl CoordinatorOwner {
                 }
                 (Some(CoordinatorEffect::EpochExhausted), None) => {
                     return Err(CoordinatorOwnerError::EpochExhausted);
+                }
+                (Some(CoordinatorEffect::WaitUntil { .. }), None) => {
+                    return Err(CoordinatorOwnerError::UnexpectedEffect);
                 }
                 _ => return Err(CoordinatorOwnerError::UnexpectedEffect),
             }

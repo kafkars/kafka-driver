@@ -64,6 +64,18 @@ impl CoordinatorMachine {
                 epoch,
                 followup_operation_id,
             } => self.fail(operation_id, epoch, followup_operation_id),
+            CoordinatorInput::DiscoveryRejected {
+                operation_id,
+                epoch,
+                now,
+                followup_operation_id,
+            } => self.reject(operation_id, epoch, now, followup_operation_id),
+            CoordinatorInput::RetryElapsed {
+                operation_id,
+                epoch,
+                now,
+                retry_operation_id,
+            } => self.retry_elapsed(operation_id, epoch, now, retry_operation_id),
         }
     }
 
@@ -81,7 +93,8 @@ impl CoordinatorMachine {
     pub const fn current(&self) -> Option<&CoordinatorRoute> {
         match &self.state {
             CoordinatorState::Unknown { .. } => None,
-            CoordinatorState::Discovering { current, .. } => current.as_ref(),
+            CoordinatorState::Discovering { current, .. }
+            | CoordinatorState::Retrying { current, .. } => current.as_ref(),
             CoordinatorState::Ready { route } => Some(route),
         }
     }

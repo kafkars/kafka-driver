@@ -21,7 +21,7 @@ impl CoordinatorOwner {
         evidence: EvidenceStamp,
     ) -> Result<bool, CoordinatorOwnerError> {
         let mut progress = 0;
-        progress += self.observe_completions(
+        progress += self.fire_due_retries(
             broker,
             poller,
             now,
@@ -29,6 +29,11 @@ impl CoordinatorOwner {
             evidence,
             self.limits.turn_budget().get(),
         )?;
+        let remaining = self.limits.turn_budget().get() - progress;
+        if remaining != 0 {
+            progress +=
+                self.observe_completions(broker, poller, now, call_ids, evidence, remaining)?;
+        }
         let remaining = self.limits.turn_budget().get() - progress;
         if remaining != 0 {
             progress += self.start_requested(broker, poller, now, call_ids, evidence, remaining)?;
@@ -123,7 +128,7 @@ impl CoordinatorOwner {
         let followup_operation_id = self.reserve_operation()?;
         let input = match result {
             Ok(Ok(response)) => {
-                self.success_input(index, &pending, &response, followup_operation_id)
+                self.success_input(index, &pending, &response, now, followup_operation_id)
             }
             Ok(Err(_)) | Err(_) => discovery_failed(&pending, followup_operation_id),
         };
@@ -146,6 +151,7 @@ impl CoordinatorOwner {
         index: usize,
         pending: &PendingCoordinator,
         response: &FindCoordinatorResponse,
+        now: Moment,
         followup_operation_id: OperationId,
     ) -> CoordinatorInput {
         let key = self.entries[index].machine.key();
@@ -158,6 +164,14 @@ impl CoordinatorOwner {
                 evidence: pending.evidence,
                 followup_operation_id,
             },
+            Err(error) if error.is_transient_discovery_rejection() => {
+                CoordinatorInput::DiscoveryRejected {
+                    operation_id: pending.operation_id,
+                    epoch: pending.epoch,
+                    now,
+                    followup_operation_id,
+                }
+            }
             Err(_) => discovery_failed(pending, followup_operation_id),
         }
     }

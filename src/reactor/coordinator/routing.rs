@@ -1,6 +1,6 @@
 //! Fair routing and settlement of calls after coordinator discovery.
 
-use kafka_driver_core::Moment;
+use kafka_driver_core::{CoordinatorState, Moment};
 
 use crate::RequestError;
 
@@ -48,7 +48,20 @@ impl CoordinatorOwner {
     }
 
     pub(in crate::reactor) fn next_wait_deadline(&self) -> Option<Moment> {
-        self.waiters.next_deadline()
+        self.waiters
+            .next_deadline()
+            .into_iter()
+            .chain(
+                self.entries
+                    .iter()
+                    .filter_map(|entry| match entry.machine.state() {
+                        CoordinatorState::Retrying { at, .. } => Some(*at),
+                        CoordinatorState::Unknown { .. }
+                        | CoordinatorState::Discovering { .. }
+                        | CoordinatorState::Ready { .. } => None,
+                    }),
+            )
+            .min()
     }
 
     pub(in crate::reactor) fn has_local_work(&self) -> bool {

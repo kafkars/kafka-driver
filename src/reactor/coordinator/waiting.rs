@@ -153,6 +153,12 @@ impl CoordinatorWaiters {
         self.calls.next_deadline()
     }
 
+    pub(super) fn has_live_key(&self, key: &CoordinatorKey, now: Moment) -> bool {
+        self.calls
+            .iter()
+            .any(|(waiting, deadline)| &waiting.key == key && deadline > now)
+    }
+
     pub(super) const fn has_pending_scan(&self) -> bool {
         self.scan_remaining != 0 || self.due_pending
     }
