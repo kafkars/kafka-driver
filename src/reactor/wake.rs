@@ -15,6 +15,10 @@ impl WakeHandle {
         Self { poller }
     }
 
+    pub(in crate::reactor) fn into_calandria(self) -> calandria::WakeHandle {
+        calandria::WakeHandle::new(move || self.wake())
+    }
+
     /// Requests reactor progress for this exact cross-thread transition.
     ///
     /// Mio may coalesce readiness that is still pending in the selector. The

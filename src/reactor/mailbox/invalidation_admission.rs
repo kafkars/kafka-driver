@@ -4,7 +4,7 @@ use crate::{
     InvalidationDisposition, RouteFailureToken, completion::CompletionSender, reactor::Command,
 };
 
-use super::{MailboxLane, MailboxSender, TrySendError};
+use super::{Lane, MailboxSender, TrySendError};
 
 impl MailboxSender<Command> {
     pub(crate) fn try_send_invalidation(
@@ -15,7 +15,7 @@ impl MailboxSender<Command> {
         // The typed token remains recoverable through capacity and wake
         // rejection. Only this exact seam supplies the command's byte weight.
         self.try_send_owner_to(
-            MailboxLane::Work,
+            Lane::Work,
             token,
             Command::invalidation_retained_bytes,
             move |token| Command::Invalidate { token, completion },

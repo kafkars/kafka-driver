@@ -1,31 +1,34 @@
-//! Atomic current and cumulative mailbox-pressure snapshot construction.
+//! Driver mailbox observations translated from Calandria snapshots.
 
-use std::sync::atomic::Ordering;
+use calandria::Lane;
 
-use super::{MailboxReceiver, ownership::MailboxLane};
+use super::MailboxReceiver;
 
 impl<T> MailboxReceiver<T> {
     pub(crate) fn snapshot(&self) -> crate::MailboxSnapshot {
-        let state = self.shared.lock();
+        let snapshot = self.inner.snapshot();
+        let work = snapshot.lane(Lane::Work);
+        let control = snapshot.lane(Lane::Control);
         crate::MailboxSnapshot::new(
-            self.shared.capacity,
-            self.shared.byte_capacity,
+            snapshot.limits().work().messages().get(),
+            retained(snapshot.limits().work().retained_bytes()),
             [
-                state.queued(MailboxLane::Work),
-                state.queued_bytes(MailboxLane::Work),
-                state.queued(MailboxLane::Control),
-                state.queued_bytes(MailboxLane::Control),
+                work.queued_messages(),
+                retained(work.retained_bytes()),
+                control.queued_messages(),
+                retained(control.retained_bytes()),
             ],
             [
-                self.shared.work_full.load(Ordering::Relaxed),
-                self.shared.work_byte_full.load(Ordering::Relaxed),
-                self.shared.control_full.load(Ordering::Relaxed),
-                self.shared.control_byte_full.load(Ordering::Relaxed),
+                work.message_rejections(),
+                work.byte_rejections(),
+                control.message_rejections(),
+                control.byte_rejections(),
             ],
-            [
-                self.shared.closed_rejections.load(Ordering::Relaxed),
-                self.shared.wake_failures.load(Ordering::Relaxed),
-            ],
+            [snapshot.closed_rejections(), snapshot.wake_failures()],
         )
     }
+}
+
+fn retained(bytes: calandria::RetainedBytes) -> usize {
+    usize::try_from(bytes.get()).unwrap_or(usize::MAX)
 }

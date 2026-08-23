@@ -29,8 +29,7 @@ pub struct DriverHost {
 impl DriverHost {
     pub(crate) fn spawn(reactor: Reactor) -> io::Result<Self> {
         let clock = reactor.clock();
-        let wake = reactor.wake_handle();
-        let termination_wake = calandria::WakeHandle::new(move || wake.wake());
+        let termination_wake = reactor.termination_wake();
         let hosted = HostedReactor::with_config(
             reactor,
             clock,
