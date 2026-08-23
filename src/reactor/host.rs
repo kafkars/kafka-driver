@@ -15,6 +15,8 @@ mod resolution_error;
 mod resolution_progress;
 mod routing;
 mod scram_proof;
+#[cfg(test)]
+mod simulation;
 mod state;
 mod submission;
 mod topic_view;
@@ -24,6 +26,12 @@ mod turn;
 mod resolution_test;
 #[cfg(test)]
 mod shutdown_test;
+#[cfg(test)]
+mod simulation_model_test;
+#[cfg(test)]
+mod simulation_protocol_test;
+#[cfg(test)]
+mod simulation_test;
 #[cfg(test)]
 mod submission_test;
 

@@ -7,7 +7,7 @@ use kafka_driver_core::{ConnectionEpoch, Moment, TransportId};
 use super::{
     PollInterest, PollRequest, PollScriptError, PollStep, Readiness, ReadinessEvent, ScriptedPoller,
 };
-use crate::Simulator;
+use crate::Scenario;
 
 const CURRENT_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(7);
 const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(6);
@@ -18,7 +18,7 @@ fn matching_interest_schedules_readiness_in_virtual_time() {
     let request = PollRequest::new(CURRENT_EPOCH, TRANSPORT, PollInterest::WRITABLE);
     let event = ReadinessEvent::new(CURRENT_EPOCH, TRANSPORT, Readiness::WRITABLE);
     let mut poller = ScriptedPoller::new([PollStep::new(request, Duration::from_nanos(8), event)]);
-    let mut simulator = Simulator::new();
+    let mut simulator = Scenario::new();
 
     let Ok(planned) = poller.arm(request) else {
         panic!("matching interest must consume its poller step");
@@ -27,12 +27,12 @@ fn matching_interest_schedules_readiness_in_virtual_time() {
         simulator.schedule_planned(planned).is_ok(),
         "planned readiness must fit simulator bounds"
     );
-    let Ok(Some(scheduled)) = simulator.next_event() else {
+    let Some((at, observed)) = simulator.next_event() else {
         panic!("planned readiness must become observable");
     };
 
-    assert_eq!(scheduled.at(), Moment::from_nanos(8));
-    assert_eq!(scheduled.event(), &event);
+    assert_eq!(at, Moment::from_nanos(8));
+    assert_eq!(observed, event);
     assert!(poller.is_complete());
 }
 

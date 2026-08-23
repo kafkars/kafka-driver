@@ -23,7 +23,7 @@ impl Reactor {
                     } => {
                         request.mark_reactor(Instant::now());
                         if self.state == HostState::Running {
-                            self.process_submission(route, request, submitted_at)?;
+                            self.process_submission(route, request, submitted_at, now)?;
                         } else {
                             request.fail(draining());
                         }

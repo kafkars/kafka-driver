@@ -12,6 +12,9 @@ use crate::{
     reactor::{plaintext::PlaintextConnection, tcp::ConnectProgress},
 };
 
+#[cfg(test)]
+use crate::reactor::transport::SimulatedConnection;
+
 #[cfg(feature = "tls-rustls")]
 use crate::reactor::tls::TlsConnection;
 
@@ -25,6 +28,8 @@ pub(in crate::reactor) enum TransportConnection {
     Plaintext(PlaintextConnection),
     #[cfg(feature = "tls-rustls")]
     Rustls(Box<TlsConnection>),
+    #[cfg(test)]
+    Simulated(SimulatedConnection),
 }
 
 impl TransportConnection {
@@ -52,6 +57,8 @@ impl TransportConnection {
                 .map_err(TransportError::Plaintext),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(connection) => connection.finish_connect().map_err(TransportError::Rustls),
+            #[cfg(test)]
+            Self::Simulated(connection) => Ok(connection.finish_connect()),
         }
     }
 
@@ -65,6 +72,8 @@ impl TransportConnection {
             Self::Plaintext(connection) => connection.admit_write(call_id, effect_id, frame),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(connection) => connection.admit_write(call_id, effect_id, frame),
+            #[cfg(test)]
+            Self::Simulated(connection) => connection.admit_write(call_id, effect_id, frame),
         }
     }
 
@@ -81,6 +90,10 @@ impl TransportConnection {
             Self::Rustls(connection) => connection
                 .drive_read(budget, destination)
                 .map_err(TransportError::Rustls),
+            #[cfg(test)]
+            Self::Simulated(connection) => connection
+                .drive_read(budget, destination)
+                .map_err(TransportError::Plaintext),
         }
     }
 
@@ -97,6 +110,10 @@ impl TransportConnection {
             Self::Rustls(connection) => connection
                 .drive_write(budget, destination)
                 .map_err(TransportError::Rustls),
+            #[cfg(test)]
+            Self::Simulated(connection) => connection
+                .drive_write(budget, destination)
+                .map_err(TransportError::Plaintext),
         }
     }
 
@@ -105,6 +122,8 @@ impl TransportConnection {
             Self::Plaintext(connection) => connection.queued_write_frames(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(connection) => connection.queued_write_frames(),
+            #[cfg(test)]
+            Self::Simulated(connection) => connection.queued_write_frames(),
         }
     }
 
@@ -113,6 +132,8 @@ impl TransportConnection {
             Self::Plaintext(connection) => connection.queued_write_bytes(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(connection) => connection.queued_write_bytes(),
+            #[cfg(test)]
+            Self::Simulated(connection) => connection.queued_write_bytes(),
         }
     }
 
@@ -122,7 +143,39 @@ impl TransportConnection {
             Self::Plaintext(connection) => connection.fail_read_after_frame(kind),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(_) => panic!("plaintext read-failure injection requires plaintext"),
+            Self::Simulated(_) => panic!("plaintext read-failure injection requires plaintext"),
         }
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn simulated(limits: TransportLimits) -> Self {
+        Self::Simulated(SimulatedConnection::new(limits))
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn simulated_connect(&mut self) -> bool {
+        let Self::Simulated(connection) = self else {
+            return false;
+        };
+        connection.connect();
+        true
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn simulated_receive(&mut self, bytes: Vec<u8>) -> bool {
+        let Self::Simulated(connection) = self else {
+            return false;
+        };
+        connection.receive(bytes);
+        true
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn take_simulated_frames(&mut self) -> Vec<Vec<u8>> {
+        let Self::Simulated(connection) = self else {
+            return Vec::new();
+        };
+        connection.take_completed_frames()
     }
 }
 
@@ -137,6 +190,8 @@ impl Source for TransportConnection {
             Self::Plaintext(connection) => connection.register(registry, token, interests),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(connection) => connection.register(registry, token, interests),
+            #[cfg(test)]
+            Self::Simulated(_) => Ok(()),
         }
     }
 
@@ -150,6 +205,8 @@ impl Source for TransportConnection {
             Self::Plaintext(connection) => connection.reregister(registry, token, interests),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(connection) => connection.reregister(registry, token, interests),
+            #[cfg(test)]
+            Self::Simulated(_) => Ok(()),
         }
     }
 
@@ -158,6 +215,8 @@ impl Source for TransportConnection {
             Self::Plaintext(connection) => connection.deregister(registry),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(connection) => connection.deregister(registry),
+            #[cfg(test)]
+            Self::Simulated(_) => Ok(()),
         }
     }
 }

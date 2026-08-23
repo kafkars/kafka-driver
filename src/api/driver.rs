@@ -31,7 +31,7 @@ pub struct Driver {
 }
 
 impl Driver {
-    pub(super) const fn new(
+    pub(crate) const fn new(
         commands: MailboxSender<Command>,
         shutdown: ShutdownRequester,
         call_ids: Arc<CallIds>,
@@ -83,6 +83,20 @@ impl Driver {
         self.request(Route::AnyBroker, request, timeout)
     }
 
+    #[cfg(test)]
+    pub(crate) fn call_at<R>(
+        &self,
+        request: R,
+        submitted_at: Instant,
+        timeout: Duration,
+    ) -> Result<Call<Result<R::Response, RequestError>>, SubmitError>
+    where
+        R: RequestResponsePair + Send + 'static,
+        R::Response: Send + 'static,
+    {
+        self.request_at(Route::AnyBroker, request, submitted_at, timeout)
+    }
+
     /// Submits one generated request through a semantic cluster route.
     ///
     /// For an accepted command, `timeout` includes mailbox residence, route
@@ -97,10 +111,23 @@ impl Driver {
         R: RequestResponsePair + Send + 'static,
         R::Response: Send + 'static,
     {
+        self.request_at(route, request, Instant::now(), timeout)
+    }
+
+    fn request_at<R>(
+        &self,
+        route: Route,
+        request: R,
+        submitted_at: Instant,
+        timeout: Duration,
+    ) -> Result<Call<Result<R::Response, RequestError>>, SubmitError>
+    where
+        R: RequestResponsePair + Send + 'static,
+        R::Response: Send + 'static,
+    {
         let Some(call_id) = self.call_ids.allocate() else {
             return Err(SubmitError::IdentityExhausted);
         };
-        let submitted_at = Instant::now();
         let timeline = CallTimeline::new(Arc::clone(&self.observation), submitted_at, timeout);
         let (call, request) = observed_request(call_id, request, timeout, timeline);
         self.commands

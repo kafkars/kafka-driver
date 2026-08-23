@@ -1,17 +1,14 @@
-//! Deterministic simulation substrate for kafka-driver machines.
+//! Kafka capability scripts shared by deterministic driver simulations.
 //!
-//! The simulator advances virtual time only when consuming a scripted event.
-//! It owns no sockets, threads, real clock, or runtime integration.
+//! Calandria owns scheduling and virtual time; this crate retains only Kafka-
+//! shaped DNS, readiness, and byte-stream fixtures.
 
-mod clock;
 mod dns;
-mod event;
-mod limits;
-mod plan;
 mod poller;
-mod schedule;
-mod simulation;
 mod transport;
+
+#[cfg(test)]
+mod scenario;
 
 #[cfg(test)]
 mod authentication_scenario_test;
@@ -22,27 +19,19 @@ mod broker_resolution_scenario_test;
 #[cfg(test)]
 mod broker_scenario_test;
 #[cfg(test)]
-mod clock_test;
-#[cfg(test)]
 mod connection_scenario_test;
-#[cfg(test)]
-mod schedule_test;
-#[cfg(test)]
-mod simulation_test;
 
-pub use clock::{ClockError, SimClock};
+pub use calandria_sim::Planned;
 pub use dns::{
     BrokerEndpoint, DnsFailure, DnsOutcome, DnsRequest, DnsScriptError, DnsStep, HostName,
     HostNameError, IpAddress, ResolutionLimits, ResolvedAddress, ResolvedAddressSet,
     ResolvedAddressSetError, ScriptedDns,
 };
-pub use event::{Scheduled, SimEventId};
-pub use limits::SimulationLimits;
-pub use plan::Planned;
 pub use poller::{
     PollInterest, PollRequest, PollScriptError, PollStep, Readiness, ReadinessEvent, ScriptedPoller,
 };
-pub use simulation::{SimulationError, Simulator};
+#[cfg(test)]
+pub(crate) use scenario::Scenario;
 pub use transport::{
     FaultPlan, ReadRequest, ReadResult, ReadStep, ScriptedTransport, TransportFault,
     TransportIdentity, TransportOperationKind, TransportOutcome, TransportPlanError,

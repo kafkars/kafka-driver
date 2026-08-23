@@ -8,7 +8,7 @@ use kafka_driver_core::{
     EffectId, HostName, IpAddress, Moment, ResolutionLimits, ResolvedAddress, ResolvedAddressSet,
 };
 
-use crate::{DnsStep, ScriptedDns, Simulator};
+use crate::{DnsStep, Scenario, ScriptedDns};
 
 const OLD_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(6);
 const CURRENT_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(7);
@@ -35,14 +35,14 @@ fn delayed_superseded_dns_result_cannot_finish_current_bootstrap() {
             DnsOutcome::new(CURRENT_EPOCH, CURRENT_EFFECT, Ok(current_addresses.clone())),
         ),
     ]);
-    let mut simulator = Simulator::new();
+    let mut simulator = Scenario::new();
 
     schedule(&mut simulator, &mut dns, old_request);
     schedule(&mut simulator, &mut dns, current_request);
 
     let old = next(&mut simulator);
     let stale = machine.apply(BootstrapInput::ResolutionCompleted {
-        outcome: old.into_event(),
+        outcome: old,
         retry_effect_id: UNUSED_RETRY,
     });
 
@@ -59,7 +59,7 @@ fn delayed_superseded_dns_result_cannot_finish_current_bootstrap() {
 
     let current = next(&mut simulator);
     let completed = machine.apply(BootstrapInput::ResolutionCompleted {
-        outcome: current.into_event(),
+        outcome: current,
         retry_effect_id: UNUSED_RETRY,
     });
 
@@ -97,20 +97,20 @@ fn start(
     }
 }
 
-fn schedule(simulator: &mut Simulator<DnsOutcome>, dns: &mut ScriptedDns, request: DnsRequest) {
+fn schedule(simulator: &mut Scenario<DnsOutcome>, dns: &mut ScriptedDns, request: DnsRequest) {
     let planned = dns
         .resolve(request)
         .unwrap_or_else(|error| panic!("scripted DNS request must match: {error}"));
     simulator
         .schedule_planned(planned)
-        .unwrap_or_else(|error| panic!("DNS outcome must fit simulation: {error}"));
+        .unwrap_or_else(|error| panic!("DNS outcome must fit simulation: {error:?}"));
 }
 
-fn next(simulator: &mut Simulator<DnsOutcome>) -> crate::Scheduled<DnsOutcome> {
-    simulator
-        .next_event()
-        .unwrap_or_else(|error| panic!("simulation step must succeed: {error}"))
-        .unwrap_or_else(|| panic!("scheduled DNS outcome must exist"))
+fn next(simulator: &mut Scenario<DnsOutcome>) -> DnsOutcome {
+    simulator.next_event().map_or_else(
+        || panic!("scheduled DNS outcome must exist"),
+        |(_, outcome)| outcome,
+    )
 }
 
 fn endpoint(host: &str) -> BrokerEndpoint {

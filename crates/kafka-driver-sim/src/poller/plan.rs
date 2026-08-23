@@ -2,9 +2,11 @@
 
 use std::time::Duration;
 
+use calandria::Span;
+use calandria_sim::Planned;
 use kafka_driver_core::{ConnectionEpoch, TransportId};
 
-use crate::{Planned, PollInterest, Readiness};
+use crate::{PollInterest, Readiness};
 
 /// One transport interest arm expected by a deterministic poller script.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -91,10 +93,13 @@ pub struct PollStep {
 
 impl PollStep {
     /// Creates one deterministic poller step.
-    pub const fn new(expected: PollRequest, delay: Duration, event: ReadinessEvent) -> Self {
+    pub fn new(expected: PollRequest, delay: Duration, event: ReadinessEvent) -> Self {
         Self {
             expected,
-            planned: Planned::new(delay, event),
+            planned: Planned::new(
+                Span::try_from(delay).unwrap_or(Span::from_nanos(u64::MAX)),
+                event,
+            ),
         }
     }
 

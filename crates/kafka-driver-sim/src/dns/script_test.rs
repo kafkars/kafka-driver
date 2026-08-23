@@ -2,13 +2,14 @@
 
 use std::{num::NonZeroU16, time::Duration};
 
+use calandria::Span;
 use kafka_driver_core::{ConnectionEpoch, EffectId, Moment};
 
 use super::{
     BrokerEndpoint, DnsFailure, DnsOutcome, DnsRequest, DnsScriptError, DnsStep, HostName,
     IpAddress, ResolutionLimits, ResolvedAddress, ResolvedAddressSet, ScriptedDns,
 };
-use crate::Simulator;
+use crate::Scenario;
 
 const CURRENT_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(7);
 const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(6);
@@ -24,22 +25,22 @@ fn matching_request_schedules_its_outcome_in_virtual_time() {
         Duration::from_nanos(5),
         outcome,
     )]);
-    let mut simulator = Simulator::new();
+    let mut simulator = Scenario::new();
 
     let Ok(planned) = dns.resolve(request) else {
         panic!("matching resolver request must consume its step");
     };
-    assert_eq!(planned.delay(), Duration::from_nanos(5));
+    assert_eq!(planned.delay(), Span::from_nanos(5));
     assert!(
         simulator.schedule_planned(planned).is_ok(),
         "planned DNS result must fit simulator bounds"
     );
-    let Ok(Some(scheduled)) = simulator.next_event() else {
+    let Some((at, event)) = simulator.next_event() else {
         panic!("planned DNS result must become observable");
     };
 
-    assert_eq!(scheduled.at(), Moment::from_nanos(5));
-    assert_eq!(scheduled.event().result(), &Ok(addresses([address])));
+    assert_eq!(at, Moment::from_nanos(5));
+    assert_eq!(event.result(), &Ok(addresses([address])));
     assert!(dns.is_complete());
 }
 

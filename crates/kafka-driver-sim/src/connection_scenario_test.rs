@@ -8,7 +8,7 @@ use kafka_driver_core::{
     NegotiatedCapabilities, NegotiationAttempt, TimerId, TransitionDisposition, TransportId,
 };
 
-use crate::Simulator;
+use crate::Scenario;
 
 const EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(1);
 const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(0);
@@ -24,7 +24,7 @@ const DEADLINE_TIMER: TimerId = TimerId::from_raw(6);
 
 #[test]
 fn virtual_deadline_closes_a_possibly_delivered_call() {
-    let mut simulator = Simulator::new();
+    let mut simulator = Scenario::new();
     let mut machine = ConnectionMachine::new(EPOCH, ConnectionLimits::default());
     schedule(
         &mut simulator,
@@ -107,7 +107,7 @@ fn virtual_deadline_closes_a_possibly_delivered_call() {
 
 #[test]
 fn delayed_old_epoch_result_is_ordinary_stale_data() {
-    let mut simulator = Simulator::new();
+    let mut simulator = Scenario::new();
     let mut machine = ConnectionMachine::new(EPOCH, ConnectionLimits::default());
     schedule(
         &mut simulator,
@@ -160,7 +160,7 @@ fn capabilities() -> NegotiatedCapabilities {
         .unwrap_or_else(|error| panic!("scenario capabilities must be valid: {error}"))
 }
 
-fn schedule(simulator: &mut Simulator<ConnectionInput>, at: u64, input: ConnectionInput) {
+fn schedule(simulator: &mut Scenario<ConnectionInput>, at: u64, input: ConnectionInput) {
     if simulator
         .schedule_at(Moment::from_nanos(at), input)
         .is_err()
@@ -170,16 +170,16 @@ fn schedule(simulator: &mut Simulator<ConnectionInput>, at: u64, input: Connecti
 }
 
 fn drive(
-    simulator: &mut Simulator<ConnectionInput>,
+    simulator: &mut Scenario<ConnectionInput>,
     machine: &mut ConnectionMachine,
     steps: usize,
 ) -> Vec<kafka_driver_core::ConnectionTransition> {
     let mut transitions = Vec::with_capacity(steps);
     for _ in 0..steps {
-        let Ok(Some(scheduled)) = simulator.next_event() else {
+        let Some((_, input)) = simulator.next_event() else {
             panic!("connection scenario must provide every expected step");
         };
-        let Ok(transition) = machine.apply(scheduled.into_event()) else {
+        let Ok(transition) = machine.apply(input) else {
             panic!("scripted connection input must be internally valid");
         };
         transitions.push(transition);

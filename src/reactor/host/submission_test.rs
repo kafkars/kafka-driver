@@ -2,7 +2,7 @@
 
 use std::{sync::Arc, time::Duration, time::Instant};
 
-use kafka_driver_core::{CallFailure, CallId, Delivery};
+use kafka_driver_core::{CallFailure, CallId, Delivery, Moment};
 use kafka_wire::ApiVersionsRequest;
 
 use crate::{
@@ -36,7 +36,12 @@ fn request_expired_during_mailbox_residence_never_reaches_routing() {
 
     // When: the reactor finally processes the admitted command.
     reactor
-        .process_submission(Route::AnyBroker, request, submitted_at)
+        .process_submission(
+            Route::AnyBroker,
+            request,
+            submitted_at,
+            Moment::from_nanos(1_000_000_000),
+        )
         .unwrap_or_else(|error| panic!("process expired submission: {error}"));
 
     // Then: timeout wins before the otherwise unavailable route is inspected.

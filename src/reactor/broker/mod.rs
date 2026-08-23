@@ -19,6 +19,8 @@ mod reconnect;
 mod replacement;
 mod response;
 mod shutdown;
+#[cfg(test)]
+mod simulation;
 mod submission;
 mod terminal;
 mod write_admission;

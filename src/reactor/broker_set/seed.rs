@@ -38,6 +38,30 @@ impl BrokerSet {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub(in crate::reactor) fn install_simulated_seed(
+        &mut self,
+        config: BrokerConfig,
+        poller: &Poller,
+        now: Moment,
+    ) -> Result<(), BrokerSetError> {
+        if self.seed.is_some() {
+            return Err(BrokerSetError::SeedAlreadyInstalled);
+        }
+        let namespace = ResourceNamespace::new(0, self.owner_capacity)
+            .ok_or(BrokerSetError::NamespaceUnavailable)?;
+        let mut seed = SingleBroker::new_configured_in(
+            config,
+            self.broker_limits,
+            namespace,
+            self.scram_proof.clone(),
+        );
+        seed.enable_simulation();
+        seed.start(poller, now).map_err(BrokerSetError::Broker)?;
+        self.seed = Some(seed);
+        Ok(())
+    }
+
     pub(in crate::reactor) fn install_resolved_seed(
         &mut self,
         seed: ResolvedSeed,
