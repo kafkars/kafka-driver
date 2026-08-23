@@ -1,13 +1,21 @@
-//! Join ownership for one thread repeatedly driving the embedded reactor.
+//! Public join ownership over one Calandria-hosted driver duty.
 
-use std::{fmt, io, thread, time::Duration};
+use std::{fmt, io};
 
-use crate::{Reactor, ReactorError, TurnOutcome};
+use calandria::{HostConfig, ReactorOutcome, Span};
+
+use crate::{
+    Reactor, ReactorError,
+    reactor::{DriverWaiter, ReactorClock},
+};
 
 use super::DriverHostError;
 
 const THREAD_NAME: &str = "kafka-driver-io";
-const POLL_LIMIT: Duration = Duration::from_secs(60);
+const POLL_LIMIT: Span = Span::from_nanos(60_000_000_000);
+
+type HostedReactor = calandria::Reactor<Reactor, ReactorClock, DriverWaiter>;
+type HostedHandle = calandria::ReactorHandle<Reactor, ReactorClock, DriverWaiter>;
 
 /// Join handle for one dedicated driver reactor thread.
 ///
@@ -15,14 +23,24 @@ const POLL_LIMIT: Duration = Duration::from_secs(60);
 /// Request shutdown through [`crate::Driver::shutdown`] or drop every `Driver`
 /// handle before joining.
 pub struct DriverHost {
-    owner: thread::JoinHandle<Result<(), ReactorError>>,
+    owner: HostedHandle,
 }
 
 impl DriverHost {
     pub(crate) fn spawn(reactor: Reactor) -> io::Result<Self> {
-        let owner = thread::Builder::new()
-            .name(THREAD_NAME.into())
-            .spawn(move || run(reactor))?;
+        let clock = reactor.clock();
+        let wake = reactor.wake_handle();
+        let termination_wake = calandria::WakeHandle::new(move || wake.wake());
+        let hosted = HostedReactor::with_config(
+            reactor,
+            clock,
+            DriverWaiter,
+            termination_wake,
+            HostConfig::new(POLL_LIMIT),
+        );
+        let owner = hosted
+            .spawn(THREAD_NAME)
+            .map_err(|error| error.into_parts().0)?;
         Ok(Self { owner })
     }
 
@@ -36,10 +54,16 @@ impl DriverHost {
     /// This blocks while any `Driver` still keeps admission open unless another
     /// handle has already requested shutdown.
     pub fn join(self) -> Result<(), DriverHostError> {
-        match self.owner.join() {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => Err(DriverHostError::Reactor(error)),
-            Err(_) => Err(DriverHostError::Panicked),
+        let exit = self.owner.join().map_err(|_| DriverHostError::Panicked)?;
+        let (_, _, outcome, _) = exit.into_parts();
+        match outcome {
+            ReactorOutcome::Stopped => Ok(()),
+            ReactorOutcome::Terminated => Err(DriverHostError::Reactor(ReactorError::host(
+                io::Error::other("the driver reactor was forcefully terminated"),
+            ))),
+            ReactorOutcome::Failed(failure) => Err(DriverHostError::Reactor(ReactorError::host(
+                io::Error::other(failure),
+            ))),
         }
     }
 }
@@ -50,14 +74,5 @@ impl fmt::Debug for DriverHost {
             .debug_struct("DriverHost")
             .field("is_finished", &self.is_finished())
             .finish_non_exhaustive()
-    }
-}
-
-fn run(mut reactor: Reactor) -> Result<(), ReactorError> {
-    loop {
-        match reactor.turn(POLL_LIMIT)? {
-            TurnOutcome::Shutdown { .. } => return Ok(()),
-            TurnOutcome::Idle | TurnOutcome::Progress { .. } => {}
-        }
     }
 }

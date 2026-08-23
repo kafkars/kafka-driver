@@ -24,6 +24,7 @@ mod timer;
 mod tls;
 mod transport;
 mod wait_queue;
+mod waiter;
 mod wake;
 
 #[cfg(test)]
@@ -41,10 +42,12 @@ mod mailbox_test;
 #[cfg(test)]
 mod wait_queue_test;
 
+pub(crate) use clock::ReactorClock;
 pub(crate) use command::Command;
 pub use error::ReactorError;
 pub use host::{Reactor, TurnOutcome};
 pub(in crate::reactor) use invalidation::{InvalidationSubscribers, RouteInvalidation};
 pub(crate) use mailbox::{MailboxSender, TrySendError, mailbox};
 pub(in crate::reactor) use poller::{PollEvent, PollInterest, PollWake, Poller, Readiness};
+pub(crate) use waiter::DriverWaiter;
 pub use wake::WakeHandle;

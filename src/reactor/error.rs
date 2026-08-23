@@ -57,7 +57,7 @@ impl ReactorError {
         }
     }
 
-    pub(super) const fn host(source: io::Error) -> Self {
+    pub(crate) const fn host(source: io::Error) -> Self {
         Self {
             source,
             operation: ReactorOperation::Host,

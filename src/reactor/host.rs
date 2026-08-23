@@ -18,6 +18,7 @@ mod scram_proof;
 mod state;
 mod submission;
 mod topic_view;
+mod turn;
 
 #[cfg(test)]
 mod resolution_test;
@@ -27,6 +28,8 @@ mod shutdown_test;
 mod submission_test;
 
 use std::{sync::Arc, time::Duration};
+
+use calandria::{Span, WaitOutcome};
 
 use crate::{
     api::CallIds,
@@ -43,7 +46,7 @@ use super::{
     clock::ReactorClock,
     coordinator::CoordinatorOwner,
     mailbox,
-    mailbox::{DrainStatus, MailboxReceiver},
+    mailbox::MailboxReceiver,
     metadata::MetadataOwner,
     resolver::ResolverShutdown,
     scram_proof::{ScramProofOutcome, ScramProofWorker},
@@ -158,73 +161,39 @@ impl Reactor {
         if self.state == HostState::Shutdown {
             return Ok(TurnOutcome::Shutdown { commands: 0 });
         }
-        let mut status = self
-            .commands
-            .drain_into(&mut self.command_batch, self.limits.command_budget());
-        let mut processed = self.process_commands()?;
-        if status == DrainStatus::Closed && self.state == HostState::Running {
-            self.begin_implicit_shutdown()?;
-        }
-        if let Some(outcome) = self.finish_shutdown_if_terminal(processed)? {
+        let now = self.clock.now().map_err(ReactorError::clock)?;
+        let outcome = self.drive_at(now)?;
+        if !matches!(outcome, TurnOutcome::Idle) {
             return Ok(outcome);
         }
-        let deadlines = self.fire_due_deadlines()?;
-        let mut progress = deadlines.made_progress();
-        let mut more_due = deadlines.more_due();
-        let resolution = self.continue_resolution()?;
-        let mut more_resolution = resolution.more_work();
-        progress |= resolution.made_progress();
-        let proofs = self.continue_scram_proofs()?;
-        let mut more_proofs = proofs.more_work();
-        progress |= proofs.made_progress();
-        progress |= processed != 0;
-        progress |= self.continue_broker_io()?;
-        progress |= self.continue_metadata()?;
-        progress |= self.continue_coordinator()?;
 
-        if !progress && status == DrainStatus::Idle {
-            self.poll_events.clear();
-            let wait = self.poll_wait(max_wait)?;
-            self.poller
-                .poll_into(Some(wait), &mut self.poll_events)
-                .map_err(ReactorError::poll)?;
-            status = self
-                .commands
-                .drain_into(&mut self.command_batch, self.limits.command_budget());
-            processed += self.process_commands()?;
-            if status == DrainStatus::Closed && self.state == HostState::Running {
-                self.begin_implicit_shutdown()?;
-            }
-            let deadlines = self.fire_due_deadlines()?;
-            progress |= processed != 0 || deadlines.made_progress();
-            more_due |= deadlines.more_due();
-            let resolution = self.continue_resolution()?;
-            progress |= resolution.made_progress();
-            more_resolution |= resolution.more_work();
-            progress |= self.observe_poll_events()?;
-            let proofs = self.continue_scram_proofs()?;
-            progress |= proofs.made_progress();
-            more_proofs |= proofs.more_work();
-            progress |= self.continue_metadata()?;
-            progress |= self.continue_coordinator()?;
-        }
-        if let Some(outcome) = self.finish_shutdown_if_terminal(processed)? {
-            return Ok(outcome);
-        }
-        if progress {
-            return Ok(TurnOutcome::Progress {
-                commands: processed,
-                more_work: status == DrainStatus::MorePending
-                    || more_due
-                    || more_resolution
-                    || more_proofs
-                    || self.worker_shutdown_pending()
-                    || self.broker_has_local_io()
-                    || self.metadata_has_local_work()
-                    || self.coordinator_has_local_work(),
-            });
-        }
-        Ok(TurnOutcome::Idle)
+        let maximum = Span::try_from(max_wait).unwrap_or(Span::from_nanos(u64::MAX));
+        let wait = self
+            .next(now)
+            .bounded_wait(calandria::Moment::from_nanos(now.as_nanos()), maximum);
+        let _ = self.wait_for_events(wait)?;
+        let now = self.clock.now().map_err(ReactorError::clock)?;
+        self.drive_at(now)
+    }
+
+    pub(in crate::reactor) fn wait_for_events(
+        &mut self,
+        maximum: Span,
+    ) -> Result<WaitOutcome, ReactorError> {
+        self.poll_events.clear();
+        let observed = self
+            .poller
+            .poll_into(Some(maximum.as_duration()), &mut self.poll_events)
+            .map_err(ReactorError::poll)?;
+        Ok(if observed == 0 {
+            WaitOutcome::Idle
+        } else {
+            WaitOutcome::Notified
+        })
+    }
+
+    pub(crate) fn clock(&self) -> ReactorClock {
+        self.clock.clone()
     }
 
     /// Returns a cloneable notification handle for embedded-host integration.

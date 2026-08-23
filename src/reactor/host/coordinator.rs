@@ -1,15 +1,15 @@
 //! Host-phase integration for generated coordinator discovery and waiter routing.
 
 use crate::{RequestError, api::RouteFact};
+use kafka_driver_core::Moment;
 
 use super::{HostState, Reactor, ReactorError, routing::bind_route};
 
 impl Reactor {
-    pub(super) fn continue_coordinator(&mut self) -> Result<bool, ReactorError> {
+    pub(super) fn continue_coordinator(&mut self, now: Moment) -> Result<bool, ReactorError> {
         if self.state != HostState::Running {
             return Ok(false);
         }
-        let now = self.clock.now().map_err(ReactorError::clock)?;
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         let (progress, waiting) = {
             let Some(coordinator) = &mut self.coordinator else {
