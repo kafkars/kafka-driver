@@ -1,33 +1,44 @@
-//! Single-consumer blocking and task-waker views over shared completion state.
+//! Driver-compatible observation over one Calandria completion.
 
-use std::task::{Context, Poll};
+use std::{
+    cell::RefCell,
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
-use super::{CompletionError, state::Shared};
+use super::CompletionError;
 
 pub(crate) struct CompletionReceiver<T> {
-    shared: Shared<T>,
+    inner: RefCell<calandria::Completion<T>>,
 }
 
 impl<T> CompletionReceiver<T> {
-    pub(super) const fn new(shared: Shared<T>) -> Self {
-        Self { shared }
+    pub(super) const fn new(inner: calandria::Completion<T>) -> Self {
+        Self {
+            inner: RefCell::new(inner),
+        }
     }
 
     pub(crate) fn wait(self) -> Result<T, CompletionError> {
-        self.shared.wait()
+        self.inner
+            .into_inner()
+            .wait()
+            .map_err(CompletionError::from_calandria)
     }
 
-    pub(crate) fn poll_result(&self, context: &Context<'_>) -> Poll<Result<T, CompletionError>> {
-        self.shared.poll_result(context)
+    pub(crate) fn poll_result(
+        &self,
+        context: &mut Context<'_>,
+    ) -> Poll<Result<T, CompletionError>> {
+        Future::poll(Pin::new(&mut *self.inner.borrow_mut()), context)
+            .map(|result| result.map_err(CompletionError::from_calandria))
     }
 
     pub(crate) fn try_result(&self) -> Option<Result<T, CompletionError>> {
-        self.shared.try_result()
-    }
-}
-
-impl<T> Drop for CompletionReceiver<T> {
-    fn drop(&mut self) {
-        self.shared.abandon_receiver();
+        self.inner
+            .borrow_mut()
+            .try_take()
+            .map(|result| result.map_err(CompletionError::from_calandria))
     }
 }

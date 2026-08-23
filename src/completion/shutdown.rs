@@ -1,32 +1,17 @@
-//! Shared bounded subscription and exactly-once settlement for driver shutdown.
+//! Driver completion adapters over Calandria's bounded shutdown barrier.
 
-use std::{
-    fmt,
-    num::NonZeroUsize,
-    sync::{Arc, Mutex, MutexGuard},
-};
+use std::{fmt, num::NonZeroUsize};
 
-use super::{CompletionReceiver, CompletionSender, completion_pair};
+use super::CompletionReceiver;
 
 pub(crate) fn shutdown_barrier(capacity: NonZeroUsize) -> (ShutdownRequester, ShutdownCompleter) {
-    let shared = Arc::new(Shared {
-        capacity: capacity.get(),
-        state: Mutex::new(State::new(capacity)),
-    });
-    (
-        ShutdownRequester {
-            shared: Arc::clone(&shared),
-        },
-        ShutdownCompleter {
-            shared,
-            settled: false,
-        },
-    )
+    let (requester, completer) = calandria::shutdown_barrier(capacity);
+    (ShutdownRequester { inner: requester }, completer)
 }
 
 #[derive(Clone)]
 pub(crate) struct ShutdownRequester {
-    shared: Arc<Shared>,
+    inner: calandria::ShutdownRequester,
 }
 
 impl ShutdownRequester {
@@ -34,68 +19,20 @@ impl ShutdownRequester {
         &self,
         request: impl FnOnce() -> Result<(), E>,
     ) -> Result<CompletionReceiver<()>, ShutdownSubscribeError<E>> {
-        let (receiver, sender) = completion_pair();
-        let mut state = self.shared.lock();
-        match state.phase {
-            Phase::Open => {
-                if state.subscribers.len() == self.shared.capacity {
-                    return Err(ShutdownSubscribeError::Full);
-                }
-                if let Err(error) = request() {
-                    return Err(ShutdownSubscribeError::Request(error));
-                }
-                state.phase = Phase::Requested;
-                state.subscribers.push(sender);
-            }
-            Phase::Requested => {
-                if state.subscribers.len() == self.shared.capacity {
-                    return Err(ShutdownSubscribeError::Full);
-                }
-                state.subscribers.push(sender);
-            }
-            Phase::Completed => {
-                drop(state);
-                let _ = sender.complete(());
-            }
-            Phase::Closed => return Err(ShutdownSubscribeError::Closed),
-        }
-        Ok(receiver)
+        self.inner
+            .subscribe(request)
+            .map(CompletionReceiver::new)
+            .map_err(ShutdownSubscribeError::from_calandria)
     }
 }
 
 impl fmt::Debug for ShutdownRequester {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ShutdownRequester")
-            .finish_non_exhaustive()
+        self.inner.fmt(formatter)
     }
 }
 
-pub(crate) struct ShutdownCompleter {
-    shared: Arc<Shared>,
-    settled: bool,
-}
-
-impl ShutdownCompleter {
-    pub(crate) fn complete(&mut self) {
-        if self.settled {
-            return;
-        }
-        self.settled = true;
-        let subscribers = self.shared.settle(Phase::Completed);
-        for subscriber in subscribers {
-            let _ = subscriber.complete(());
-        }
-    }
-}
-
-impl Drop for ShutdownCompleter {
-    fn drop(&mut self) {
-        if !self.settled {
-            drop(self.shared.settle(Phase::Closed));
-        }
-    }
-}
+pub(crate) type ShutdownCompleter = calandria::ShutdownCompleter;
 
 pub(crate) enum ShutdownSubscribeError<E> {
     Full,
@@ -103,43 +40,14 @@ pub(crate) enum ShutdownSubscribeError<E> {
     Request(E),
 }
 
-struct Shared {
-    capacity: usize,
-    state: Mutex<State>,
-}
-
-impl Shared {
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    fn settle(&self, phase: Phase) -> Vec<CompletionSender<()>> {
-        let mut state = self.lock();
-        state.phase = phase;
-        std::mem::take(&mut state.subscribers)
-    }
-}
-
-struct State {
-    phase: Phase,
-    subscribers: Vec<CompletionSender<()>>,
-}
-
-impl State {
-    fn new(capacity: NonZeroUsize) -> Self {
-        Self {
-            phase: Phase::Open,
-            subscribers: Vec::with_capacity(capacity.get()),
+impl<E> ShutdownSubscribeError<E> {
+    fn from_calandria(error: calandria::ShutdownSubscribeError<E>) -> Self {
+        match error {
+            calandria::ShutdownSubscribeError::Full => Self::Full,
+            calandria::ShutdownSubscribeError::Request(source) => Self::Request(source),
+            // Calandria's error is non-exhaustive. Closed and future terminal
+            // variants fail closed until the driver gives them a public shape.
+            _ => Self::Closed,
         }
     }
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum Phase {
-    Open,
-    Requested,
-    Completed,
-    Closed,
 }
