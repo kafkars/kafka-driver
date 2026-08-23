@@ -10,7 +10,7 @@ use kafka_driver_core::{
     ResolvedAddress, ResolvedAddressSet,
 };
 
-use crate::{DnsStep, ScriptedDns, Simulator};
+use crate::{DnsStep, Scenario, ScriptedDns};
 
 #[test]
 fn delayed_old_metadata_route_cannot_install_a_discovered_broker_address() {
@@ -32,7 +32,7 @@ fn delayed_old_metadata_route_cannot_install_a_discovered_broker_address() {
             DnsOutcome::new(epoch(2), effect(11), Ok(current_addresses.clone())),
         ),
     ]);
-    let mut simulator = Simulator::new();
+    let mut simulator = Scenario::new();
     schedule(&mut simulator, &mut dns, old);
     schedule(&mut simulator, &mut dns, current);
 
@@ -86,21 +86,20 @@ fn start(
     }
 }
 
-fn schedule(simulator: &mut Simulator<DnsOutcome>, dns: &mut ScriptedDns, request: DnsRequest) {
+fn schedule(simulator: &mut Scenario<DnsOutcome>, dns: &mut ScriptedDns, request: DnsRequest) {
     let planned = dns
         .resolve(request)
         .unwrap_or_else(|error| panic!("scripted DNS must match: {error}"));
     simulator
         .schedule_planned(planned)
-        .unwrap_or_else(|error| panic!("DNS outcome must fit simulation: {error}"));
+        .unwrap_or_else(|error| panic!("DNS outcome must fit simulation: {error:?}"));
 }
 
-fn next(simulator: &mut Simulator<DnsOutcome>) -> DnsOutcome {
-    simulator
-        .next_event()
-        .unwrap_or_else(|error| panic!("simulation step: {error}"))
-        .unwrap_or_else(|| panic!("scheduled DNS outcome must exist"))
-        .into_event()
+fn next(simulator: &mut Scenario<DnsOutcome>) -> DnsOutcome {
+    simulator.next_event().map_or_else(
+        || panic!("scheduled DNS outcome must exist"),
+        |(_, outcome)| outcome,
+    )
 }
 
 fn route(raw_generation: u64) -> BrokerRoute {

@@ -9,7 +9,7 @@ use kafka_driver_core::{
     SaslProtocol, TimerId, TransportId,
 };
 
-use crate::Simulator;
+use crate::Scenario;
 
 const EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(1);
 const TRANSPORT: TransportId = TransportId::from_raw(2);
@@ -20,7 +20,7 @@ const DEADLINE: Moment = Moment::from_nanos(20);
 #[test]
 fn delayed_first_round_result_cannot_finish_the_second_scram_round() {
     // Given
-    let mut simulator = Simulator::new();
+    let mut simulator = Scenario::new();
     let mut machine = AuthenticationMachine::new(
         EPOCH,
         TRANSPORT,
@@ -86,7 +86,7 @@ fn exchange(round: u8, outcome: ExchangeOutcome) -> AuthenticationInput {
     }
 }
 
-fn schedule(simulator: &mut Simulator<AuthenticationInput>, at: u64, input: AuthenticationInput) {
+fn schedule(simulator: &mut Scenario<AuthenticationInput>, at: u64, input: AuthenticationInput) {
     if simulator
         .schedule_at(Moment::from_nanos(at), input)
         .is_err()
@@ -96,16 +96,16 @@ fn schedule(simulator: &mut Simulator<AuthenticationInput>, at: u64, input: Auth
 }
 
 fn drive(
-    simulator: &mut Simulator<AuthenticationInput>,
+    simulator: &mut Scenario<AuthenticationInput>,
     machine: &mut AuthenticationMachine,
     steps: usize,
 ) -> Vec<kafka_driver_core::AuthenticationTransition> {
     let mut transitions = Vec::with_capacity(steps);
     for _ in 0..steps {
-        let Ok(Some(scheduled)) = simulator.next_event() else {
+        let Some((_, input)) = simulator.next_event() else {
             panic!("authentication scenario must provide every expected step");
         };
-        transitions.push(machine.apply(scheduled.into_event()));
+        transitions.push(machine.apply(input));
     }
     transitions
 }

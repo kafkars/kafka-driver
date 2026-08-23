@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use kafka_driver_core::{CallFailure, Delivery};
+use kafka_driver_core::{CallFailure, Delivery, Moment};
 
 use crate::{RequestError, Route, request::ErasedRequest};
 
@@ -14,6 +14,7 @@ impl Reactor {
         route: Route,
         mut request: Box<dyn ErasedRequest>,
         submitted_at: Instant,
+        now: Moment,
     ) -> Result<(), ReactorError> {
         let start = self
             .clock
@@ -26,7 +27,6 @@ impl Reactor {
                 return Ok(());
             }
         };
-        let now = self.clock.now().map_err(ReactorError::clock)?;
         if deadline <= now {
             request.fail(deadline_exceeded());
             return Ok(());

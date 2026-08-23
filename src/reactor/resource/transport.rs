@@ -23,6 +23,8 @@ pub(in crate::reactor) struct TransportResources {
     security: BrokerSecurity,
     #[cfg(test)]
     reject_next_reregister: bool,
+    #[cfg(test)]
+    simulated: bool,
 }
 
 impl TransportResources {
@@ -47,6 +49,8 @@ impl TransportResources {
             security,
             #[cfg(test)]
             reject_next_reregister: false,
+            #[cfg(test)]
+            simulated: false,
         }
     }
 
@@ -56,6 +60,14 @@ impl TransportResources {
         identity: ResourceIdentity,
         address: SocketAddr,
     ) -> Result<ResourceToken, TransportOpenError> {
+        #[cfg(test)]
+        let connection = if self.simulated {
+            TransportConnection::simulated(self.limits)
+        } else {
+            TransportConnection::connect(address, self.limits, &self.security)
+                .map_err(TransportOpenError::Connect)?
+        };
+        #[cfg(not(test))]
         let connection = TransportConnection::connect(address, self.limits, &self.security)
             .map_err(TransportOpenError::Connect)?;
         let token = self
@@ -138,6 +150,41 @@ impl TransportResources {
     #[cfg(test)]
     pub(in crate::reactor) fn reject_next_reregister(&mut self) {
         self.reject_next_reregister = true;
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn enable_simulation(&mut self) {
+        self.simulated = true;
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn simulate_connect(&mut self, token: ResourceToken) -> bool {
+        self.connections
+            .get_mut(token)
+            .is_some_and(|(_, connection)| connection.simulated_connect())
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn simulate_receive(
+        &mut self,
+        token: ResourceToken,
+        bytes: Vec<u8>,
+    ) -> bool {
+        self.connections
+            .get_mut(token)
+            .is_some_and(|(_, connection)| connection.simulated_receive(bytes))
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn take_simulated_frames(
+        &mut self,
+        token: ResourceToken,
+    ) -> Vec<Vec<u8>> {
+        self.connections
+            .get_mut(token)
+            .map_or_else(Vec::new, |(_, connection)| {
+                connection.take_simulated_frames()
+            })
     }
 }
 

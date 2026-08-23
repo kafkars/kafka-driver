@@ -26,6 +26,7 @@ base64 = "0.22.1"
 bytes = "1.10"
 calandria = "=0.0.1-rc.1"
 calandria-mio = "=0.0.1-rc.1"
+calandria-sim = "=0.0.1-rc.1"
 kafka-driver = { version = "0.1.0-rc.1", path = "." }
 kafka-driver-core = { version = "0.1.0-rc.1", path = "crates/kafka-driver-core" }
 kafka-driver-sim = { path = "crates/kafka-driver-sim" }
@@ -73,6 +74,7 @@ stringprep.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+calandria-sim.workspace = true
 kafka-driver-sim.workspace = true
 serde.workspace = true
 syn.workspace = true
