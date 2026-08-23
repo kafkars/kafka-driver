@@ -99,8 +99,9 @@ impl SingleBroker {
     }
 
     #[cfg(test)]
-    pub(in crate::reactor) fn resource_token_for_test(&self) -> Option<usize> {
+    pub(in crate::reactor) const fn resource_token_for_test(
+        &self,
+    ) -> Option<crate::reactor::resource::ResourceToken> {
         self.resource_token
-            .map(crate::reactor::resource::ResourceToken::get)
     }
 }

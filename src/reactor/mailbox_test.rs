@@ -124,7 +124,7 @@ fn external_wake_is_not_suppressed_by_pending_mailbox_notification() {
     assert!(receiver.notification_is_requested());
     events.clear();
 
-    assert!(receiver.wake_handle().wake().is_ok());
+    assert!(WakeHandle::new(poller.wake_handle()).wake().is_ok());
 
     let second = poller.poll_into(Some(Duration::from_secs(1)), &mut events);
     let Ok(second) = second else {

@@ -25,10 +25,7 @@ impl BrokerSet {
         poller: &Poller,
         proof: ScramProofOutcome,
     ) -> Result<bool, BrokerSetError> {
-        let Some(owner) = proof.token().owner(
-            self.broker_limits.resource_capacity().get(),
-            self.owner_capacity.get(),
-        ) else {
+        let Some(owner) = self.resource_owner(proof.token()) else {
             return Ok(false);
         };
         if owner == 0 {

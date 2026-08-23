@@ -1,5 +1,6 @@
 //! Shard-local ownership of the seed and bounded broker-child namespace.
 
+mod capacity;
 mod child;
 mod child_io;
 mod child_resolution;

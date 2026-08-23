@@ -5,15 +5,16 @@ use std::{collections::BTreeMap, num::NonZeroUsize};
 use kafka_driver_core::{BrokerDirectory, ConnectionEpoch, MetadataGeneration};
 
 use crate::{
-    MetadataLimits, TrafficClass,
+    MetadataLimits,
     config::BrokerTemplate,
     reactor::broker::{BrokerLimits, SingleBroker},
+    reactor::resource::ResourceToken,
     reactor::scram_proof::ScramProofSender,
 };
 
 use super::{
-    BrokerSetError, child::BrokerChild, deadline_index::DeadlineIndex, lane_queue::LaneQueue,
-    waiting::WaitingCalls,
+    BrokerSetError, capacity::BrokerSetCapacity, child::BrokerChild, deadline_index::DeadlineIndex,
+    lane_queue::LaneQueue, waiting::WaitingCalls,
 };
 
 /// Shard-local owner of a seed connection and disjoint broker token namespaces.
@@ -48,6 +49,12 @@ pub(in crate::reactor) struct BrokerSet {
 }
 
 impl BrokerSet {
+    pub(super) fn resource_owner(&self, token: ResourceToken) -> Option<usize> {
+        usize::try_from(token.owner().get())
+            .ok()
+            .filter(|owner| *owner < self.owner_capacity.get())
+    }
+
     #[cfg(test)]
     pub(in crate::reactor) fn new(
         broker_limits: BrokerLimits,
@@ -63,22 +70,7 @@ impl BrokerSet {
         broker_template: Option<BrokerTemplate>,
         scram_proof: Option<ScramProofSender>,
     ) -> Result<Self, BrokerSetError> {
-        let broker_capacity = metadata_limits.broker_directory().max_brokers();
-        let lane_capacity = broker_capacity
-            .get()
-            .checked_mul(TrafficClass::COUNT)
-            .and_then(NonZeroUsize::new)
-            .ok_or(BrokerSetError::OwnerCapacityOverflow)?;
-        let capacity = lane_capacity
-            .get()
-            .checked_add(1)
-            .and_then(NonZeroUsize::new)
-            .ok_or(BrokerSetError::OwnerCapacityOverflow)?;
-        broker_limits
-            .resource_capacity()
-            .get()
-            .checked_mul(capacity.get())
-            .ok_or(BrokerSetError::OwnerCapacityOverflow)?;
+        let capacity = BrokerSetCapacity::new(broker_limits, metadata_limits)?;
         Ok(Self {
             seed: None,
             seed_generation: None,
@@ -89,18 +81,18 @@ impl BrokerSet {
             ),
             directory: None,
             broker_limits,
-            broker_capacity,
-            owner_capacity: capacity,
-            child_capacity: lane_capacity,
+            broker_capacity: capacity.brokers(),
+            owner_capacity: capacity.owners(),
+            child_capacity: capacity.lanes(),
             children: Vec::new(),
             active_slots: Vec::new(),
             active_positions: Vec::new(),
             free_slots: Vec::new(),
             lane_slots: BTreeMap::new(),
-            address_refreshes: LaneQueue::new(lane_capacity),
-            runnable_lanes: LaneQueue::new(lane_capacity),
-            reusable_lanes: LaneQueue::new(lane_capacity),
-            deadlines: DeadlineIndex::new(lane_capacity),
+            address_refreshes: LaneQueue::new(capacity.lanes()),
+            runnable_lanes: LaneQueue::new(capacity.lanes()),
+            reusable_lanes: LaneQueue::new(capacity.lanes()),
+            deadlines: DeadlineIndex::new(capacity.lanes()),
             broker_template,
             scram_proof,
             waiting_calls: metadata_limits.waiting_calls(),
@@ -212,7 +204,7 @@ impl BrokerSet {
     }
 
     #[cfg(test)]
-    pub(super) fn child_resource_token(&self, lane: super::BrokerLane) -> Option<usize> {
+    pub(super) fn child_resource_token(&self, lane: super::BrokerLane) -> Option<ResourceToken> {
         self.child_for_lane(lane)
             .and_then(|child| child.connection.as_ref())
             .and_then(super::super::broker::SingleBroker::resource_token_for_test)

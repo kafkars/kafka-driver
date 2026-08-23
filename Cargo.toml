@@ -25,6 +25,7 @@ repository = "https://github.com/kafkars/kafka-driver"
 base64 = "0.22.1"
 bytes = "1.10"
 calandria = "=0.0.1-rc.1"
+calandria-mio = "=0.0.1-rc.1"
 kafka-driver = { version = "0.1.0-rc.1", path = "." }
 kafka-driver-core = { version = "0.1.0-rc.1", path = "crates/kafka-driver-core" }
 kafka-driver-sim = { path = "crates/kafka-driver-sim" }
@@ -60,6 +61,7 @@ tls-rustls = ["dep:rustls"]
 base64.workspace = true
 bytes.workspace = true
 calandria.workspace = true
+calandria-mio.workspace = true
 kafka-driver-core.workspace = true
 kafka-driver-transport.workspace = true
 kafka-wire = { version = "0.1.0-rc.2", path = "../kafka-protocol/crates/kafka-wire" }

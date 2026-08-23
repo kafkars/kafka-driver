@@ -48,6 +48,6 @@ pub use error::ReactorError;
 pub use host::{Reactor, TurnOutcome};
 pub(in crate::reactor) use invalidation::{InvalidationSubscribers, RouteInvalidation};
 pub(crate) use mailbox::{MailboxSender, TrySendError, mailbox};
-pub(in crate::reactor) use poller::{PollEvent, PollInterest, PollWake, Poller, Readiness};
+pub(in crate::reactor) use poller::{PollEvent, PollInterest, Poller, Readiness};
 pub(crate) use waiter::DriverWaiter;
 pub use wake::WakeHandle;

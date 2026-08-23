@@ -85,7 +85,7 @@ impl SingleBroker {
         };
         if self
             .resources
-            .reregister(poller, token, PollInterest::Readable)
+            .reregister(poller, token, PollInterest::READABLE)
             .is_err()
         {
             self.transport_lost(poller, identity, TransportFailure::Other)?;

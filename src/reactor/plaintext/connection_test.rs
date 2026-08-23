@@ -140,7 +140,7 @@ fn nonblocking_connect_opens_only_after_real_readiness_verification() {
     let (_peer, _) = listener
         .accept()
         .unwrap_or_else(|error| panic!("accept loopback connection: {error}"));
-    await_interest(&mut connection, PollInterest::ReadWrite);
+    await_interest(&mut connection, PollInterest::READ_WRITE);
 
     let Ok(opened) = connection.finish_connect() else {
         panic!("ready connect must verify open");
@@ -171,16 +171,18 @@ fn connection_pair() -> (PlaintextConnection, StandardStream) {
 }
 
 fn await_readable(connection: &mut PlaintextConnection) {
-    await_interest(connection, PollInterest::Readable);
+    await_interest(connection, PollInterest::READABLE);
 }
 
 fn await_interest(connection: &mut PlaintextConnection, interest: PollInterest) {
     let Ok(mut poller) = Poller::new(NonZeroUsize::MIN) else {
         panic!("host must provide a Mio selector");
     };
-    let Some(token) = ResourceToken::from_poll(1) else {
-        panic!("nonzero poll token must name a resource");
-    };
+    let token = ResourceToken::new(
+        calandria::ResourceOwnerId::new(0),
+        calandria::ResourceSlotId::new(0),
+        calandria::ResourceGeneration::INITIAL,
+    );
     assert!(poller.register(connection, token, interest).is_ok());
     let mut events = Vec::with_capacity(1);
     let Ok(observed) = poller.poll_into(Some(Duration::from_secs(1)), &mut events) else {
@@ -197,13 +199,13 @@ fn await_interest(connection: &mut PlaintextConnection, interest: PollInterest) 
         panic!("one resource readiness event must be observed");
     };
     assert_eq!(*observed, token);
-    match interest {
-        PollInterest::Readable => assert!(readiness.is_readable()),
-        PollInterest::ReadWrite => {
-            assert!(readiness.is_readable() || readiness.is_writable());
-        }
+    if interest == PollInterest::READABLE {
+        assert!(readiness.is_readable());
+    } else {
+        assert_eq!(interest, PollInterest::READ_WRITE);
+        assert!(readiness.is_readable() || readiness.is_writable());
     }
-    assert!(poller.deregister(connection).is_ok());
+    assert!(poller.deregister(connection, token).is_ok());
 }
 
 fn limits() -> TransportLimits {
