@@ -2,15 +2,16 @@
 
 use std::time::Duration;
 
-use crate::reactor::{broker::DeadlineProgress, clock::ReactorClock};
+use kafka_driver_core::Moment;
+
+use crate::reactor::broker::DeadlineProgress;
 
 use super::{Reactor, ReactorError};
 
 const WORKER_SHUTDOWN_OBSERVATION_INTERVAL: Duration = Duration::from_millis(10);
 
 impl Reactor {
-    pub(super) fn observe_poll_events(&mut self) -> Result<bool, ReactorError> {
-        let now = self.clock.now().map_err(ReactorError::clock)?;
+    pub(super) fn observe_poll_events(&mut self, now: Moment) -> Result<bool, ReactorError> {
         let mut progress = false;
         for event in self.poll_events.drain(..) {
             let observed_at = self.causality.outcome().map_err(ReactorError::causality)?;
@@ -22,30 +23,24 @@ impl Reactor {
         Ok(progress)
     }
 
-    pub(super) fn continue_broker_io(&mut self) -> Result<bool, ReactorError> {
-        let now = self.clock.now().map_err(ReactorError::clock)?;
+    pub(super) fn continue_broker_io(&mut self, now: Moment) -> Result<bool, ReactorError> {
         let observed_at = self.causality.outcome().map_err(ReactorError::causality)?;
         self.brokers
             .continue_io(&self.poller, now, observed_at)
             .map_err(ReactorError::broker_set)
     }
 
-    pub(super) fn fire_due_deadlines(&mut self) -> Result<DeadlineProgress, ReactorError> {
-        let now = self.clock.now().map_err(ReactorError::clock)?;
+    pub(super) fn fire_due_deadlines(
+        &mut self,
+        now: Moment,
+    ) -> Result<DeadlineProgress, ReactorError> {
         self.brokers
             .fire_due(&self.poller, now)
             .map_err(ReactorError::broker_set)
     }
 
-    pub(super) fn poll_wait(&self, host_limit: Duration) -> Result<Duration, ReactorError> {
-        let now = self.clock.now().map_err(ReactorError::clock)?;
-        let host_limit = if self.worker_shutdown_pending() {
-            host_limit.min(WORKER_SHUTDOWN_OBSERVATION_INTERVAL)
-        } else {
-            host_limit
-        };
-        let deadline = self
-            .brokers
+    pub(super) fn next_deadline(&self, now: Moment) -> Option<Moment> {
+        self.brokers
             .next_deadline()
             .into_iter()
             .chain(
@@ -63,8 +58,12 @@ impl Reactor {
                     .as_ref()
                     .and_then(super::super::coordinator::CoordinatorOwner::next_wait_deadline),
             )
-            .min();
-        Ok(ReactorClock::bounded_wait(now, deadline, host_limit))
+            .chain(
+                self.worker_shutdown_pending()
+                    .then(|| now.checked_add(WORKER_SHUTDOWN_OBSERVATION_INTERVAL))
+                    .flatten(),
+            )
+            .min()
     }
 
     pub(super) fn broker_has_local_io(&self) -> bool {

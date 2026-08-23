@@ -1,15 +1,15 @@
 //! Host-phase integration for generated Metadata progress on the bootstrap broker.
 
 use crate::api::RouteFact;
+use kafka_driver_core::Moment;
 
 use super::{HostState, Reactor, ReactorError, routing::bind_route};
 
 impl Reactor {
-    pub(super) fn continue_metadata(&mut self) -> Result<bool, ReactorError> {
+    pub(super) fn continue_metadata(&mut self, now: Moment) -> Result<bool, ReactorError> {
         if self.state != HostState::Running {
             return Ok(false);
         }
-        let now = self.clock.now().map_err(ReactorError::clock)?;
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         let (progress, directory, controller_waiting, waiting, topic_views, invalidations) = {
             let Some(metadata) = &mut self.metadata else {

@@ -1,13 +1,16 @@
 //! Translation between the host monotonic clock and driver-relative moments.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
+
+#[cfg(test)]
+use std::time::Duration;
 use std::{error::Error, fmt};
 
 use kafka_driver_core::Moment;
 
 /// Failure to represent host monotonic time in the driver's relative domain.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(in crate::reactor) struct ClockOverflow;
+pub(crate) struct ClockOverflow;
 
 impl fmt::Display for ClockOverflow {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -18,9 +21,17 @@ impl fmt::Display for ClockOverflow {
 impl Error for ClockOverflow {}
 
 /// Monotonic origin owned by one reactor for its entire lifetime.
-#[derive(Debug)]
-pub(in crate::reactor) struct ReactorClock {
+#[derive(Clone, Debug)]
+pub(crate) struct ReactorClock {
     origin: Instant,
+}
+
+impl calandria::Clock for ReactorClock {
+    type Error = ClockOverflow;
+
+    fn now(&mut self) -> Result<calandria::Moment, Self::Error> {
+        ReactorClock::now(self).map(|now| calandria::Moment::from_nanos(now.as_nanos()))
+    }
 }
 
 impl ReactorClock {
@@ -42,6 +53,7 @@ impl ReactorClock {
         Ok(Moment::from_nanos(nanos))
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) fn bounded_wait(
         now: Moment,
         next_deadline: Option<Moment>,

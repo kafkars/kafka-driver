@@ -2,14 +2,14 @@
 
 use std::time::Instant;
 
-use kafka_driver_core::{CallFailure, Delivery};
+use kafka_driver_core::{CallFailure, Delivery, Moment};
 
 use crate::{InvalidationDisposition, RequestError, SnapshotError, reactor::Command};
 
 use super::{HostState, Reactor, ReactorError};
 
 impl Reactor {
-    pub(super) fn process_commands(&mut self) -> Result<usize, ReactorError> {
+    pub(super) fn process_commands(&mut self, now: Moment) -> Result<usize, ReactorError> {
         let mut processed = 0;
         let mut commands = std::mem::take(&mut self.command_batch);
         let result = (|| {
@@ -70,22 +70,22 @@ impl Reactor {
         self.command_batch = commands;
         result?;
         if self.state == HostState::DrainRequested {
-            self.start_drain()?;
+            self.start_drain(now)?;
         }
         Ok(processed)
     }
 
-    pub(super) fn begin_implicit_shutdown(&mut self) -> Result<(), ReactorError> {
+    pub(super) fn begin_implicit_shutdown(&mut self, now: Moment) -> Result<(), ReactorError> {
         if self.state == HostState::Running {
             self.state = HostState::DrainRequested;
         }
         if self.state == HostState::DrainRequested {
-            self.start_drain()?;
+            self.start_drain(now)?;
         }
         Ok(())
     }
 
-    fn start_drain(&mut self) -> Result<(), ReactorError> {
+    fn start_drain(&mut self, now: Moment) -> Result<(), ReactorError> {
         self.close_admission();
         if let Some(resolution) = self.resolution.take() {
             self.resolver_shutdown = Some(resolution.begin_shutdown());
@@ -103,7 +103,6 @@ impl Reactor {
             coordinator.fail_waiters(&draining());
         }
         self.coordinator = None;
-        let now = self.clock.now().map_err(ReactorError::clock)?;
         self.brokers
             .begin_drain(&self.poller, now)
             .map_err(ReactorError::broker_set)?;

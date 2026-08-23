@@ -195,12 +195,14 @@ impl NameResolution {
 }
 
 impl Reactor {
-    pub(super) fn continue_resolution(&mut self) -> Result<ResolutionTurn, ReactorError> {
+    pub(super) fn continue_resolution(
+        &mut self,
+        now: Moment,
+    ) -> Result<ResolutionTurn, ReactorError> {
         let scheduled = self.schedule_address_refreshes()?;
         let Some(resolution) = &mut self.resolution else {
             return Ok(ResolutionTurn::idle());
         };
-        let now = self.clock.now().map_err(ReactorError::clock)?;
         self.broker_dns_outcomes.clear();
         let progress = resolution
             .drive(&mut self.broker_dns_outcomes, now)
