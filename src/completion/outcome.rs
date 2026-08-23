@@ -1,4 +1,4 @@
-//! Public failure from waiting for one completion value.
+//! Public Kafkars failure from waiting for one completion value.
 
 use std::{error::Error, fmt};
 
@@ -10,6 +10,17 @@ pub enum CompletionError {
     Closed,
     /// The completion value had already been consumed.
     Consumed,
+}
+
+impl CompletionError {
+    pub(super) const fn from_calandria(error: calandria::CompletionError) -> Self {
+        match error {
+            calandria::CompletionError::Consumed => Self::Consumed,
+            // Calandria's error is non-exhaustive. Closed and future terminal
+            // variants fail closed until Kafkars gives them a public shape.
+            _ => Self::Closed,
+        }
+    }
 }
 
 impl fmt::Display for CompletionError {

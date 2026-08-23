@@ -1,35 +1,30 @@
-//! Single-use producer for publishing one terminal completion result.
+//! Driver ownership and footprint vocabulary over a Calandria completer.
 
-use super::state::Shared;
+use std::{
+    sync::{Condvar, Mutex},
+    task::Waker,
+};
+
+use super::CompletionError;
 
 pub(crate) struct CompletionSender<T> {
-    shared: Shared<T>,
-    settled: bool,
+    inner: calandria::Completer<T>,
 }
 
 impl<T> CompletionSender<T> {
-    pub(super) const fn new(shared: Shared<T>) -> Self {
-        Self {
-            shared,
-            settled: false,
-        }
+    pub(super) const fn new(inner: calandria::Completer<T>) -> Self {
+        Self { inner }
     }
 
-    pub(crate) fn complete(mut self, value: T) -> Result<(), T> {
-        let outcome = self.shared.complete(value);
-        self.settled = true;
-        outcome
+    pub(crate) fn complete(self, value: T) -> Result<(), T> {
+        self.inner.complete(value)
     }
 
     pub(crate) const fn retained_state_bytes() -> usize {
-        Shared::<T>::retained_state_bytes()
-    }
-}
-
-impl<T> Drop for CompletionSender<T> {
-    fn drop(&mut self) {
-        if !self.settled {
-            self.shared.close_sender();
-        }
+        // Conservatively projects Calandria's shared mutex/condvar allocation.
+        size_of::<Mutex<Option<Result<T, CompletionError>>>>()
+            .saturating_add(size_of::<Condvar>())
+            .saturating_add(size_of::<Option<Waker>>())
+            .saturating_add(size_of::<bool>())
     }
 }
