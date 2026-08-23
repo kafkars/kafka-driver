@@ -1,7 +1,11 @@
-//! Bounded min-heap with stable ordering and eager identity cancellation.
+//! Kafka timer identities adapted onto Calandria's bounded timer queue.
 
-use std::{cmp::Ordering, collections::BinaryHeap, num::NonZeroUsize};
+use std::num::NonZeroUsize;
 
+use calandria::{
+    Deadline, RetainedBytes, Timer, TimerId as CalandriaTimerId, TimerLimits, TimerOwnerId,
+    TimerQueue, TimerScheduleFailure, TimerToken,
+};
 use kafka_driver_core::{Moment, TimerId};
 
 use super::{DeadlineTimer, TimerDrain, TimerScheduleError};
@@ -9,18 +13,13 @@ use super::{DeadlineTimer, TimerDrain, TimerScheduleError};
 /// Single-owner storage for connection deadlines awaiting reactor delivery.
 #[derive(Debug)]
 pub(in crate::reactor) struct TimerHeap {
-    capacity: NonZeroUsize,
-    deadlines: BinaryHeap<ScheduledDeadline>,
-    next_sequence: Option<u64>,
+    queue: TimerQueue<DeadlineTimer>,
+    tokens: Vec<(TimerId, TimerToken)>,
 }
 
 impl TimerHeap {
     pub(in crate::reactor) fn new(capacity: NonZeroUsize) -> Self {
-        Self {
-            capacity,
-            deadlines: BinaryHeap::with_capacity(capacity.get()),
-            next_sequence: Some(0),
-        }
+        Self::starting_at(capacity, CalandriaTimerId::ZERO)
     }
 
     pub(in crate::reactor) fn schedule(
@@ -32,98 +31,109 @@ impl TimerHeap {
                 timer_id: deadline.timer_id(),
             });
         }
-        if self.deadlines.len() >= self.capacity.get() {
-            return Err(TimerScheduleError::CapacityReached {
-                limit: self.capacity.get(),
-            });
-        }
-        let Some(sequence) = self.next_sequence else {
-            return Err(TimerScheduleError::SequenceExhausted);
-        };
-
-        self.next_sequence = sequence.checked_add(1);
-        self.deadlines
-            .push(ScheduledDeadline { deadline, sequence });
+        let timer_id = deadline.timer_id();
+        let token = self
+            .queue
+            .schedule(calandria_deadline(deadline.at()), deadline)
+            .map_err(map_schedule_error)?;
+        self.tokens.push((timer_id, token));
         Ok(())
     }
 
     pub(in crate::reactor) fn cancel(&mut self, timer_id: TimerId) -> bool {
-        let retained_before = self.deadlines.len();
-        self.deadlines
-            .retain(|scheduled| scheduled.deadline.timer_id() != timer_id);
-        self.deadlines.len() != retained_before
+        let Some(position) = self
+            .tokens
+            .iter()
+            .position(|(candidate, _)| *candidate == timer_id)
+        else {
+            return false;
+        };
+        let (_, token) = self.tokens.swap_remove(position);
+        self.queue
+            .cancel(token)
+            .unwrap_or_else(|| panic!("driver timer token diverged from Calandria queue"));
+        true
     }
 
     pub(in crate::reactor) fn next_deadline(&self) -> Option<Moment> {
-        self.deadlines
-            .peek()
-            .map(|scheduled| scheduled.deadline.at())
+        self.queue
+            .next_deadline()
+            .map(|deadline| Moment::from_nanos(deadline.moment().as_nanos()))
     }
 
     pub(in crate::reactor) fn drain_due_into(
         &mut self,
         now: Moment,
-        destination: &mut Vec<DeadlineTimer>,
+        destination: &mut Vec<Timer<DeadlineTimer>>,
         budget: NonZeroUsize,
     ) -> TimerDrain {
-        let mut fired = 0;
-        while fired < budget.get() && self.next_deadline().is_some_and(|at| at <= now) {
-            let Some(scheduled) = self.deadlines.pop() else {
-                break;
-            };
-            destination.push(scheduled.deadline);
-            fired += 1;
+        let retained = destination.len();
+        let drain = self.queue.drain_due_into(
+            calandria::Moment::from_nanos(now.as_nanos()),
+            destination,
+            budget,
+        );
+        for timer in &destination[retained..] {
+            self.forget_token(timer.token());
         }
-        TimerDrain::new(fired, self.next_deadline().is_some_and(|at| at <= now))
+        drain
     }
 
     #[cfg(test)]
     pub(in crate::reactor) fn len(&self) -> usize {
-        self.deadlines.len()
+        self.queue.len()
     }
 
     fn contains(&self, timer_id: TimerId) -> bool {
-        self.deadlines
+        self.tokens
             .iter()
-            .any(|scheduled| scheduled.deadline.timer_id() == timer_id)
+            .any(|(candidate, _)| *candidate == timer_id)
+    }
+
+    fn forget_token(&mut self, token: TimerToken) {
+        let Some(position) = self
+            .tokens
+            .iter()
+            .position(|(_, candidate)| *candidate == token)
+        else {
+            panic!("delivered Calandria timer has no driver identity");
+        };
+        self.tokens.swap_remove(position);
+    }
+
+    fn starting_at(capacity: NonZeroUsize, first_id: CalandriaTimerId) -> Self {
+        let limits = TimerLimits::new(capacity, RetainedBytes::ZERO);
+        Self {
+            queue: TimerQueue::starting_at_with_measure(
+                TimerOwnerId::new(0),
+                limits,
+                first_id,
+                |_| RetainedBytes::ZERO,
+            ),
+            tokens: Vec::with_capacity(capacity.get()),
+        }
     }
 
     #[cfg(test)]
     pub(super) fn with_next_sequence(capacity: NonZeroUsize, next_sequence: u64) -> Self {
-        Self {
-            capacity,
-            deadlines: BinaryHeap::with_capacity(capacity.get()),
-            next_sequence: Some(next_sequence),
+        Self::starting_at(capacity, CalandriaTimerId::new(next_sequence))
+    }
+}
+
+fn calandria_deadline(moment: Moment) -> Deadline {
+    Deadline::at(calandria::Moment::from_nanos(moment.as_nanos()))
+}
+
+fn map_schedule_error(error: calandria::TimerScheduleError<DeadlineTimer>) -> TimerScheduleError {
+    let (_, _, failure) = error.into_parts();
+    match failure {
+        TimerScheduleFailure::TimerCapacity { limit } => {
+            TimerScheduleError::CapacityReached { limit: limit.get() }
         }
-    }
-}
-
-#[derive(Debug)]
-struct ScheduledDeadline {
-    deadline: DeadlineTimer,
-    sequence: u64,
-}
-
-impl PartialEq for ScheduledDeadline {
-    fn eq(&self, other: &Self) -> bool {
-        self.deadline.at() == other.deadline.at() && self.sequence == other.sequence
-    }
-}
-
-impl Eq for ScheduledDeadline {}
-
-impl PartialOrd for ScheduledDeadline {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for ScheduledDeadline {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other
-            .deadline
-            .at()
-            .cmp(&self.deadline.at())
-            .then_with(|| other.sequence.cmp(&self.sequence))
+        TimerScheduleFailure::TimerIdsExhausted => TimerScheduleError::SequenceExhausted,
+        TimerScheduleFailure::RetainedByteOverflow { .. }
+        | TimerScheduleFailure::RetainedByteCapacity { .. } => {
+            panic!("zero-sized driver timer exceeded Calandria's zero-byte limit")
+        }
     }
 }

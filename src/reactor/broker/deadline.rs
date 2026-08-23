@@ -54,7 +54,7 @@ impl SingleBroker {
             .timers
             .drain_due_into(now, &mut self.due_timers, self.timer_budget);
         let mut due = std::mem::take(&mut self.due_timers);
-        for deadline in due.drain(..) {
+        for deadline in due.drain(..).map(calandria::Timer::into_value) {
             self.deliver_deadline(poller, now, deadline)?;
             self.reconcile_connection(poller, now)?;
         }

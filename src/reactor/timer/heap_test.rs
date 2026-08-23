@@ -115,6 +115,7 @@ fn due_deadline_retains_the_epoch_and_call_identity() {
     let [fired] = due.as_slice() else {
         panic!("one due deadline must fire");
     };
+    let fired = fired.value();
     assert_eq!(fired.timer_id(), expected.timer_id());
     assert_eq!(fired.epoch(), expected.epoch());
     assert_eq!(fired.subject(), expected.subject());
@@ -153,9 +154,9 @@ fn nonzero(value: usize) -> NonZeroUsize {
     value
 }
 
-fn timer_ids(deadlines: &[DeadlineTimer]) -> Vec<TimerId> {
+fn timer_ids(deadlines: &[calandria::Timer<DeadlineTimer>]) -> Vec<TimerId> {
     deadlines
         .iter()
-        .map(|deadline| deadline.timer_id())
+        .map(|deadline| deadline.value().timer_id())
         .collect()
 }

@@ -83,7 +83,7 @@ impl SingleBroker {
             responses: ResponseRegistry::new(limits.response_capacity(), DecodeLimits::default()),
             timers: TimerHeap::new(limits.timer_capacity()),
             timer_budget: limits.timer_budget(),
-            due_timers: Vec::new(),
+            due_timers: Vec::with_capacity(limits.timer_budget().get()),
             read_budget: limits.read_budget(),
             write_budget: limits.write_budget(),
             outbound_frame: limits.outbound_frame(),

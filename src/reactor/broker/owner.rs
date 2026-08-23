@@ -54,7 +54,7 @@ pub(in crate::reactor) struct SingleBroker {
     pub(super) responses: ResponseRegistry,
     pub(super) timers: TimerHeap,
     pub(super) timer_budget: NonZeroUsize,
-    pub(super) due_timers: Vec<DeadlineTimer>,
+    pub(super) due_timers: Vec<calandria::Timer<DeadlineTimer>>,
     pub(super) read_budget: ReadBudget,
     pub(super) write_budget: WriteBudget,
     pub(super) outbound_frame: OutboundFrameLimits,
