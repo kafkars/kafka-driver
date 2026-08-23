@@ -90,12 +90,13 @@ impl Reactor {
         observation: Arc<Observation>,
     ) -> std::io::Result<(MailboxSender<Command>, ShutdownRequester, Self)> {
         let poller = Poller::new(limits.poll_event_budget())?;
-        let wake = WakeHandle::new(poller.wake_handle());
+        let poll_wake = poller.wake_handle();
+        let command_wake = WakeHandle::new(poll_wake.clone());
         let (sender, commands) = mailbox(
             limits.mailbox_capacity(),
             limits.mailbox_byte_capacity(),
             Command::retained_bytes,
-            wake.clone(),
+            command_wake,
         );
         let clock = ReactorClock::new();
         let (shutdown_requester, shutdown) = shutdown_barrier(limits.mailbox_capacity());
@@ -107,7 +108,9 @@ impl Reactor {
         let scram_proof = target
             .as_ref()
             .filter(|target| target.requires_proof_worker())
-            .map(|_| ScramProofWorker::spawn(limits.scram_proof(), wake.clone()))
+            .map(|_| {
+                ScramProofWorker::spawn(limits.scram_proof(), WakeHandle::new(poll_wake.clone()))
+            })
             .transpose()?;
         let proof_sender = scram_proof.as_ref().map(ScramProofWorker::sender);
         let mut brokers = BrokerSet::with_scram_proof(
@@ -125,7 +128,11 @@ impl Reactor {
                 (None, None, None)
             }
             Some(DriverTarget::Bootstrap(config)) => (
-                Some(NameResolution::start(config, limits.resolver(), wake)?),
+                Some(NameResolution::start(
+                    config,
+                    limits.resolver(),
+                    WakeHandle::new(poll_wake),
+                )?),
                 Some(MetadataOwner::new(limits.metadata())),
                 Some(CoordinatorOwner::new(limits.coordinator())),
             ),
@@ -196,9 +203,14 @@ impl Reactor {
         self.clock.clone()
     }
 
+    pub(crate) fn termination_wake(&self) -> calandria::WakeHandle {
+        let wake = self.poller.wake_handle();
+        calandria::WakeHandle::new(move || wake.wake())
+    }
+
     /// Returns a cloneable notification handle for embedded-host integration.
     pub fn wake_handle(&self) -> WakeHandle {
-        self.commands.wake_handle()
+        WakeHandle::new(self.poller.wake_handle())
     }
 
     /// Returns whether shutdown has reached its terminal state.

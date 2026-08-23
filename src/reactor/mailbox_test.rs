@@ -20,7 +20,7 @@ fn capacity_rejection_returns_the_unadmitted_command() {
 
 #[test]
 fn bounded_drains_preserve_fifo_and_report_remaining_work() {
-    let (sender, receiver, _poller) = test_mailbox(nonzero(3));
+    let (sender, mut receiver, _poller) = test_mailbox(nonzero(3));
     assert!(sender.try_send(1).is_ok());
     assert!(sender.try_send(2).is_ok());
     assert!(sender.try_send(3).is_ok());
@@ -40,7 +40,7 @@ fn bounded_drains_preserve_fifo_and_report_remaining_work() {
 
 #[test]
 fn full_work_lane_cannot_reject_or_overtake_shutdown_control() {
-    let (sender, receiver, _poller) = test_mailbox(NonZeroUsize::MIN);
+    let (sender, mut receiver, _poller) = test_mailbox(NonZeroUsize::MIN);
     assert!(sender.try_send("work").is_ok());
 
     let control = sender.try_send_control("shutdown");
@@ -98,7 +98,7 @@ fn receiver_closure_rejects_future_admission() {
 
 #[test]
 fn repeated_wakes_coalesce_until_the_mailbox_is_drained() {
-    let (sender, receiver, _poller) = test_mailbox(nonzero(2));
+    let (sender, mut receiver, _poller) = test_mailbox(nonzero(2));
     assert!(sender.try_send(1).is_ok());
     assert!(sender.try_send(2).is_ok());
     assert!(receiver.notification_is_requested());

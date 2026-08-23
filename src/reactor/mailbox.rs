@@ -1,19 +1,18 @@
-//! Bounded multi-producer, single-consumer storage for reactor commands.
+//! Driver vocabulary over Calandria's bounded command mailbox.
 
 mod invalidation_admission;
-mod notification;
 mod observation;
-mod ownership;
 
-use std::{
-    fmt,
-    num::NonZeroUsize,
-    sync::{Arc, atomic::AtomicU64},
+use std::{convert::identity, fmt, num::NonZeroUsize};
+
+use calandria::{
+    AdmissionFailure, Lane, LaneLimits, MailboxLimits, MailboxReceiver as CalandriaReceiver,
+    MailboxSender as CalandriaSender, RetainedBytes,
 };
 
 use super::WakeHandle;
-use notification::MailboxNotification;
-use ownership::{MailboxLane, Shared, State, increment};
+
+pub(crate) use calandria::DrainStatus;
 
 pub(crate) fn mailbox<T>(
     capacity: NonZeroUsize,
@@ -21,175 +20,117 @@ pub(crate) fn mailbox<T>(
     weight: fn(&T) -> usize,
     wake: WakeHandle,
 ) -> (MailboxSender<T>, MailboxReceiver<T>) {
-    let shared = Arc::new(Shared {
-        capacity: capacity.get(),
-        byte_capacity: byte_capacity.get(),
-        state: std::sync::Mutex::new(State::new(capacity)),
-        work_full: AtomicU64::new(0),
-        work_byte_full: AtomicU64::new(0),
-        control_full: AtomicU64::new(0),
-        control_byte_full: AtomicU64::new(0),
-        closed_rejections: AtomicU64::new(0),
-        wake_failures: AtomicU64::new(0),
-        weight,
-        wake: MailboxNotification::new(wake),
-    });
+    let retained = RetainedBytes::new(u64::try_from(byte_capacity.get()).unwrap_or(u64::MAX));
+    let lane = LaneLimits::new(capacity, retained);
+    let limits = MailboxLimits::new(lane, lane);
+    #[cfg(test)]
+    let external_wake = wake.clone();
+    let (sender, receiver) =
+        calandria::mailbox_with(limits, |_| RetainedBytes::ZERO, wake.into_calandria());
     (
         MailboxSender {
-            shared: Arc::clone(&shared),
+            inner: sender,
+            weight,
         },
-        MailboxReceiver { shared },
+        MailboxReceiver {
+            inner: receiver,
+            batch: Vec::with_capacity(capacity.get()),
+            #[cfg(test)]
+            external_wake,
+        },
     )
 }
 
 pub(crate) struct MailboxSender<T> {
-    shared: Arc<Shared<T>>,
+    inner: CalandriaSender<Weighted<T>>,
+    weight: fn(&T) -> usize,
 }
 
 impl<T> Clone for MailboxSender<T> {
     fn clone(&self) -> Self {
-        let mut state = self.shared.lock();
-        state.senders = state.senders.saturating_add(1);
-        drop(state);
         Self {
-            shared: Arc::clone(&self.shared),
+            inner: self.inner.clone(),
+            weight: self.weight,
         }
-    }
-}
-
-impl<T> Drop for MailboxSender<T> {
-    fn drop(&mut self) {
-        let mut state = self.shared.lock();
-        if state.senders == 1 {
-            drop(self.shared.wake.request());
-        }
-        state.senders = state.senders.saturating_sub(1);
     }
 }
 
 impl<T> MailboxSender<T> {
-    pub(crate) fn try_send(&self, command: T) -> Result<(), TrySendError<T>> {
-        self.try_send_owner_to(
-            MailboxLane::Work,
-            command,
-            |command| (self.shared.weight)(command),
-            std::convert::identity,
-        )
+    pub(crate) fn try_send(&self, item: T) -> Result<(), TrySendError<T>> {
+        self.try_send_owner_to(Lane::Work, item, |item| (self.weight)(item), identity)
     }
 
-    pub(crate) fn try_send_control(&self, command: T) -> Result<(), TrySendError<T>> {
-        self.try_send_owner_to(
-            MailboxLane::Control,
-            command,
-            |command| (self.shared.weight)(command),
-            std::convert::identity,
-        )
+    pub(crate) fn try_send_control(&self, item: T) -> Result<(), TrySendError<T>> {
+        self.try_send_owner_to(Lane::Control, item, |item| (self.weight)(item), identity)
     }
 
-    fn try_send_owner_to<U>(
+    pub(super) fn try_send_owner_to<U>(
         &self,
-        lane: MailboxLane,
+        lane: Lane,
         owner: U,
         retained_bytes: impl FnOnce(&U) -> usize,
         materialize: impl FnOnce(U) -> T,
     ) -> Result<(), TrySendError<U>> {
-        let mut state = self.shared.lock();
-        if !state.receiver_alive {
-            increment(&self.shared.closed_rejections);
-            return Err(TrySendError::Closed(owner));
-        }
-        if state.queued(lane) >= self.shared.capacity {
-            increment(match lane {
-                MailboxLane::Control => &self.shared.control_full,
-                MailboxLane::Work => &self.shared.work_full,
-            });
-            return Err(TrySendError::Full(owner));
-        }
-        let command_bytes = retained_bytes(&owner);
-        let Some(queued_bytes) = state.queued_bytes(lane).checked_add(command_bytes) else {
-            increment(self.shared.byte_full(lane));
-            return Err(TrySendError::Full(owner));
-        };
-        if queued_bytes > self.shared.byte_capacity {
-            increment(self.shared.byte_full(lane));
-            return Err(TrySendError::Full(owner));
-        }
-        // The state lock prevents the reactor from observing this wake until
-        // publication below either succeeds or the command is returned.
-        if let Err(source) = self.shared.wake.request() {
-            increment(&self.shared.wake_failures);
-            return Err(TrySendError::Wake {
-                command: owner,
-                source,
-            });
-        }
-        let command = materialize(owner);
-        state.admit(lane, command, queued_bytes);
-        Ok(())
+        self.inner
+            .try_send_materialized(
+                lane,
+                owner,
+                |owner| retained(retained_bytes(owner)),
+                |owner| Weighted {
+                    item: materialize(owner),
+                },
+            )
+            .map_err(TrySendError::from_calandria)
     }
 }
 
 impl<T> fmt::Debug for MailboxSender<T> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("MailboxSender")
-            .field("capacity", &self.shared.capacity)
-            .field("byte_capacity", &self.shared.byte_capacity)
-            .finish_non_exhaustive()
+        self.inner.fmt(formatter)
     }
 }
 
 pub(crate) struct MailboxReceiver<T> {
-    shared: Arc<Shared<T>>,
+    inner: CalandriaReceiver<Weighted<T>>,
+    batch: Vec<Weighted<T>>,
+    #[cfg(test)]
+    external_wake: WakeHandle,
 }
 
 impl<T> MailboxReceiver<T> {
-    pub(crate) fn drain_into(&self, destination: &mut Vec<T>, limit: NonZeroUsize) -> DrainStatus {
-        let mut state = self.shared.lock();
-        let controls = limit.get().min(state.queued(MailboxLane::Control));
-        state.drain_into(
-            MailboxLane::Control,
-            controls,
-            self.shared.weight,
-            destination,
-        );
-        let work = (limit.get() - controls).min(state.queued(MailboxLane::Work));
-        state.drain_into(MailboxLane::Work, work, self.shared.weight, destination);
-        if state.is_empty() && state.senders == 0 {
-            self.shared.wake.acknowledge();
-            DrainStatus::Closed
-        } else if state.is_empty() {
-            self.shared.wake.acknowledge();
-            DrainStatus::Idle
-        } else {
-            DrainStatus::MorePending
-        }
+    pub(crate) fn drain_into(
+        &mut self,
+        destination: &mut Vec<T>,
+        limit: NonZeroUsize,
+    ) -> DrainStatus {
+        self.batch.clear();
+        let report = self.inner.drain_into(&mut self.batch, limit);
+        destination.extend(self.batch.drain(..).map(|entry| entry.item));
+        report.status()
     }
 
-    pub(crate) fn wake_handle(&self) -> WakeHandle {
-        self.shared.wake.handle()
+    pub(crate) fn close(&mut self) -> Vec<T> {
+        self.inner
+            .close()
+            .into_iter()
+            .map(|entry| entry.item)
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(super) fn wake_handle(&self) -> WakeHandle {
+        self.external_wake.clone()
     }
 
     #[cfg(test)]
     pub(super) fn notification_is_requested(&self) -> bool {
-        self.shared.wake.is_requested()
-    }
-
-    pub(crate) fn close(&self) -> Vec<T> {
-        let mut state = self.shared.lock();
-        state.receiver_alive = false;
-        self.shared.wake.acknowledge();
-        let mut commands = Vec::with_capacity(
-            state.queued(MailboxLane::Control) + state.queued(MailboxLane::Work),
-        );
-        state.drain_all(self.shared.weight, &mut commands);
-        commands
+        self.inner.snapshot().wake_requested()
     }
 }
 
-impl<T> Drop for MailboxReceiver<T> {
-    fn drop(&mut self) {
-        drop(self.close());
+impl<T> fmt::Debug for MailboxReceiver<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(formatter)
     }
 }
 
@@ -199,9 +140,23 @@ pub(crate) enum TrySendError<T> {
     Wake { command: T, source: std::io::Error },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum DrainStatus {
-    Idle,
-    MorePending,
-    Closed,
+impl<T> TrySendError<T> {
+    fn from_calandria(error: calandria::TrySendError<T>) -> Self {
+        let (command, _lane, failure) = error.into_parts();
+        match failure {
+            AdmissionFailure::MessageCapacity | AdmissionFailure::ByteCapacity => {
+                Self::Full(command)
+            }
+            AdmissionFailure::Closed => Self::Closed(command),
+            AdmissionFailure::Wake(source) => Self::Wake { command, source },
+        }
+    }
+}
+
+struct Weighted<T> {
+    item: T,
+}
+
+fn retained(bytes: usize) -> RetainedBytes {
+    RetainedBytes::new(u64::try_from(bytes).unwrap_or(u64::MAX))
 }
