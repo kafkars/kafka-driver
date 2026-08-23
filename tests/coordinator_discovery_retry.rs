@@ -7,7 +7,7 @@ mod support;
 use std::{
     io::Write,
     net::{TcpListener, TcpStream},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use bytes::BytesMut;
@@ -85,15 +85,11 @@ fn code_15_then_success_routes_the_original_waiter_after_one_delayed_retry() {
     coordinator
         .write_all(&api_versions_response(request.correlation_id, &response))
         .unwrap_or_else(|error| panic!("write routed response: {error}"));
-    drive(
+    let outcome = drive_until_ready(
         &mut cluster.reactor,
-        Duration::from_secs(1),
+        &call,
         "complete original waiting call",
     );
-
-    let outcome = call
-        .wait()
-        .unwrap_or_else(|error| panic!("observe original waiting call: {error}"));
     assert_eq!(outcome.result(), &Ok(response));
 }
 
@@ -120,15 +116,7 @@ fn waiter_expiry_cancels_retry_demand_without_sending_another_find() {
         Duration::from_millis(10),
         "schedule coordinator retry",
     );
-    drive(
-        &mut cluster.reactor,
-        Duration::from_millis(40),
-        "expire original waiter",
-    );
-
-    let outcome = call
-        .wait()
-        .unwrap_or_else(|error| panic!("observe expired waiting call: {error}"));
+    let outcome = drive_until_ready(&mut cluster.reactor, &call, "expire original waiter");
     assert!(matches!(
         outcome.result(),
         Err(RequestError::Rejected {
@@ -136,7 +124,7 @@ fn waiter_expiry_cancels_retry_demand_without_sending_another_find() {
             delivery: Delivery::NotSent,
         })
     ));
-    drive(
+    drive_for(
         &mut cluster.reactor,
         Duration::from_millis(120),
         "retire retry with no live demand",
@@ -158,14 +146,11 @@ fn waiter_expiry_cancels_retry_demand_without_sending_another_find() {
         .seed
         .write_all(&find_coordinator_error_response(fresh.correlation_id, 69))
         .unwrap_or_else(|error| panic!("write terminal discovery rejection: {error}"));
-    drive(
+    let recovery = drive_until_ready(
         &mut cluster.reactor,
-        Duration::from_secs(1),
+        &recovery,
         "settle fresh terminal discovery",
     );
-    let recovery = recovery
-        .wait()
-        .unwrap_or_else(|error| panic!("observe fresh terminal discovery: {error}"));
     assert_eq!(recovery.result(), &Err(RequestError::RouteUnavailable));
 }
 
@@ -243,6 +228,28 @@ fn assert_no_frame(peer: &TcpStream) {
         peer.peek(&mut byte),
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
     ));
+}
+
+fn drive_until_ready(
+    reactor: &mut kafka_driver::Reactor,
+    call: &kafka_driver::RoutedCall<ApiVersionsResponse>,
+    phase: &str,
+) -> kafka_driver::RoutedOutcome<ApiVersionsResponse> {
+    for _ in 0..32 {
+        if let Some(result) = call.try_result() {
+            return result.unwrap_or_else(|error| panic!("observe {phase}: {error}"));
+        }
+        drive(reactor, Duration::from_millis(10), phase);
+    }
+    panic!("{phase} remained pending: {reactor:?}")
+}
+
+fn drive_for(reactor: &mut kafka_driver::Reactor, duration: Duration, phase: &str) {
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        drive(reactor, remaining.min(Duration::from_millis(10)), phase);
+    }
 }
 
 struct Cluster {
