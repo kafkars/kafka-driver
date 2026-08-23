@@ -69,7 +69,7 @@ impl TransportResources {
         let Some((_, connection)) = self.connections.get_mut(token) else {
             return Err(TransportOpenError::RegistryInvariant);
         };
-        if let Err(source) = poller.register(connection, token, PollInterest::ReadWrite) {
+        if let Err(source) = poller.register(connection, token, PollInterest::READ_WRITE) {
             drop(self.connections.remove(token));
             return Err(TransportOpenError::Register(source));
         }
@@ -119,7 +119,9 @@ impl TransportResources {
         let deregistration = self
             .connections
             .get_mut(token)
-            .map_or(Ok(()), |(_, connection)| poller.deregister(connection));
+            .map_or(Ok(()), |(_, connection)| {
+                poller.deregister(connection, token)
+            });
         let removed = self.connections.remove(token).is_some();
         deregistration.map(|()| removed)
     }

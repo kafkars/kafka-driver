@@ -1,36 +1,41 @@
-//! Mio selector owner that bounds each operating-system readiness batch.
+//! Thin single-owner compatibility surface over `calandria-mio`.
 
-use std::{io, num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{cell::RefCell, io, num::NonZeroUsize, time::Duration};
 
-use mio::{Events, Poll, Token, Waker, event::Source};
+use calandria::{PollEvents, ResourceToken, Span};
+use calandria_mio::{MioPoller, MioPollerLimits};
+use mio::event::Source;
 
-use crate::reactor::resource::ResourceToken;
-
-use super::{PollEvent, PollInterest, PollWake, Readiness};
-
-const WAKE_TOKEN: Token = Token(0);
+use super::{PollEvent, PollInterest};
 
 /// One operating-system poll selector and its reusable bounded event storage.
 #[derive(Debug)]
 pub(in crate::reactor) struct Poller {
-    poll: Poll,
-    events: Events,
-    wake: PollWake,
+    backend: RefCell<MioPoller>,
+    events: PollEvents,
 }
 
 impl Poller {
+    #[cfg(test)]
     pub(in crate::reactor) fn new(event_budget: NonZeroUsize) -> io::Result<Self> {
-        let poll = Poll::new()?;
-        let waker = Arc::new(Waker::new(poll.registry(), WAKE_TOKEN)?);
+        Self::with_registration_capacity(event_budget, event_budget)
+    }
+
+    pub(in crate::reactor) fn with_registration_capacity(
+        event_budget: NonZeroUsize,
+        registration_capacity: NonZeroUsize,
+    ) -> io::Result<Self> {
+        let backend = MioPoller::new(MioPollerLimits::new(event_budget, registration_capacity))
+            .map_err(io::Error::other)?;
+        let events = backend.event_batch();
         Ok(Self {
-            poll,
-            events: Events::with_capacity(event_budget.get()),
-            wake: PollWake::new(waker),
+            backend: RefCell::new(backend),
+            events,
         })
     }
 
-    pub(in crate::reactor) fn wake_handle(&self) -> PollWake {
-        self.wake.clone()
+    pub(in crate::reactor) fn wake_handle(&self) -> calandria::WakeHandle {
+        self.backend.borrow().wake_handle()
     }
 
     pub(in crate::reactor) fn register<S: Source>(
@@ -39,9 +44,10 @@ impl Poller {
         token: ResourceToken,
         interest: PollInterest,
     ) -> io::Result<()> {
-        self.poll
-            .registry()
-            .register(source, Token(token.get()), interest.into_mio())
+        self.backend
+            .borrow_mut()
+            .register(source, token, interest)
+            .map_err(io::Error::other)
     }
 
     pub(in crate::reactor) fn reregister<S: Source>(
@@ -50,13 +56,21 @@ impl Poller {
         token: ResourceToken,
         interest: PollInterest,
     ) -> io::Result<()> {
-        self.poll
-            .registry()
-            .reregister(source, Token(token.get()), interest.into_mio())
+        self.backend
+            .borrow_mut()
+            .reregister(source, token, interest)
+            .map_err(io::Error::other)
     }
 
-    pub(in crate::reactor) fn deregister<S: Source>(&self, source: &mut S) -> io::Result<()> {
-        self.poll.registry().deregister(source)
+    pub(in crate::reactor) fn deregister<S: Source>(
+        &self,
+        source: &mut S,
+        token: ResourceToken,
+    ) -> io::Result<()> {
+        self.backend
+            .borrow_mut()
+            .deregister(source, token)
+            .map_err(io::Error::other)
     }
 
     pub(in crate::reactor) fn poll_into(
@@ -64,33 +78,15 @@ impl Poller {
         timeout: Option<Duration>,
         destination: &mut Vec<PollEvent>,
     ) -> io::Result<usize> {
-        self.poll.poll(&mut self.events, timeout)?;
-        let observed = self.events.iter().count();
-        destination.extend(self.events.iter().filter_map(to_poll_event));
-        Ok(observed)
+        let maximum = timeout.map_or(Span::from_nanos(u64::MAX), |duration| {
+            Span::try_from(duration).unwrap_or(Span::from_nanos(u64::MAX))
+        });
+        let report = self
+            .backend
+            .get_mut()
+            .poll(maximum, &mut self.events)
+            .map_err(io::Error::other)?;
+        destination.extend(self.events.drain());
+        Ok(report.observed())
     }
-}
-
-fn to_poll_event(event: &mio::event::Event) -> Option<PollEvent> {
-    if event.token() == WAKE_TOKEN {
-        return Some(PollEvent::Wake);
-    }
-    let token = ResourceToken::from_poll(event.token().0)?;
-    let mut readiness = Readiness::default();
-    if event.is_readable() {
-        readiness = readiness.readable();
-    }
-    if event.is_writable() {
-        readiness = readiness.writable();
-    }
-    if event.is_read_closed() {
-        readiness = readiness.read_closed();
-    }
-    if event.is_write_closed() {
-        readiness = readiness.write_closed();
-    }
-    if event.is_error() {
-        readiness = readiness.error();
-    }
-    Some(PollEvent::Resource { token, readiness })
 }

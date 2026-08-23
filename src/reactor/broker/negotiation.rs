@@ -117,7 +117,7 @@ impl SingleBroker {
         self.retry_write = true;
         if self
             .resources
-            .reregister(poller, token, PollInterest::ReadWrite)
+            .reregister(poller, token, PollInterest::READ_WRITE)
             .is_err()
         {
             self.transport_lost(poller, identity, TransportFailure::Other)?;
@@ -170,7 +170,7 @@ impl SingleBroker {
         };
         if self
             .resources
-            .reregister(poller, token, PollInterest::Readable)
+            .reregister(poller, token, PollInterest::READABLE)
             .is_err()
         {
             self.transport_lost(poller, identity, TransportFailure::Other)?;

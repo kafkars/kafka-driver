@@ -2,6 +2,7 @@
 
 use std::num::NonZeroUsize;
 
+use calandria::{ResourceGeneration, ResourceOwnerId, ResourceSlotId};
 use kafka_driver_core::{ConnectionEpoch, TransportId};
 
 use super::{
@@ -85,11 +86,11 @@ fn slot_reuse_invalidates_stale_readiness_tokens() {
 fn mismatched_generation_cannot_remove_the_current_resource() {
     let mut registry = registry(2);
     let current = admit(&mut registry, identity(1, 10), "socket-1");
-    let (_, current_generation) = current
-        .decode(2)
-        .unwrap_or_else(|| panic!("registry token must decode"));
-    let stale = ResourceToken::encode(2, 0, current_generation + 1)
-        .unwrap_or_else(|| panic!("test generation must encode"));
+    let stale = ResourceToken::new(
+        current.owner(),
+        current.slot(),
+        ResourceGeneration::new(current.generation().get() + 1),
+    );
 
     assert!(registry.remove(stale).is_none());
     assert_eq!(
@@ -99,20 +100,25 @@ fn mismatched_generation_cannot_remove_the_current_resource() {
 }
 
 #[test]
-fn token_zero_is_never_a_resource_and_cannot_remove_one() {
+fn foreign_owner_cannot_name_or_remove_a_resource() {
     let mut registry = registry(1);
     let current = admit(&mut registry, identity(1, 10), "socket-1");
 
-    assert!(registry.get_mut(ResourceToken::from_raw(0)).is_none());
-    assert!(registry.remove(ResourceToken::from_raw(0)).is_none());
+    let foreign = ResourceToken::new(
+        ResourceOwnerId::new(1),
+        ResourceSlotId::new(0),
+        ResourceGeneration::INITIAL,
+    );
+    assert!(registry.get_mut(foreign).is_none());
+    assert!(registry.remove(foreign).is_none());
     assert!(registry.get_mut(current).is_some());
 }
 
 #[test]
 fn exhausted_generation_space_is_explicit_and_preserves_ownership() {
-    let mut registry = ResourceRegistry::with_generation(nonzero(1), usize::MAX - 1);
+    let mut registry = ResourceRegistry::with_generation(nonzero(1), u64::MAX);
     let last_token = admit(&mut registry, identity(1, 10), "socket-1");
-    assert_eq!(last_token.get(), usize::MAX);
+    assert_eq!(last_token.generation(), ResourceGeneration::MAX);
     assert_eq!(
         registry.remove(last_token),
         Some((identity(1, 10), "socket-1"))
@@ -144,8 +150,8 @@ fn broker_namespaces_make_equal_local_slots_and_generations_globally_disjoint() 
     let right_token = admit(&mut right, identity(1, 1), "right");
 
     assert_ne!(left_token, right_token);
-    assert_eq!(left_token.owner(1, owners.get()), Some(0));
-    assert_eq!(right_token.owner(1, owners.get()), Some(1));
+    assert_eq!(left_token.owner(), ResourceOwnerId::new(0));
+    assert_eq!(right_token.owner(), ResourceOwnerId::new(1));
     assert!(left.get_mut(right_token).is_none());
     assert!(right.get_mut(left_token).is_none());
 }

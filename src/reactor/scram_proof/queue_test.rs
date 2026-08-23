@@ -76,7 +76,11 @@ pub(in crate::reactor) fn request(raw: u64) -> ScramProofRequest {
         .map_or_else(|| panic!("client first nonce missing"), |(_, nonce)| nonce);
     let challenge = format!("r={nonce}-server,s=YWJj,i=4096");
     ScramProofRequest::new(
-        ResourceToken::from_raw(usize::try_from(raw).unwrap_or(1)),
+        ResourceToken::new(
+            calandria::ResourceOwnerId::new(raw),
+            calandria::ResourceSlotId::new(0),
+            calandria::ResourceGeneration::INITIAL,
+        ),
         ResourceIdentity::new(TransportId::from_raw(raw), ConnectionEpoch::from_raw(raw)),
         EffectId::from_raw(raw),
         AuthenticationRound::new(NonZeroU8::MIN),

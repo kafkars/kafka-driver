@@ -23,11 +23,7 @@ impl BrokerSet {
         let PollEvent::Resource { token, .. } = event else {
             return Ok(false);
         };
-        if token.owner(
-            self.broker_limits.resource_capacity().get(),
-            self.owner_capacity.get(),
-        ) == Some(0)
-        {
+        if self.resource_owner(token) == Some(0) {
             let progress = self.seed.as_mut().map_or(Ok(false), |seed| {
                 seed.observe(poller, event, now, observed_at)
                     .map_err(BrokerSetError::Broker)
@@ -35,10 +31,7 @@ impl BrokerSet {
             let settled = self.settle_terminal_seed_waiting(Some(observed_at));
             return Ok(progress || settled != 0);
         }
-        let Some(owner) = token.owner(
-            self.broker_limits.resource_capacity().get(),
-            self.owner_capacity.get(),
-        ) else {
+        let Some(owner) = self.resource_owner(token) else {
             return Ok(false);
         };
         let Some(index) = owner.checked_sub(1) else {

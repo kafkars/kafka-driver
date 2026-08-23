@@ -21,6 +21,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85bc1cec44aa316200dd01fefb6cc6dff8788c734ed06cd81857f9486089aeb0"
 
 [[package]]
+name = "calandria-mio"
+version = "0.0.1-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44fe311b443cc2cef73cc2d68cce3c9f945134aa65c38b755c5651e373273736"
+dependencies = [
+ "calandria",
+ "mio",
+]
+
+[[package]]
 name = "cc"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -82,6 +92,7 @@ dependencies = [
  "base64",
  "bytes",
  "calandria",
+ "calandria-mio",
  "kafka-driver-core",
  "kafka-driver-sim",
  "kafka-driver-transport",

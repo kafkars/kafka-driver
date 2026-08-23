@@ -138,7 +138,7 @@ impl SingleBroker {
         } else if self.resource_token == Some(token) && progress.write_pending() {
             if self
                 .resources
-                .reregister(poller, token, PollInterest::ReadWrite)
+                .reregister(poller, token, PollInterest::READ_WRITE)
                 .is_err()
             {
                 self.transport_lost_observed(
@@ -190,7 +190,7 @@ impl SingleBroker {
         if progress.state() == WriteState::Idle
             && self
                 .resources
-                .reregister(poller, token, PollInterest::Readable)
+                .reregister(poller, token, PollInterest::READABLE)
                 .is_err()
         {
             self.transport_lost_observed(poller, identity, TransportFailure::Other, observed_at)?;

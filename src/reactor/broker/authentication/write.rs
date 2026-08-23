@@ -49,7 +49,7 @@ impl SingleBroker {
         if admitted == AuthenticationWriteOutcome::Admitted
             && self
                 .resources
-                .reregister(poller, token, PollInterest::ReadWrite)
+                .reregister(poller, token, PollInterest::READ_WRITE)
                 .is_err()
         {
             self.transport_lost(poller, identity, TransportFailure::Other)?;

@@ -23,8 +23,6 @@ pub(crate) fn mailbox<T>(
     let retained = RetainedBytes::new(u64::try_from(byte_capacity.get()).unwrap_or(u64::MAX));
     let lane = LaneLimits::new(capacity, retained);
     let limits = MailboxLimits::new(lane, lane);
-    #[cfg(test)]
-    let external_wake = wake.clone();
     let (sender, receiver) =
         calandria::mailbox_with(limits, |_| RetainedBytes::ZERO, wake.into_calandria());
     (
@@ -35,8 +33,6 @@ pub(crate) fn mailbox<T>(
         MailboxReceiver {
             inner: receiver,
             batch: Vec::with_capacity(capacity.get()),
-            #[cfg(test)]
-            external_wake,
         },
     )
 }
@@ -93,8 +89,6 @@ impl<T> fmt::Debug for MailboxSender<T> {
 pub(crate) struct MailboxReceiver<T> {
     inner: CalandriaReceiver<Weighted<T>>,
     batch: Vec<Weighted<T>>,
-    #[cfg(test)]
-    external_wake: WakeHandle,
 }
 
 impl<T> MailboxReceiver<T> {
@@ -115,11 +109,6 @@ impl<T> MailboxReceiver<T> {
             .into_iter()
             .map(|entry| entry.item)
             .collect()
-    }
-
-    #[cfg(test)]
-    pub(super) fn wake_handle(&self) -> WakeHandle {
-        self.external_wake.clone()
     }
 
     #[cfg(test)]

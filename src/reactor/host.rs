@@ -89,7 +89,12 @@ impl Reactor {
         call_ids: Arc<CallIds>,
         observation: Arc<Observation>,
     ) -> std::io::Result<(MailboxSender<Command>, ShutdownRequester, Self)> {
-        let poller = Poller::new(limits.poll_event_budget())?;
+        let broker_limits = BrokerLimits::default();
+        let registration_capacity =
+            BrokerSet::poll_registration_capacity(broker_limits, limits.metadata())
+                .map_err(std::io::Error::other)?;
+        let poller =
+            Poller::with_registration_capacity(limits.poll_event_budget(), registration_capacity)?;
         let poll_wake = poller.wake_handle();
         let command_wake = WakeHandle::new(poll_wake.clone());
         let (sender, commands) = mailbox(
@@ -114,7 +119,7 @@ impl Reactor {
             .transpose()?;
         let proof_sender = scram_proof.as_ref().map(ScramProofWorker::sender);
         let mut brokers = BrokerSet::with_scram_proof(
-            BrokerLimits::default(),
+            broker_limits,
             limits.metadata(),
             broker_template,
             proof_sender,

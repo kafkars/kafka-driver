@@ -86,7 +86,7 @@ impl SingleBroker {
         }
         if self
             .resources
-            .reregister(poller, token, PollInterest::ReadWrite)
+            .reregister(poller, token, PollInterest::READ_WRITE)
             .is_err()
         {
             self.abort_write(poller, effect_id, None)?;
