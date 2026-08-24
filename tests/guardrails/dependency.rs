@@ -163,7 +163,7 @@ fn sasl_scram_is_an_exact_packaged_dependency_with_both_kafka_algorithms() {
         .as_array()
         .unwrap_or_else(|| panic!("sasl-scram must name its complete feature contract"));
 
-    assert_eq!(policy["version"].as_str(), Some("=0.0.1-rc.2"));
+    assert_eq!(policy["version"].as_str(), Some("=0.0.1-rc.3"));
     assert_eq!(policy["default-features"].as_bool(), Some(false));
     assert_eq!(
         features,

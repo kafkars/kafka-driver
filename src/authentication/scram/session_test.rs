@@ -127,7 +127,17 @@ fn kafka_nonce_limit_accepts_256_bytes_and_rejects_one_more() {
     ));
     assert!(matches!(
         receive_server_first(server_first(257, "YWJj", 4_096).as_bytes()),
-        ScramReceive::Outcome(ExchangeOutcome::Failed(_))
+        ScramReceive::Outcome(ExchangeOutcome::Failed(
+            AuthenticationFailure::PolicyLimitExceeded
+        ))
+    ));
+}
+
+#[test]
+fn malformed_server_nonce_remains_distinct_from_policy_overflow() {
+    assert!(matches!(
+        receive_server_first(server_first(20, "YWJj", 4_096).as_bytes()),
+        ScramReceive::Outcome(ExchangeOutcome::Failed(AuthenticationFailure::Malformed))
     ));
 }
 

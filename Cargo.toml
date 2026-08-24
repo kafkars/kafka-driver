@@ -35,7 +35,7 @@ kafka-wire-core = { version = "0.1.0-rc.2", path = "../kafka-protocol/crates/kaf
 mio = { version = "1.2", default-features = false, features = ["net", "os-poll"] }
 ring = "0.17.14"
 rustls = { version = "0.23.42", default-features = false, features = ["ring", "std"] }
-sasl-scram = { version = "=0.0.1-rc.2", default-features = false, features = ["std", "sha256", "sha512", "saslprep"] }
+sasl-scram = { version = "=0.0.1-rc.3", default-features = false, features = ["std", "sha256", "sha512", "saslprep"] }
 serde = { version = "1.0", features = ["derive"] }
 syn = { version = "2.0", features = ["full"] }
 toml = "0.8"

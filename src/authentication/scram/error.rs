@@ -24,12 +24,8 @@ fn protocol_failure(error: ProtocolError) -> AuthenticationFailure {
         | ProtocolError::TooManyAttributes { .. }
         | ProtocolError::ExtensionsTooLarge { .. }
         | ProtocolError::SaltTooLarge { .. }
-        | ProtocolError::ChannelBindingTooLarge { .. } => {
-            AuthenticationFailure::PolicyLimitExceeded
-        }
-        // rc.2's wildcard includes `InvalidNonce`, which combines malformed
-        // and oversized values. A future `NonceTooLarge` should join the
-        // policy-limit arm above.
+        | ProtocolError::ChannelBindingTooLarge { .. }
+        | ProtocolError::NonceTooLarge { .. } => AuthenticationFailure::PolicyLimitExceeded,
         _ => AuthenticationFailure::Malformed,
     }
 }
