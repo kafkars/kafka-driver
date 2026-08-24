@@ -10,21 +10,18 @@ use calandria::{
     MailboxSender as CalandriaSender, RetainedBytes,
 };
 
-use super::WakeHandle;
-
 pub(crate) use calandria::DrainStatus;
 
 pub(crate) fn mailbox<T>(
     capacity: NonZeroUsize,
     byte_capacity: NonZeroUsize,
     weight: fn(&T) -> usize,
-    wake: WakeHandle,
+    wake: calandria::WakeHandle,
 ) -> (MailboxSender<T>, MailboxReceiver<T>) {
     let retained = RetainedBytes::new(u64::try_from(byte_capacity.get()).unwrap_or(u64::MAX));
     let lane = LaneLimits::new(capacity, retained);
     let limits = MailboxLimits::new(lane, lane);
-    let (sender, receiver) =
-        calandria::mailbox_with(limits, |_| RetainedBytes::ZERO, wake.into_calandria());
+    let (sender, receiver) = calandria::mailbox_with(limits, |_| RetainedBytes::ZERO, wake);
     (
         MailboxSender {
             inner: sender,

@@ -21,7 +21,7 @@ use super::{
 fn completed_proof_wakes_the_reactor_with_exact_request_identity() {
     let mut poller = Poller::new(NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("create test poller: {error}"));
-    let wake = WakeHandle::new(poller.wake_handle());
+    let wake = WakeHandle::new(poller.pulse_handle());
     let worker = ScramProofWorker::spawn(ScramProofLimits::default(), wake)
         .unwrap_or_else(|error| panic!("spawn proof worker: {error}"));
     let expected = request(7);
@@ -57,7 +57,7 @@ fn completed_proof_wakes_the_reactor_with_exact_request_identity() {
 fn shutdown_joins_a_worker_blocked_by_full_outcome_capacity() {
     let mut poller = Poller::new(NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("create test poller: {error}"));
-    let wake = WakeHandle::new(poller.wake_handle());
+    let wake = WakeHandle::new(poller.pulse_handle());
     let limits = ScramProofLimits::new(nonzero(2), NonZeroUsize::MIN, NonZeroUsize::MIN);
     let worker = ScramProofWorker::spawn(limits, wake)
         .unwrap_or_else(|error| panic!("spawn proof worker: {error}"));

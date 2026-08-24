@@ -101,7 +101,7 @@ impl ProofMode {
             Self::Worker => {
                 let worker = ScramProofWorker::spawn(
                     ScramProofLimits::default(),
-                    WakeHandle::new(poller.wake_handle()),
+                    WakeHandle::new(poller.pulse_handle()),
                 )
                 .unwrap_or_else(|error| panic!("spawn SCRAM proof worker: {error}"));
                 (Some(worker.sender()), Some(worker))

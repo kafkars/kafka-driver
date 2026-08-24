@@ -5,16 +5,12 @@ use std::{fmt, io};
 /// Cloneable notification handle for waking a blocked reactor turn.
 #[derive(Clone)]
 pub struct WakeHandle {
-    poller: calandria::WakeHandle,
+    poller: calandria_mio::MioPulseHandle,
 }
 
 impl WakeHandle {
-    pub(in crate::reactor) fn new(poller: calandria::WakeHandle) -> Self {
+    pub(in crate::reactor) fn new(poller: calandria_mio::MioPulseHandle) -> Self {
         Self { poller }
-    }
-
-    pub(in crate::reactor) fn into_calandria(self) -> calandria::WakeHandle {
-        self.poller
     }
 
     /// Requests reactor progress for this exact cross-thread transition.
@@ -24,11 +20,7 @@ impl WakeHandle {
     /// independent reactor domains: one domain cannot suppress another's later
     /// request after the selector consumed an earlier event.
     pub fn wake(&self) -> io::Result<()> {
-        let result = self.poller.wake();
-        if result.is_ok() {
-            self.poller.acknowledge();
-        }
-        result
+        self.poller.pulse()
     }
 }
 

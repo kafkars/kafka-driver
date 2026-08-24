@@ -19,7 +19,7 @@ use super::{Resolver, ResolverShutdown};
 fn numeric_resolution_wakes_the_reactor_with_exact_request_identity() {
     let mut poller = Poller::new(std::num::NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("create test poller: {error}"));
-    let wake = crate::reactor::WakeHandle::new(poller.wake_handle());
+    let wake = crate::reactor::WakeHandle::new(poller.pulse_handle());
     let resolver = Resolver::spawn(ResolverLimits::default(), wake)
         .unwrap_or_else(|error| panic!("spawn DNS worker: {error}"));
     let request = DnsRequest::new(
@@ -62,7 +62,7 @@ fn numeric_resolution_wakes_the_reactor_with_exact_request_identity() {
 fn shutdown_joins_a_worker_blocked_by_full_outcome_capacity() {
     let mut poller = Poller::new(NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("create test poller: {error}"));
-    let wake = crate::reactor::WakeHandle::new(poller.wake_handle());
+    let wake = crate::reactor::WakeHandle::new(poller.pulse_handle());
     let limits = ResolverLimits::new(
         nonzero(2),
         NonZeroUsize::MIN,

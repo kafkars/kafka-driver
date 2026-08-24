@@ -45,7 +45,7 @@ fn explicit_wake_handle_can_notify_again_after_the_first_event_is_consumed() {
     let Ok(mut poller) = Poller::new(NonZeroUsize::MIN) else {
         panic!("host must provide a Mio selector");
     };
-    let wake = WakeHandle::new(poller.wake_handle());
+    let wake = WakeHandle::new(poller.pulse_handle());
     let mut events = Vec::with_capacity(1);
 
     for _ in 0..2 {

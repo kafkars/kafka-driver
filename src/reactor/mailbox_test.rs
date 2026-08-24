@@ -124,7 +124,7 @@ fn external_wake_is_not_suppressed_by_pending_mailbox_notification() {
     assert!(receiver.notification_is_requested());
     events.clear();
 
-    assert!(WakeHandle::new(poller.wake_handle()).wake().is_ok());
+    assert!(WakeHandle::new(poller.pulse_handle()).wake().is_ok());
 
     let second = poller.poll_into(Some(Duration::from_secs(1)), &mut events);
     let Ok(second) = second else {
@@ -144,7 +144,7 @@ fn test_mailbox<T>(
         capacity,
         nonzero(capacity.get()),
         unit_weight::<T>,
-        WakeHandle::new(poller.wake_handle()),
+        poller.wake_handle(),
     );
     (sender, receiver, poller)
 }
@@ -159,12 +159,7 @@ fn weighted_mailbox(
 ) {
     let poller = Poller::new(NonZeroUsize::MIN)
         .unwrap_or_else(|error| panic!("host must provide a Mio selector: {error}"));
-    let (sender, receiver) = mailbox(
-        capacity,
-        byte_capacity,
-        String::len,
-        WakeHandle::new(poller.wake_handle()),
-    );
+    let (sender, receiver) = mailbox(capacity, byte_capacity, String::len, poller.wake_handle());
     (sender, receiver, poller)
 }
 
