@@ -348,9 +348,9 @@ dependencies = [
 
 [[package]]
 name = "sasl-scram"
-version = "0.0.1-rc.1"
+version = "0.0.1-rc.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc44a222b3987dd19f482893a258ba640a8bda25ebd7bf488c19ceeccfa0a807"
+checksum = "d2a5bfdd399f2f087b93884c24d2cf6690011eac6987f1a975491de608eeb4ad"
 dependencies = [
  "ctutils",
  "hmac",
