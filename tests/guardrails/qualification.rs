@@ -64,8 +64,10 @@ fn functional_smoke_runs_on_pull_requests_and_main_without_performance() {
     ] {
         assert!(read(&root.join(path)).contains("real-kafka-functional"));
     }
-    assert!(!read(&root.join("smoke/real-kafka-performance.smoke.mjs"))
-        .contains("real-kafka-functional"));
+    assert!(
+        !read(&root.join("smoke/real-kafka-performance.smoke.mjs"))
+            .contains("real-kafka-functional")
+    );
 }
 
 #[test]
