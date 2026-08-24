@@ -187,17 +187,18 @@ fn transport_depends_only_on_deterministic_driver_and_wire_primitives() {
 }
 
 #[test]
-fn simulator_depends_only_on_calandria_and_the_deterministic_core() {
+fn simulator_depends_only_on_criticality_and_the_deterministic_core() {
     let root = workspace_root();
     let dependencies = manifest_dependencies(&root.join("crates/kafka-driver-sim/Cargo.toml"));
 
     assert_eq!(
         dependencies,
-        BTreeSet::from([
-            "calandria".to_owned(),
-            "calandria-sim".to_owned(),
-            "kafka-driver-core".to_owned(),
-        ])
+        BTreeSet::from(["criticality".to_owned(), "kafka-driver-core".to_owned()])
+    );
+    let workspace = parse_manifest(&root.join("Cargo.toml"));
+    assert_eq!(
+        workspace["workspace"]["dependencies"]["criticality"].as_str(),
+        Some("=0.0.1-rc.2")
     );
 }
 

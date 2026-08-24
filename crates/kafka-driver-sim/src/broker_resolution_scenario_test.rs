@@ -87,12 +87,14 @@ fn start(
 }
 
 fn schedule(simulator: &mut Scenario<DnsOutcome>, dns: &mut ScriptedDns, request: DnsRequest) {
-    let planned = dns
+    let plan = dns
         .resolve(request)
         .unwrap_or_else(|error| panic!("scripted DNS must match: {error}"));
-    simulator
-        .schedule_planned(planned)
-        .unwrap_or_else(|error| panic!("DNS outcome must fit simulation: {error:?}"));
+    for planned in plan.into_outcomes() {
+        simulator
+            .schedule_planned(planned)
+            .unwrap_or_else(|error| panic!("DNS outcome must fit simulation: {error:?}"));
+    }
 }
 
 fn next(simulator: &mut Scenario<DnsOutcome>) -> DnsOutcome {

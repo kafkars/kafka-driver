@@ -2,6 +2,7 @@
 
 use std::num::NonZeroUsize;
 
+use criticality::time::Span;
 use kafka_driver_core::{ConnectionEpoch, TransportId};
 
 use super::{
@@ -111,6 +112,41 @@ fn transport_outcome_can_intentionally_carry_a_stale_identity() {
 }
 
 #[test]
+fn transport_plans_model_drops_delays_and_duplicate_outcomes() {
+    let request = ReadRequest::new(identity(CURRENT), nonzero(8));
+    let outcome = TransportOutcome::new(identity(CURRENT), ReadResult::WouldBlock);
+    let Ok(dropped) = ReadStep::with_plan(request, crate::Plan::empty()) else {
+        panic!("dropped read plan must be valid");
+    };
+    let Ok(duplicated) = ReadStep::with_plan(
+        request,
+        crate::Plan::new(vec![
+            crate::Planned::new(Span::from_ticks(5), outcome.clone()),
+            crate::Planned::new(Span::from_ticks(9), outcome.clone()),
+        ]),
+    ) else {
+        panic!("duplicated read plan must be valid");
+    };
+    let mut transport = ScriptedTransport::new(FaultPlan::new([
+        TransportStep::Read(dropped),
+        TransportStep::Read(duplicated),
+    ]));
+
+    let Ok(drop) = transport.read(request) else {
+        panic!("dropped read must match its transport step");
+    };
+    assert!(drop.is_empty());
+    let Ok(plan) = transport.read(request) else {
+        panic!("duplicated read must match its transport step");
+    };
+    assert_eq!(plan.len(), 2);
+    assert_eq!(plan.as_slice()[0].delay(), Span::from_ticks(5));
+    assert_eq!(plan.as_slice()[0].outcome(), &outcome);
+    assert_eq!(plan.as_slice()[1].delay(), Span::from_ticks(9));
+    assert_eq!(plan.as_slice()[1].outcome(), &outcome);
+}
+
+#[test]
 fn exhausted_plan_returns_the_unexpected_call() {
     let request = ReadRequest::new(identity(CURRENT), nonzero(1));
     let mut transport = ScriptedTransport::new(FaultPlan::default());
@@ -139,20 +175,33 @@ fn write_step(request: WriteRequest, result: WriteResult) -> WriteStep {
 }
 
 fn read(transport: &mut ScriptedTransport, request: ReadRequest) -> TransportOutcome<ReadResult> {
-    let Ok(outcome) = transport.read(request) else {
+    let Ok(plan) = transport.read(request) else {
         panic!("test read must match the fault plan");
     };
-    outcome
+    single_outcome(plan)
 }
 
 fn write(
     transport: &mut ScriptedTransport,
     request: WriteRequest,
 ) -> TransportOutcome<WriteResult> {
-    let Ok(outcome) = transport.write(request) else {
+    let Ok(plan) = transport.write(request) else {
         panic!("test write must match the fault plan");
     };
-    outcome
+    single_outcome(plan)
+}
+
+fn single_outcome<T>(plan: crate::Plan<T>) -> T {
+    let mut outcomes = plan.into_outcomes();
+    assert_eq!(
+        outcomes.len(),
+        1,
+        "legacy transport step must retain exactly one outcome"
+    );
+    let Some(planned) = outcomes.pop() else {
+        panic!("legacy transport step must retain its outcome");
+    };
+    planned.into_parts().1
 }
 
 const fn identity(epoch: ConnectionEpoch) -> TransportIdentity {

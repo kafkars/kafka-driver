@@ -22,7 +22,7 @@ use kafka_wire::{
 };
 use kafka_wire_core::{ApiVersion, DecodeLimits, KafkaEncode};
 
-use super::registry::ResponseRegistry;
+use super::{registry::ResponseRegistry, testing::single_outcome};
 
 const EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(1);
 const TRANSPORT: TransportId = TransportId::from_raw(2);
@@ -209,9 +209,10 @@ fn write_once(transport: &mut ScriptedTransport, queue: &mut WriteQueue, expecte
     };
     let effect_id = front.effect_id();
     let request = SimWriteRequest::new(SimIdentity::new(EPOCH, TRANSPORT), front.bytes().to_vec());
-    let Ok(outcome) = transport.write(request) else {
+    let Ok(plan) = transport.write(request) else {
         panic!("offered bytes must match scripted partial write");
     };
+    let outcome = single_outcome(plan);
     let SimWriteResult::Written(written) = outcome.into_result() else {
         panic!("scenario transport step must make write progress");
     };
@@ -224,9 +225,10 @@ fn write_once(transport: &mut ScriptedTransport, queue: &mut WriteQueue, expecte
 
 fn read_once(transport: &mut ScriptedTransport, decoder: &mut FrameDecoder) {
     let request = ReadRequest::new(SimIdentity::new(EPOCH, TRANSPORT), nonzero(4_096));
-    let Ok(outcome) = transport.read(request) else {
+    let Ok(plan) = transport.read(request) else {
         panic!("bounded read must match scripted response fragment");
     };
+    let outcome = single_outcome(plan);
     let ReadResult::Bytes(bytes) = outcome.into_result() else {
         panic!("scenario transport step must return response bytes");
     };

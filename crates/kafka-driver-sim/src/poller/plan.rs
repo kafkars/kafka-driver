@@ -2,8 +2,11 @@
 
 use std::time::Duration;
 
-use calandria::Span;
-use calandria_sim::Planned;
+use criticality::{
+    plan::{Plan, Planned},
+    script::ScriptStep,
+    time::Span,
+};
 use kafka_driver_core::{ConnectionEpoch, TransportId};
 
 use crate::{PollInterest, Readiness};
@@ -88,19 +91,24 @@ impl ReadinessEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PollStep {
     expected: PollRequest,
-    planned: Planned<ReadinessEvent>,
+    response: Plan<ReadinessEvent>,
 }
 
 impl PollStep {
     /// Creates one deterministic poller step.
     pub fn new(expected: PollRequest, delay: Duration, event: ReadinessEvent) -> Self {
-        Self {
+        Self::with_plan(
             expected,
-            planned: Planned::new(
-                Span::try_from(delay).unwrap_or(Span::from_nanos(u64::MAX)),
+            Plan::single(Planned::new(
+                Span::from_ticks(u64::try_from(delay.as_nanos()).unwrap_or(u64::MAX)),
                 event,
-            ),
-        }
+            )),
+        )
+    }
+
+    /// Creates one poller script step with zero or more delayed outcomes.
+    pub const fn with_plan(expected: PollRequest, response: Plan<ReadinessEvent>) -> Self {
+        Self { expected, response }
     }
 
     /// Returns the exact interest arm required to consume this step.
@@ -108,7 +116,7 @@ impl PollStep {
         self.expected
     }
 
-    pub(super) fn into_planned(self) -> Planned<ReadinessEvent> {
-        self.planned
+    pub(super) fn into_script_step(self) -> ScriptStep<PollRequest, ReadinessEvent> {
+        ScriptStep::new(self.expected, self.response)
     }
 }

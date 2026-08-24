@@ -1,50 +1,79 @@
 //! FIFO DNS expectation matching with non-consuming mismatch failures.
 
-use std::{collections::VecDeque, error::Error, fmt};
+use std::{error::Error, fmt};
 
-use crate::{DnsOutcome, DnsRequest, DnsStep, Planned};
+use criticality::{
+    plan::Plan,
+    retained::RetainedBytes,
+    script::{ExactScript, ScriptFailure, ScriptLimits, ScriptStep},
+};
+
+use crate::{DnsOutcome, DnsRequest, DnsStep};
 
 /// Finite ordered resolver script.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ScriptedDns {
-    steps: VecDeque<DnsStep>,
+    script: ExactScript<DnsRequest, DnsOutcome>,
 }
 
 impl ScriptedDns {
     /// Owns a finite sequence of resolver expectations.
     pub fn new(steps: impl IntoIterator<Item = DnsStep>) -> Self {
-        Self {
-            steps: steps.into_iter().collect(),
-        }
+        let steps = steps
+            .into_iter()
+            .map(DnsStep::into_script_step)
+            .collect::<Vec<_>>();
+        let limits = script_limits(&steps);
+        let script = ExactScript::try_with_measure(
+            limits,
+            steps,
+            |_| RetainedBytes::ZERO,
+            |_| RetainedBytes::ZERO,
+        )
+        .unwrap_or_else(|error| panic!("exact DNS script must fit derived limits: {error}"));
+        Self { script }
     }
 
     /// Matches and consumes exactly the next resolver expectation.
-    pub fn resolve(&mut self, request: DnsRequest) -> Result<Planned<DnsOutcome>, DnsScriptError> {
-        let Some(next) = self.steps.front() else {
-            return Err(DnsScriptError::PlanExhausted { received: request });
-        };
-        if next.expected() != &request {
-            return Err(DnsScriptError::UnexpectedRequest {
-                expected: next.expected().clone(),
-                received: request,
-            });
+    pub fn resolve(&mut self, request: DnsRequest) -> Result<Plan<DnsOutcome>, DnsScriptError> {
+        let expected = self.script.expected().cloned();
+        match self.script.respond(&request) {
+            Ok(response) => Ok(response),
+            Err(ScriptFailure::Exhausted { .. }) => {
+                Err(DnsScriptError::PlanExhausted { received: request })
+            }
+            Err(ScriptFailure::Mismatch { .. }) => match expected {
+                Some(expected) => Err(DnsScriptError::UnexpectedRequest {
+                    expected,
+                    received: request,
+                }),
+                None => Err(DnsScriptError::PlanExhausted { received: request }),
+            },
         }
-        let Some(step) = self.steps.pop_front() else {
-            return Err(DnsScriptError::PlanExhausted { received: request });
-        };
-        let (_, planned) = step.into_parts();
-        Ok(planned)
     }
 
     /// Returns resolver expectations not yet consumed.
     pub fn remaining_steps(&self) -> usize {
-        self.steps.len()
+        self.script.len()
     }
 
     /// Returns whether every resolver expectation was consumed.
     pub fn is_complete(&self) -> bool {
-        self.steps.is_empty()
+        self.script.is_empty()
     }
+}
+
+impl Default for ScriptedDns {
+    fn default() -> Self {
+        Self::new([])
+    }
+}
+
+fn script_limits(steps: &[ScriptStep<DnsRequest, DnsOutcome>]) -> ScriptLimits {
+    let outcomes = steps.iter().fold(0_usize, |total, step| {
+        total.saturating_add(step.response().len())
+    });
+    ScriptLimits::new(steps.len(), outcomes, RetainedBytes::ZERO)
 }
 
 /// Why a resolver call could not consume the next deterministic step.
