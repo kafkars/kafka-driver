@@ -4,7 +4,7 @@ import { awaitBroker } from "./support/kafka-cluster.mjs";
 
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 
-smoke.suite("real Kafka reconnect", { tags: ["real-kafka-reconnect"] }, async (t) => {
+smoke.suite("real Kafka reconnect", { tags: ["real-kafka-functional", "real-kafka-reconnect"] }, async (t) => {
   const root = t.repoRoot();
   const composeFile = root.path("smoke", "kafka.compose.yml");
   const probe = root.path("target", "debug", PROBE);

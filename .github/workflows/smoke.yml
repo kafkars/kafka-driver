@@ -1,0 +1,60 @@
+name: Real Kafka smoke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  real-kafka:
+    name: functional real-Kafka smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: kafka-driver
+    steps:
+      - name: Check out kafka-driver
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: kafka-driver
+
+      - name: Check out verified protocol source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: kafkars/kafka-wire
+          ref: 59bc58425749386a1dc4a0c09ac1b67edf5b65af
+          path: kafka-protocol
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+
+      - name: Install pinned Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: kafka-driver/package-lock.json
+
+      - name: Install qualification harness
+        run: npm ci
+
+      - name: Fetch the locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Run functional real-broker smoke
+        run: npm run qualify:real-kafka-functional

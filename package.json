@@ -8,6 +8,7 @@
   },
   "scripts": {
     "qualify:real-kafka": "npm run test:qualification-policy && smoque run smoke/ --ci",
+    "qualify:real-kafka-functional": "npm run test:qualification-policy && smoque run smoke/ --tag real-kafka-functional --ci",
     "measure:real-kafka": "smoque run smoke/ --tag real-kafka-performance --ci",
     "smoke:list": "smoque list smoke/",
     "smoke:real-kafka": "smoque run smoke/ --tag real-kafka --ci",

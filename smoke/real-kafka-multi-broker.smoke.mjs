@@ -10,7 +10,7 @@ import { requireDeadFirstLocalhost } from "./support/localhost-addresses.mjs";
 
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 
-smoke.suite("real Kafka multi-broker failover", { tags: ["real-kafka-multi-broker"] }, async (t) => {
+smoke.suite("real Kafka multi-broker failover", { tags: ["real-kafka-functional", "real-kafka-multi-broker"] }, async (t) => {
   const root = t.repoRoot();
   const composeFile = root.path("smoke", "kafka-cluster.compose.yml");
   const probe = root.path("target", "debug", PROBE);

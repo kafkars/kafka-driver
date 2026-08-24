@@ -28,6 +28,47 @@ fn ci_prefetches_before_running_the_gate_offline() {
 }
 
 #[test]
+fn functional_smoke_runs_on_pull_requests_and_main_without_performance() {
+    let root = workspace_root();
+    let guardrails = load_guardrails(&root);
+    let workflow = read(&root.join(".github/workflows/smoke.yml"));
+    let manifest = read(&root.join("package.json"));
+    let repository = format!(
+        "repository: {}",
+        guardrails.dependencies.kafka_wire_repository
+    );
+    let revision = format!("ref: {}", guardrails.dependencies.kafka_wire_revision);
+
+    assert!(workflow.contains("pull_request:"));
+    assert!(workflow.contains("branches: [main]"));
+    assert!(workflow.contains("contents: read"));
+    assert!(workflow.contains(&repository));
+    assert!(workflow.contains(&revision));
+    assert!(workflow.contains("run: npm run qualify:real-kafka-functional"));
+    assert!(!workflow.contains("run: npm run qualify:real-kafka\n"));
+    assert!(!workflow.contains("run: npm run measure:real-kafka"));
+    assert!(manifest.contains(
+        "\"qualify:real-kafka-functional\": \"npm run test:qualification-policy && \
+         smoque run smoke/ --tag real-kafka-functional --ci\""
+    ));
+
+    for path in [
+        "smoke/real-kafka.smoke.mjs",
+        "smoke/real-kafka-movement.smoke.mjs",
+        "smoke/real-kafka-multi-broker.smoke.mjs",
+        "smoke/real-kafka-reconnect.smoke.mjs",
+        "smoke/real-kafka-sasl.smoke.mjs",
+        "smoke/real-kafka-secure-multi-broker.smoke.mjs",
+        "smoke/real-kafka-security.smoke.mjs",
+        "smoke/real-kafka-tls.smoke.mjs",
+    ] {
+        assert!(read(&root.join(path)).contains("real-kafka-functional"));
+    }
+    assert!(!read(&root.join("smoke/real-kafka-performance.smoke.mjs"))
+        .contains("real-kafka-functional"));
+}
+
+#[test]
 fn release_qualification_runs_the_canonical_gate_before_packaging() {
     let root = workspace_root();
     let workflow = read(&root.join(".github/workflows/qualification.yml"));

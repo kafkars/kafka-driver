@@ -15,7 +15,7 @@ const BROKERS = ["kafka-1", "kafka-2", "kafka-3"];
 
 smoke.suite(
   "real Kafka secure multi-broker recovery",
-  { tags: ["real-kafka-secure-multi-broker"] },
+  { tags: ["real-kafka-functional", "real-kafka-secure-multi-broker"] },
   async (t) => {
     t.redact(KEYSTORE_PASSWORD);
     const root = t.repoRoot();

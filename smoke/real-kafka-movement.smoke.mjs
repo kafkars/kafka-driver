@@ -9,7 +9,7 @@ import {
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 const TOPIC = "kafka-driver-movement";
 
-smoke.suite("real Kafka advertised broker movement", { tags: ["real-kafka-movement"] }, async (t) => {
+smoke.suite("real Kafka advertised broker movement", { tags: ["real-kafka-functional", "real-kafka-movement"] }, async (t) => {
   const root = t.repoRoot();
   const composeFile = root.path("smoke", "kafka-cluster.compose.yml");
   const probe = root.path("target", "debug", PROBE);

@@ -4,7 +4,7 @@ const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-d
 const TOPIC = "kafka-driver-smoke";
 const GROUP = "kafka-driver-smoke-readers";
 
-smoke.suite("real Kafka cluster routes", { tags: ["real-kafka"] }, async (t) => {
+smoke.suite("real Kafka cluster routes", { tags: ["real-kafka-functional", "real-kafka"] }, async (t) => {
   const root = t.repoRoot();
   const composeFile = root.path("smoke", "kafka.compose.yml");
   const probe = root.path("target", "debug", PROBE);

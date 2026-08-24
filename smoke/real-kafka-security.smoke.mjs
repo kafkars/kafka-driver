@@ -9,7 +9,7 @@ const PASSWORD = "kafka-driver-smoke-secret";
 const KEYSTORE_PASSWORD = "kafka-driver-keystore";
 const MECHANISMS = ["plain", "scram-sha-256", "scram-sha-512"];
 
-smoke.suite("real Kafka SASL over TLS", { tags: ["real-kafka-security"] }, async (t) => {
+smoke.suite("real Kafka SASL over TLS", { tags: ["real-kafka-functional", "real-kafka-security"] }, async (t) => {
   t.redact(PASSWORD);
   t.redact(KEYSTORE_PASSWORD);
   const root = t.repoRoot();

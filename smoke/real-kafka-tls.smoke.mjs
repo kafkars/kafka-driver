@@ -6,7 +6,7 @@ import { makeBrokerSecretsContainerReadable } from "./support/tls-identities.mjs
 const PROBE = process.platform === "win32" ? "kafka-driver-probe.exe" : "kafka-driver-probe";
 const KEYSTORE_PASSWORD = "kafka-driver-keystore";
 
-smoke.suite("real Kafka TLS verification", { tags: ["real-kafka-tls"] }, async (t) => {
+smoke.suite("real Kafka TLS verification", { tags: ["real-kafka-functional", "real-kafka-tls"] }, async (t) => {
   t.redact(KEYSTORE_PASSWORD);
   const root = t.repoRoot();
   const composeFile = root.path("smoke", "kafka-tls.compose.yml");

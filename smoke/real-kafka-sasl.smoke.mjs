@@ -6,7 +6,7 @@ const PASSWORD = "kafka-driver-smoke-secret";
 const REJECTED_PASSWORD = "kafka-driver-rejected-smoke-secret";
 const MECHANISMS = ["plain", "scram-sha-256", "scram-sha-512"];
 
-smoke.suite("real Kafka SASL authentication", { tags: ["real-kafka-sasl"] }, async (t) => {
+smoke.suite("real Kafka SASL authentication", { tags: ["real-kafka-functional", "real-kafka-sasl"] }, async (t) => {
   t.redact(PASSWORD);
   t.redact(REJECTED_PASSWORD);
   const root = t.repoRoot();
