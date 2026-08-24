@@ -44,6 +44,15 @@ jobs:
           ref: 59bc58425749386a1dc4a0c09ac1b67edf5b65af
           path: kafka-protocol
 
+      - name: Set up zrail
+        uses: zactionsz/setup-zrail@9b0d4b677b1f5e138d63e11bb1f67bb8716ed5d9
+        with:
+          version: "0.0.2"
+          sha256: ${{ runner.os == 'Linux' && 'fb535cf8a72cf15995f0c4d2ea640629624b300736c67c7961e058f4a12419d9' || runner.os == 'macOS' && 'efc191a76b71d75e61b195f50759f55562830a4d8ad6c3a2a3bc7b1d8c741141' || '0d1d97ae29fc532d503fb0edba3b18d02a85ce55735bd2d0ad868cbeaebb5a58' }}
+
+      - name: Verify installed zrail
+        run: zrail --version
+
       - name: Install pinned Rust toolchain
         run: |
           rustup toolchain install 1.88.0 --profile minimal --component clippy,rustfmt
