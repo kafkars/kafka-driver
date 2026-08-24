@@ -3,7 +3,7 @@
 use std::{fmt, sync::Arc};
 
 use kafka_driver_core::SaslMechanism;
-use stringprep::saslprep;
+use sasl_scram::{PreparationError, Rfc5802Profile, SecretString};
 use zeroize::Zeroizing;
 
 /// Validated credentials and mechanism selection for broker authentication.
@@ -73,23 +73,21 @@ impl SaslConfig {
         password: impl Into<String>,
     ) -> Result<Self, SaslConfigError> {
         let username = username.into();
-        let password = Zeroizing::new(password.into());
-        let username = saslprep(&username)
-            .map_err(|_| SaslConfigError::UsernamePreparation)?
-            .into_owned();
-        let password = Zeroizing::new(
-            saslprep(password.as_str())
-                .map_err(|_| SaslConfigError::PasswordPreparation)?
-                .into_owned(),
-        );
+        let password = password.into();
         if username.is_empty() {
             return Err(SaslConfigError::EmptyUsername);
         }
+        let prepared = Rfc5802Profile::prepare(&username, SecretString::new(password))
+            .map_err(scram_config_error)?;
+        let username = Arc::from(prepared.authentication_identity().as_str());
+        let password = std::str::from_utf8(prepared.password().expose_secret())
+            .map_err(|_| SaslConfigError::PasswordPreparation)?
+            .to_owned();
         Ok(Self {
             mechanism,
             authorization_identity: Arc::from(""),
-            username: Arc::from(username),
-            password: Arc::new(SecretText(password)),
+            username,
+            password: Arc::new(SecretText(Zeroizing::new(password))),
         })
     }
 
@@ -180,5 +178,16 @@ fn validate_plain_field(value: &str, failure: SaslConfigError) -> Result<(), Sas
         Err(failure)
     } else {
         Ok(())
+    }
+}
+
+fn scram_config_error(error: PreparationError) -> SaslConfigError {
+    match error {
+        PreparationError::InvalidPassword => SaslConfigError::PasswordPreparation,
+        PreparationError::InvalidAuthorizationIdentity
+        | PreparationError::AuthorizationIdentityMismatch => {
+            SaslConfigError::UnsupportedAuthorizationIdentity
+        }
+        _ => SaslConfigError::UsernamePreparation,
     }
 }

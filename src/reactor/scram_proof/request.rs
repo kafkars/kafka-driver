@@ -2,21 +2,17 @@
 
 use std::fmt;
 
-use kafka_driver_core::{AuthenticationRound, EffectId, ExchangeOutcome};
-use kafka_wire_core::Bytes;
+use kafka_driver_core::{AuthenticationRound, EffectId};
+use sasl_scram::{AwaitingServerFinal, Error, OutboundMessage, PendingDerivation};
 
-use crate::{
-    authentication::AuthenticationSession,
-    reactor::resource::{ResourceIdentity, ResourceToken},
-};
+use crate::reactor::resource::{ResourceIdentity, ResourceToken};
 
 pub(in crate::reactor) struct ScramProofRequest {
     token: ResourceToken,
     identity: ResourceIdentity,
     effect_id: EffectId,
     round: AuthenticationRound,
-    session: AuthenticationSession,
-    response: Bytes,
+    pending: PendingDerivation,
 }
 
 impl ScramProofRequest {
@@ -25,33 +21,25 @@ impl ScramProofRequest {
         identity: ResourceIdentity,
         effect_id: EffectId,
         round: AuthenticationRound,
-        session: AuthenticationSession,
-        response: Bytes,
+        pending: PendingDerivation,
     ) -> Self {
         Self {
             token,
             identity,
             effect_id,
             round,
-            session,
-            response,
+            pending,
         }
     }
 
-    pub(super) fn finish(mut self) -> ScramProofOutcome {
-        let outcome = self.session.receive(&self.response);
+    pub(super) fn finish(self) -> ScramProofOutcome {
         ScramProofOutcome {
             token: self.token,
             identity: self.identity,
             effect_id: self.effect_id,
             round: self.round,
-            session: self.session,
-            outcome,
+            result: self.pending.derive(),
         }
-    }
-
-    pub(in crate::reactor) fn into_session(self) -> AuthenticationSession {
-        self.session
     }
 }
 
@@ -72,8 +60,7 @@ pub(in crate::reactor) struct ScramProofOutcome {
     identity: ResourceIdentity,
     effect_id: EffectId,
     round: AuthenticationRound,
-    session: AuthenticationSession,
-    outcome: ExchangeOutcome,
+    result: Result<(AwaitingServerFinal, OutboundMessage), Error>,
 }
 
 impl ScramProofOutcome {
@@ -93,8 +80,10 @@ impl ScramProofOutcome {
         self.round
     }
 
-    pub(in crate::reactor) fn into_parts(self) -> (AuthenticationSession, ExchangeOutcome) {
-        (self.session, self.outcome)
+    pub(in crate::reactor) fn into_result(
+        self,
+    ) -> Result<(AwaitingServerFinal, OutboundMessage), Error> {
+        self.result
     }
 }
 
@@ -106,7 +95,7 @@ impl fmt::Debug for ScramProofOutcome {
             .field("identity", &self.identity)
             .field("effect_id", &self.effect_id)
             .field("round", &self.round)
-            .field("outcome", &self.outcome)
+            .field("succeeded", &self.result.is_ok())
             .finish_non_exhaustive()
     }
 }

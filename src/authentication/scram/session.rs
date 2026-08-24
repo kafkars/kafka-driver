@@ -1,119 +1,102 @@
-//! Explicit two-round SCRAM transcript state with terminal proof validation.
+//! Kafka-profile composition of consuming SCRAM client continuations.
 
 use std::{fmt, mem};
 
-use kafka_driver_core::{AuthenticationFailure, ExchangeOutcome};
-use zeroize::Zeroizing;
+use kafka_driver_core::{AuthenticationFailure, ExchangeOutcome, SaslMechanism};
+use sasl_scram::{
+    Algorithm, AwaitingServerFinal, AwaitingServerFirst, ChannelBindingMode, Client, ClientConfig,
+    ClientPolicy, Error, NonceSource, OutboundMessage, PendingDerivation,
+    PreparedAuthenticationIdentity, PreparedCredentials, PreparedPassword, SecretBytes,
+};
 
 use crate::SaslConfig;
 
-use super::{
-    algorithm::ScramAlgorithm,
-    client_first::client_first,
-    limits::ScramLimits,
-    message::{ServerFinal, parse_server_final, parse_server_first},
-    nonce::ScramNonce,
-    proof::derive_proof,
-};
+use super::{error::failure, nonce::SecureNonceSource};
 
-/// Secret-owning SCRAM exchange state for one connection epoch.
 pub(crate) struct ScramSession {
-    algorithm: ScramAlgorithm,
-    limits: ScramLimits,
+    mechanism: SaslMechanism,
     state: ScramState,
 }
 
 enum ScramState {
-    Ready {
-        config: SaslConfig,
-        nonce: ScramNonce,
+    ClientFirstReady {
+        next: AwaitingServerFirst,
+        message: OutboundMessage,
     },
-    AwaitingServerFirst {
-        config: SaslConfig,
-        nonce: ScramNonce,
-        client_first_bare: Zeroizing<Vec<u8>>,
+    AwaitingServerFirst(AwaitingServerFirst),
+    Deriving,
+    ClientFinalReady {
+        next: AwaitingServerFinal,
+        message: OutboundMessage,
     },
-    FinalReady {
-        message: Zeroizing<Vec<u8>>,
-        server_key: Zeroizing<Vec<u8>>,
-        auth_message: Zeroizing<Vec<u8>>,
-    },
-    AwaitingServerFinal {
-        server_key: Zeroizing<Vec<u8>>,
-        auth_message: Zeroizing<Vec<u8>>,
-    },
+    AwaitingServerFinal(AwaitingServerFinal),
     Complete,
 }
 
+pub(in crate::authentication) enum ScramReceive {
+    Derive(PendingDerivation),
+    Outcome(ExchangeOutcome),
+}
+
 impl ScramSession {
-    pub(crate) fn new(config: SaslConfig) -> Result<Self, AuthenticationFailure> {
-        let limits = ScramLimits::default();
-        let nonce = ScramNonce::generate(limits)?;
-        Self::with_nonce_and_limits(config, nonce, limits)
+    pub(in crate::authentication) fn new(
+        config: &SaslConfig,
+    ) -> Result<Self, AuthenticationFailure> {
+        Self::with_nonce_source(config, &mut SecureNonceSource::new())
     }
 
     #[cfg(test)]
-    pub(crate) fn new_with_nonce(
-        config: SaslConfig,
-        nonce: impl Into<String>,
+    pub(super) fn new_with_nonce_source(
+        config: &SaslConfig,
+        nonce: &mut impl NonceSource,
     ) -> Result<Self, AuthenticationFailure> {
-        let limits = ScramLimits::default();
-        let nonce = ScramNonce::new(nonce, limits)?;
-        Self::with_nonce_and_limits(config, nonce, limits)
+        Self::with_nonce_source(config, nonce)
     }
 
-    fn with_nonce_and_limits(
-        config: SaslConfig,
-        nonce: ScramNonce,
-        limits: ScramLimits,
+    fn with_nonce_source(
+        config: &SaslConfig,
+        nonce: &mut impl NonceSource,
     ) -> Result<Self, AuthenticationFailure> {
-        let algorithm = ScramAlgorithm::for_mechanism(config.mechanism())?;
+        let mechanism = config.mechanism();
+        let algorithm = algorithm(mechanism)?;
+        let identity = PreparedAuthenticationIdentity::from_protocol_profile(config.username())
+            .map_err(|_| AuthenticationFailure::Protocol)?;
+        let password =
+            PreparedPassword::from_protocol_profile(SecretBytes::new(config.password().as_bytes()));
+        let credentials = PreparedCredentials::from_protocol_profile(identity, None, password);
+        let config = ClientConfig::builder(algorithm)
+            .credentials(credentials)
+            .channel_binding(ChannelBindingMode::Unsupported)
+            .policy(ClientPolicy::default())
+            .build()
+            .map_err(|error| failure(Error::Policy(error)))?;
+        let (next, message) = Client::start(config, nonce).map_err(failure)?;
         Ok(Self {
-            algorithm,
-            limits,
-            state: ScramState::Ready { config, nonce },
+            mechanism,
+            state: ScramState::ClientFirstReady { next, message },
         })
     }
 
-    pub(crate) fn next_message(
+    pub(in crate::authentication) fn next_message(
         &mut self,
         max_bytes: usize,
-    ) -> Result<Zeroizing<Vec<u8>>, AuthenticationFailure> {
+    ) -> Result<OutboundMessage, AuthenticationFailure> {
         let state = mem::replace(&mut self.state, ScramState::Complete);
         match state {
-            ScramState::Ready { config, nonce } => {
-                match client_first(config.username(), &nonce, max_bytes) {
-                    Ok(client_first) => {
-                        self.state = ScramState::AwaitingServerFirst {
-                            config,
-                            nonce,
-                            client_first_bare: client_first.bare,
-                        };
-                        Ok(client_first.message)
-                    }
-                    Err(failure) => {
-                        self.state = ScramState::Ready { config, nonce };
-                        Err(failure)
-                    }
-                }
-            }
-            ScramState::FinalReady {
-                message,
-                server_key,
-                auth_message,
-            } => {
+            ScramState::ClientFirstReady { next, message } => {
                 if message.len() > max_bytes {
-                    self.state = ScramState::FinalReady {
-                        message,
-                        server_key,
-                        auth_message,
-                    };
+                    self.state = ScramState::ClientFirstReady { next, message };
                     return Err(AuthenticationFailure::PolicyLimitExceeded);
                 }
-                self.state = ScramState::AwaitingServerFinal {
-                    server_key,
-                    auth_message,
-                };
+                self.state = ScramState::AwaitingServerFirst(next);
+                Ok(message)
+            }
+            ScramState::ClientFinalReady { next, message } => {
+                if message.len() > max_bytes {
+                    self.state = ScramState::ClientFinalReady { next, message };
+                    return Err(AuthenticationFailure::PolicyLimitExceeded);
+                }
+                self.state = ScramState::AwaitingServerFinal(next);
                 Ok(message)
             }
             other => {
@@ -123,79 +106,54 @@ impl ScramSession {
         }
     }
 
-    pub(crate) fn receive(&mut self, response: &[u8]) -> ExchangeOutcome {
+    pub(in crate::authentication) fn receive(&mut self, response: &[u8]) -> ScramReceive {
         let state = mem::replace(&mut self.state, ScramState::Complete);
         match state {
-            ScramState::AwaitingServerFirst {
-                config,
-                nonce,
-                client_first_bare,
-            } => self.receive_server_first(&config, &nonce, &client_first_bare, response),
-            ScramState::AwaitingServerFinal {
-                server_key,
-                auth_message,
-            } => self.receive_server_final(&server_key, &auth_message, response),
+            ScramState::AwaitingServerFirst(state) => match state.receive_server_first(response) {
+                Ok(pending) => {
+                    self.state = ScramState::Deriving;
+                    ScramReceive::Derive(pending)
+                }
+                Err(error) => ScramReceive::Outcome(ExchangeOutcome::Failed(failure(error))),
+            },
+            ScramState::AwaitingServerFinal(state) => {
+                let outcome = match state.receive_server_final(response) {
+                    Ok(_) => ExchangeOutcome::Succeeded,
+                    Err(error) => ExchangeOutcome::Failed(failure(error)),
+                };
+                ScramReceive::Outcome(outcome)
+            }
             other => {
                 self.state = other;
-                ExchangeOutcome::Failed(AuthenticationFailure::Protocol)
+                ScramReceive::Outcome(ExchangeOutcome::Failed(AuthenticationFailure::Protocol))
             }
         }
     }
 
-    pub(crate) const fn proof_required(&self) -> bool {
-        matches!(self.state, ScramState::AwaitingServerFirst { .. })
-    }
-
-    fn receive_server_first(
+    pub(in crate::authentication) fn complete_derivation(
         &mut self,
-        config: &SaslConfig,
-        nonce: &ScramNonce,
-        client_first_bare: &[u8],
-        response: &[u8],
+        result: Result<(AwaitingServerFinal, OutboundMessage), Error>,
     ) -> ExchangeOutcome {
-        let result = parse_server_first(response, nonce, self.limits).map(|server| {
-            let client_final_without_proof =
-                Zeroizing::new(format!("c=biws,r={}", server.nonce).into_bytes());
-            let proof = derive_proof(
-                self.algorithm,
-                config.password(),
-                &server.salt,
-                server.iterations,
-                client_first_bare,
-                server.raw,
-                &client_final_without_proof,
-            );
-            self.state = ScramState::FinalReady {
-                message: proof.client_final,
-                server_key: proof.server_key,
-                auth_message: proof.auth_message,
-            };
-        });
+        let state = mem::replace(&mut self.state, ScramState::Complete);
+        if !matches!(state, ScramState::Deriving) {
+            self.state = state;
+            return ExchangeOutcome::Failed(AuthenticationFailure::Protocol);
+        }
         match result {
-            Ok(()) => ExchangeOutcome::Continue,
-            Err(failure) => ExchangeOutcome::Failed(failure),
+            Ok((next, message)) => {
+                self.state = ScramState::ClientFinalReady { next, message };
+                ExchangeOutcome::Continue
+            }
+            Err(error) => ExchangeOutcome::Failed(failure(error)),
         }
     }
+}
 
-    fn receive_server_final(
-        &self,
-        server_key: &[u8],
-        auth_message: &[u8],
-        response: &[u8],
-    ) -> ExchangeOutcome {
-        let result =
-            parse_server_final(response, self.algorithm.output_len()).and_then(
-                |final_| match final_ {
-                    ServerFinal::Rejected => Err(AuthenticationFailure::Rejected),
-                    ServerFinal::Verifier(signature) => {
-                        self.algorithm.verify(server_key, auth_message, &signature)
-                    }
-                },
-            );
-        match result {
-            Ok(()) => ExchangeOutcome::Succeeded,
-            Err(failure) => ExchangeOutcome::Failed(failure),
-        }
+fn algorithm(mechanism: SaslMechanism) -> Result<Algorithm, AuthenticationFailure> {
+    match mechanism {
+        SaslMechanism::ScramSha256 => Ok(Algorithm::Sha256),
+        SaslMechanism::ScramSha512 => Ok(Algorithm::Sha512),
+        SaslMechanism::Plain => Err(AuthenticationFailure::Protocol),
     }
 }
 
@@ -203,7 +161,7 @@ impl fmt::Debug for ScramSession {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ScramSession")
-            .field("mechanism", &self.algorithm.mechanism())
+            .field("mechanism", &self.mechanism)
             .field("phase", &self.state.name())
             .finish_non_exhaustive()
     }
@@ -212,10 +170,11 @@ impl fmt::Debug for ScramSession {
 impl ScramState {
     const fn name(&self) -> &'static str {
         match self {
-            Self::Ready { .. } => "ready",
-            Self::AwaitingServerFirst { .. } => "awaiting-server-first",
-            Self::FinalReady { .. } => "final-ready",
-            Self::AwaitingServerFinal { .. } => "awaiting-server-final",
+            Self::ClientFirstReady { .. } => "client-first-ready",
+            Self::AwaitingServerFirst(_) => "awaiting-server-first",
+            Self::Deriving => "deriving",
+            Self::ClientFinalReady { .. } => "client-final-ready",
+            Self::AwaitingServerFinal(_) => "awaiting-server-final",
             Self::Complete => "complete",
         }
     }

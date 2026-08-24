@@ -1,18 +1,12 @@
-//! SCRAM transcript ownership split into parsing, proof, nonce, and state seams.
+//! Kafka-profile adapter around the external sans-I/O SCRAM state machine.
 
-mod algorithm;
-mod client_first;
-mod limits;
-mod message;
+mod error;
 mod nonce;
-mod proof;
 mod session;
 
 #[cfg(test)]
 mod fanout_bench_test;
 #[cfg(test)]
-mod message_test;
-#[cfg(test)]
 mod session_test;
 
-pub(super) use session::ScramSession;
+pub(in crate::authentication) use session::{ScramReceive, ScramSession};

@@ -17,7 +17,7 @@ pub(crate) use error::AuthenticationExchangeError;
 pub(crate) use exchange::AuthenticateExchange;
 pub(crate) use handshake::{HandshakeExchange, HandshakeOutcome};
 pub(crate) use pending::AuthenticationExchange;
-pub(crate) use session::AuthenticationSession;
+pub(crate) use session::{AuthenticationReceive, AuthenticationSession};
 
 use plain::PlainSession;
-use scram::ScramSession;
+use scram::{ScramReceive, ScramSession};

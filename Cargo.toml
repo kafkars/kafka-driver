@@ -22,7 +22,6 @@ license = "Apache-2.0"
 repository = "https://github.com/kafkars/kafka-driver"
 
 [workspace.dependencies]
-base64 = "0.22.1"
 bytes = "1.10"
 calandria = "=0.0.1-rc.2"
 calandria-mio = "=0.0.1-rc.2"
@@ -35,8 +34,8 @@ kafka-wire-core = { version = "0.1.0-rc.2", path = "../kafka-protocol/crates/kaf
 mio = { version = "1.2", default-features = false, features = ["net", "os-poll"] }
 ring = "0.17.14"
 rustls = { version = "0.23.42", default-features = false, features = ["ring", "std"] }
+sasl-scram = { version = "=0.0.1-rc.1", default-features = false, features = ["std", "sha256", "sha512", "saslprep"] }
 serde = { version = "1.0", features = ["derive"] }
-stringprep = "0.1.5"
 syn = { version = "2.0", features = ["full"] }
 toml = "0.8"
 zeroize = "1.9"
@@ -59,7 +58,6 @@ default = ["tls-rustls"]
 tls-rustls = ["dep:rustls"]
 
 [dependencies]
-base64.workspace = true
 bytes.workspace = true
 calandria.workspace = true
 calandria-mio.workspace = true
@@ -70,10 +68,11 @@ kafka-wire-core.workspace = true
 mio.workspace = true
 ring.workspace = true
 rustls = { workspace = true, optional = true }
-stringprep.workspace = true
+sasl-scram.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+base64 = "0.22.1"
 calandria-sim.workspace = true
 kafka-driver-sim.workspace = true
 serde.workspace = true

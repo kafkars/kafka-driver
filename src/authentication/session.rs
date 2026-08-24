@@ -1,11 +1,34 @@
 //! Mechanism-polymorphic ownership of one connection epoch's secret transcript.
 
 use kafka_driver_core::{AuthenticationFailure, ExchangeOutcome, SaslMechanism};
+use sasl_scram::{Error, OutboundMessage, PendingDerivation};
 use zeroize::Zeroizing;
 
 use crate::SaslConfig;
 
-use super::{PlainSession, ScramSession};
+use super::{PlainSession, ScramReceive, ScramSession};
+
+/// Zeroizing ownership of one mechanism message until Kafka framing copies it.
+#[derive(Debug)]
+pub(crate) enum AuthenticationMessage {
+    Plain(Zeroizing<Vec<u8>>),
+    Scram(OutboundMessage),
+}
+
+impl AuthenticationMessage {
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        match self {
+            Self::Plain(message) => message,
+            Self::Scram(message) => message.as_bytes(),
+        }
+    }
+}
+
+/// Immediate mechanism progress or explicit off-reactor SCRAM derivation work.
+pub(crate) enum AuthenticationReceive {
+    Derive(PendingDerivation),
+    Outcome(ExchangeOutcome),
+}
 
 /// Secret-owning mechanism session selected by public SASL configuration.
 #[derive(Debug)]
@@ -19,7 +42,7 @@ impl AuthenticationSession {
         match config.mechanism() {
             SaslMechanism::Plain => PlainSession::new(config).map(Self::Plain),
             SaslMechanism::ScramSha256 | SaslMechanism::ScramSha512 => {
-                ScramSession::new(config).map(Self::Scram)
+                ScramSession::new(&config).map(Self::Scram)
             }
         }
     }
@@ -27,21 +50,34 @@ impl AuthenticationSession {
     pub(crate) fn next_message(
         &mut self,
         max_bytes: usize,
-    ) -> Result<Zeroizing<Vec<u8>>, AuthenticationFailure> {
+    ) -> Result<AuthenticationMessage, AuthenticationFailure> {
         match self {
-            Self::Plain(session) => session.next_message(max_bytes),
-            Self::Scram(session) => session.next_message(max_bytes),
+            Self::Plain(session) => session
+                .next_message(max_bytes)
+                .map(AuthenticationMessage::Plain),
+            Self::Scram(session) => session
+                .next_message(max_bytes)
+                .map(AuthenticationMessage::Scram),
         }
     }
 
-    pub(crate) fn receive(&mut self, response: &[u8]) -> ExchangeOutcome {
+    pub(crate) fn receive(&mut self, response: &[u8]) -> AuthenticationReceive {
         match self {
-            Self::Plain(session) => session.receive(response),
-            Self::Scram(session) => session.receive(response),
+            Self::Plain(session) => AuthenticationReceive::Outcome(session.receive(response)),
+            Self::Scram(session) => match session.receive(response) {
+                ScramReceive::Derive(pending) => AuthenticationReceive::Derive(pending),
+                ScramReceive::Outcome(outcome) => AuthenticationReceive::Outcome(outcome),
+            },
         }
     }
 
-    pub(crate) const fn proof_required(&self) -> bool {
-        matches!(self, Self::Scram(session) if session.proof_required())
+    pub(crate) fn complete_derivation(
+        &mut self,
+        result: Result<(sasl_scram::AwaitingServerFinal, sasl_scram::OutboundMessage), Error>,
+    ) -> ExchangeOutcome {
+        match self {
+            Self::Plain(_) => ExchangeOutcome::Failed(AuthenticationFailure::Protocol),
+            Self::Scram(session) => session.complete_derivation(result),
+        }
     }
 }
