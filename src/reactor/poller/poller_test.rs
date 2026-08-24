@@ -1,4 +1,4 @@
-//! Real-selector scenarios for bounded polling and coalesced cross-thread wake.
+//! Real-selector scenarios for bounded polling, coalesced wakes, and pulses.
 
 use std::{num::NonZeroUsize, time::Duration};
 
