@@ -24,6 +24,8 @@ impl ScriptedDns {
             .map(DnsStep::into_script_step)
             .collect::<Vec<_>>();
         let limits = script_limits(&steps);
+        // Compatibility contract: these pre-existing fixtures had no retained-byte
+        // budget. Count admission is exact; variable bytes remain unmeasured.
         let script = ExactScript::try_with_measure(
             limits,
             steps,
@@ -36,13 +38,12 @@ impl ScriptedDns {
 
     /// Matches and consumes exactly the next resolver expectation.
     pub fn resolve(&mut self, request: DnsRequest) -> Result<Plan<DnsOutcome>, DnsScriptError> {
-        let expected = self.script.expected().cloned();
         match self.script.respond(&request) {
             Ok(response) => Ok(response),
             Err(ScriptFailure::Exhausted { .. }) => {
                 Err(DnsScriptError::PlanExhausted { received: request })
             }
-            Err(ScriptFailure::Mismatch { .. }) => match expected {
+            Err(ScriptFailure::Mismatch { .. }) => match self.script.expected().cloned() {
                 Some(expected) => Err(DnsScriptError::UnexpectedRequest {
                     expected,
                     received: request,

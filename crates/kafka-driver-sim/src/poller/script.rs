@@ -24,6 +24,8 @@ impl ScriptedPoller {
             .map(PollStep::into_script_step)
             .collect::<Vec<_>>();
         let limits = script_limits(&steps);
+        // Compatibility contract: these pre-existing fixtures had no retained-byte
+        // budget. Count admission is exact; variable bytes remain unmeasured.
         let script = ExactScript::try_with_measure(
             limits,
             steps,
@@ -36,13 +38,12 @@ impl ScriptedPoller {
 
     /// Matches and consumes exactly the next interest arm.
     pub fn arm(&mut self, request: PollRequest) -> Result<Plan<ReadinessEvent>, PollScriptError> {
-        let expected = self.script.expected().copied();
         match self.script.respond(&request) {
             Ok(response) => Ok(response),
             Err(ScriptFailure::Exhausted { .. }) => {
                 Err(PollScriptError::PlanExhausted { received: request })
             }
-            Err(ScriptFailure::Mismatch { .. }) => match expected {
+            Err(ScriptFailure::Mismatch { .. }) => match self.script.expected().copied() {
                 Some(expected) => Err(PollScriptError::UnexpectedRequest {
                     expected,
                     received: request,

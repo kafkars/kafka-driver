@@ -2,8 +2,9 @@
 
 use std::num::NonZeroUsize;
 
-use criticality::time::Span;
 use kafka_driver_core::{ConnectionEpoch, TransportId};
+
+use crate::Span;
 
 use super::{
     FaultPlan, ReadRequest, ReadResult, ReadStep, ScriptedTransport, TransportFault,
@@ -201,7 +202,13 @@ fn single_outcome<T>(plan: crate::Plan<T>) -> T {
     let Some(planned) = outcomes.pop() else {
         panic!("legacy transport step must retain its outcome");
     };
-    planned.into_parts().1
+    let (delay, outcome) = planned.into_parts();
+    assert_eq!(
+        delay.ticks(),
+        0,
+        "legacy immediate transport adapter cannot erase a planned delay"
+    );
+    outcome
 }
 
 const fn identity(epoch: ConnectionEpoch) -> TransportIdentity {

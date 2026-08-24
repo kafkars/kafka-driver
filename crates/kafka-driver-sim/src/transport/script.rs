@@ -31,6 +31,8 @@ impl ScriptedTransport {
     pub fn new(plan: FaultPlan) -> Self {
         let steps = plan.into_script_steps();
         let limits = script_limits(&steps);
+        // Compatibility contract: these pre-existing fixtures had no retained-byte
+        // budget. Count admission is exact; variable bytes remain unmeasured.
         let script = ExactScript::try_with_measure(
             limits,
             steps,
@@ -46,31 +48,27 @@ impl ScriptedTransport {
         &mut self,
         request: ReadRequest,
     ) -> Result<Plan<TransportOutcome<ReadResult>>, TransportScriptError> {
-        let expected = self.script.expected().cloned();
         let received = TransportRequest::Read(request);
-        let response = self.script.respond(&received);
-        match (response, expected, received) {
-            (Ok(response), _, _) => Ok(map_read_plan(response)),
-            (Err(ScriptFailure::Exhausted { .. }), _, TransportRequest::Read(received))
-            | (Err(ScriptFailure::Mismatch { .. }), None, TransportRequest::Read(received)) => {
-                Err(TransportScriptError::ReadPlanExhausted { received })
+        match self.script.respond(&received) {
+            Ok(response) => Ok(map_read_plan(response)),
+            Err(ScriptFailure::Exhausted { .. }) => {
+                Err(TransportScriptError::ReadPlanExhausted { received: request })
             }
-            (
-                Err(ScriptFailure::Mismatch { .. }),
-                Some(TransportRequest::Read(expected)),
-                TransportRequest::Read(received),
-            ) => Err(TransportScriptError::UnexpectedRead { expected, received }),
-            (
-                Err(ScriptFailure::Mismatch { .. }),
-                Some(TransportRequest::Write(_)),
-                TransportRequest::Read(_),
-            ) => Err(TransportScriptError::UnexpectedOperation {
-                expected: TransportOperationKind::Write,
-                received: TransportOperationKind::Read,
-            }),
-            (_, _, TransportRequest::Write(_)) => {
-                panic!("read call changed its transport request kind")
-            }
+            Err(ScriptFailure::Mismatch { .. }) => match self.script.expected() {
+                Some(TransportRequest::Read(expected)) => {
+                    Err(TransportScriptError::UnexpectedRead {
+                        expected: *expected,
+                        received: request,
+                    })
+                }
+                Some(TransportRequest::Write(_)) => {
+                    Err(TransportScriptError::UnexpectedOperation {
+                        expected: TransportOperationKind::Write,
+                        received: TransportOperationKind::Read,
+                    })
+                }
+                None => Err(TransportScriptError::ReadPlanExhausted { received: request }),
+            },
         }
     }
 
@@ -79,31 +77,27 @@ impl ScriptedTransport {
         &mut self,
         request: WriteRequest,
     ) -> Result<Plan<TransportOutcome<WriteResult>>, TransportScriptError> {
-        let expected = self.script.expected().cloned();
         let received = TransportRequest::Write(request);
-        let response = self.script.respond(&received);
-        match (response, expected, received) {
-            (Ok(response), _, _) => Ok(map_write_plan(response)),
-            (Err(ScriptFailure::Exhausted { .. }), _, TransportRequest::Write(received))
-            | (Err(ScriptFailure::Mismatch { .. }), None, TransportRequest::Write(received)) => {
-                Err(TransportScriptError::WritePlanExhausted { received })
-            }
-            (
-                Err(ScriptFailure::Mismatch { .. }),
-                Some(TransportRequest::Read(_)),
-                TransportRequest::Write(_),
-            ) => Err(TransportScriptError::UnexpectedOperation {
-                expected: TransportOperationKind::Read,
-                received: TransportOperationKind::Write,
+        match self.script.respond(&received) {
+            Ok(response) => Ok(map_write_plan(response)),
+            Err(ScriptFailure::Exhausted { .. }) => Err(TransportScriptError::WritePlanExhausted {
+                received: into_write_request(received),
             }),
-            (
-                Err(ScriptFailure::Mismatch { .. }),
-                Some(TransportRequest::Write(expected)),
-                TransportRequest::Write(received),
-            ) => Err(TransportScriptError::UnexpectedWrite { expected, received }),
-            (_, _, TransportRequest::Read(_)) => {
-                panic!("write call changed its transport request kind")
-            }
+            Err(ScriptFailure::Mismatch { .. }) => match self.script.expected() {
+                Some(TransportRequest::Read(_)) => Err(TransportScriptError::UnexpectedOperation {
+                    expected: TransportOperationKind::Read,
+                    received: TransportOperationKind::Write,
+                }),
+                Some(TransportRequest::Write(expected)) => {
+                    Err(TransportScriptError::UnexpectedWrite {
+                        expected: expected.clone(),
+                        received: into_write_request(received),
+                    })
+                }
+                None => Err(TransportScriptError::WritePlanExhausted {
+                    received: into_write_request(received),
+                }),
+            },
         }
     }
 
@@ -115,6 +109,13 @@ impl ScriptedTransport {
     /// Returns whether every transport operation was consumed.
     pub fn is_complete(&self) -> bool {
         self.script.is_empty()
+    }
+}
+
+fn into_write_request(request: TransportRequest) -> WriteRequest {
+    match request {
+        TransportRequest::Write(request) => request,
+        TransportRequest::Read(_) => panic!("write call changed its transport request kind"),
     }
 }
 

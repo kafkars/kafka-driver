@@ -2,6 +2,7 @@
 
 use std::num::NonZeroU8;
 
+use criticality::timeline::TimelineId;
 use kafka_driver_core::{
     ApiVersion, AuthenticationAttempt, AuthenticationDisposition, AuthenticationEffect,
     AuthenticationInput, AuthenticationLimits, AuthenticationMachine, AuthenticationRound,
@@ -16,11 +17,12 @@ const TRANSPORT: TransportId = TransportId::from_raw(2);
 const EFFECT: EffectId = EffectId::from_raw(3);
 const DEADLINE_TIMER: TimerId = TimerId::from_raw(4);
 const DEADLINE: Moment = Moment::from_nanos(20);
+const SCENARIO_TIMELINE: TimelineId = TimelineId::new(1);
 
 #[test]
 fn delayed_first_round_result_cannot_finish_the_second_scram_round() {
     // Given
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(SCENARIO_TIMELINE);
     let mut machine = AuthenticationMachine::new(
         EPOCH,
         TRANSPORT,

@@ -33,5 +33,11 @@ pub(crate) fn single_outcome<T>(plan: kafka_driver_sim::Plan<T>) -> T {
     let Some(planned) = outcomes.pop() else {
         panic!("legacy transport step must retain its outcome");
     };
-    planned.into_parts().1
+    let (delay, outcome) = planned.into_parts();
+    assert_eq!(
+        delay.ticks(),
+        0,
+        "legacy immediate transport adapter cannot erase a planned delay"
+    );
+    outcome
 }

@@ -2,6 +2,7 @@
 
 use std::{num::NonZeroU16, time::Duration};
 
+use criticality::timeline::TimelineId;
 use kafka_driver_core::{
     BootstrapDisposition, BootstrapEffect, BootstrapInput, BootstrapLimits, BootstrapMachine,
     BootstrapSet, BootstrapState, BrokerEndpoint, ConnectionEpoch, DnsOutcome, DnsRequest,
@@ -15,6 +16,7 @@ const CURRENT_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(7);
 const OLD_EFFECT: EffectId = EffectId::from_raw(10);
 const CURRENT_EFFECT: EffectId = EffectId::from_raw(11);
 const UNUSED_RETRY: EffectId = EffectId::from_raw(12);
+const SCENARIO_TIMELINE: TimelineId = TimelineId::new(2);
 
 #[test]
 fn delayed_superseded_dns_result_cannot_finish_current_bootstrap() {
@@ -35,7 +37,7 @@ fn delayed_superseded_dns_result_cannot_finish_current_bootstrap() {
             DnsOutcome::new(CURRENT_EPOCH, CURRENT_EFFECT, Ok(current_addresses.clone())),
         ),
     ]);
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(SCENARIO_TIMELINE);
 
     schedule(&mut simulator, &mut dns, old_request);
     schedule(&mut simulator, &mut dns, current_request);

@@ -2,6 +2,7 @@
 //!
 //! Criticality owns scheduling and virtual time; this crate retains only Kafka-
 //! shaped DNS, readiness, and byte-stream fixtures.
+//! One Criticality span tick represents one nanosecond in this simulator.
 
 mod dns;
 mod poller;
@@ -24,6 +25,8 @@ mod connection_scenario_test;
 mod scenario_test;
 
 pub use criticality::plan::{Plan, Planned};
+/// Criticality delay span interpreted as nanoseconds by this simulator.
+pub use criticality::time::Span;
 pub use dns::{
     BrokerEndpoint, DnsFailure, DnsOutcome, DnsRequest, DnsScriptError, DnsStep, HostName,
     HostNameError, IpAddress, ResolutionLimits, ResolvedAddress, ResolvedAddressSet,

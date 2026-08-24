@@ -2,18 +2,20 @@
 
 use std::{num::NonZeroU16, time::Duration};
 
-use criticality::time::Span;
+use criticality::timeline::TimelineId;
 use kafka_driver_core::{ConnectionEpoch, EffectId, Moment};
 
 use super::{
     BrokerEndpoint, DnsFailure, DnsOutcome, DnsRequest, DnsScriptError, DnsStep, HostName,
     IpAddress, ResolutionLimits, ResolvedAddress, ResolvedAddressSet, ScriptedDns,
 };
-use crate::Scenario;
+use crate::{Scenario, Span};
 
 const CURRENT_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(7);
 const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(6);
 const EFFECT: EffectId = EffectId::from_raw(11);
+const MATCHING_SCENARIO_TIMELINE: TimelineId = TimelineId::new(7);
+const PLAN_SCENARIO_TIMELINE: TimelineId = TimelineId::new(8);
 
 #[test]
 fn matching_request_schedules_its_outcome_in_virtual_time() {
@@ -25,7 +27,7 @@ fn matching_request_schedules_its_outcome_in_virtual_time() {
         Duration::from_nanos(5),
         outcome,
     )]);
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(MATCHING_SCENARIO_TIMELINE);
 
     let Ok(plan) = dns.resolve(request) else {
         panic!("matching resolver request must consume its step");
@@ -93,7 +95,7 @@ fn plans_model_drops_delays_and_duplicate_dns_outcomes() {
         DnsStep::with_plan(request.clone(), dropped),
         DnsStep::with_plan(request.clone(), duplicate),
     ]);
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(PLAN_SCENARIO_TIMELINE);
 
     let Ok(drop) = dns.resolve(request.clone()) else {
         panic!("matching dropped request must consume its step");

@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use criticality::timeline::TimelineId;
 use kafka_driver_core::{
     BackoffPolicy, BrokerDisposition, BrokerInput, BrokerMachine, BrokerPhase, BrokerState,
     ConnectionEpoch, JitterSample, Moment, ReconnectSchedule, TimerId,
@@ -13,11 +14,12 @@ const EPOCH_1: ConnectionEpoch = ConnectionEpoch::from_raw(1);
 const EPOCH_2: ConnectionEpoch = ConnectionEpoch::from_raw(2);
 const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(0);
 const RECONNECT_TIMER: TimerId = TimerId::from_raw(8);
+const SCENARIO_TIMELINE: TimelineId = TimelineId::new(4);
 
 #[test]
 fn stale_retry_delivery_cannot_replace_the_owned_connection_generation() {
     // Given
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(SCENARIO_TIMELINE);
     let mut machine = BrokerMachine::new(EPOCH_1, backoff());
     schedule(&mut simulator, 0, BrokerInput::Start);
     schedule(

@@ -2,24 +2,26 @@
 
 use std::time::Duration;
 
-use criticality::time::Span;
+use criticality::timeline::TimelineId;
 use kafka_driver_core::{ConnectionEpoch, Moment, TransportId};
 
 use super::{
     PollInterest, PollRequest, PollScriptError, PollStep, Readiness, ReadinessEvent, ScriptedPoller,
 };
-use crate::Scenario;
+use crate::{Scenario, Span};
 
 const CURRENT_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(7);
 const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(6);
 const TRANSPORT: TransportId = TransportId::from_raw(11);
+const MATCHING_SCENARIO_TIMELINE: TimelineId = TimelineId::new(9);
+const PLAN_SCENARIO_TIMELINE: TimelineId = TimelineId::new(10);
 
 #[test]
 fn matching_interest_schedules_readiness_in_virtual_time() {
     let request = PollRequest::new(CURRENT_EPOCH, TRANSPORT, PollInterest::WRITABLE);
     let event = ReadinessEvent::new(CURRENT_EPOCH, TRANSPORT, Readiness::WRITABLE);
     let mut poller = ScriptedPoller::new([PollStep::new(request, Duration::from_nanos(8), event)]);
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(MATCHING_SCENARIO_TIMELINE);
 
     let Ok(plan) = poller.arm(request) else {
         panic!("matching interest must consume its poller step");
@@ -85,7 +87,7 @@ fn plans_model_dropped_and_duplicated_readiness() {
             ]),
         ),
     ]);
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(PLAN_SCENARIO_TIMELINE);
 
     let Ok(drop) = poller.arm(request) else {
         panic!("matching dropped interest must consume its step");
