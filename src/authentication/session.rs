@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 
 use crate::SaslConfig;
 
-use super::{PlainSession, ScramReceive, ScramSession};
+use super::{AuthenticationSessionStartError, PlainSession, ScramReceive, ScramSession};
 
 /// Zeroizing ownership of one mechanism message until Kafka framing copies it.
 #[derive(Debug)]
@@ -38,9 +38,9 @@ pub(crate) enum AuthenticationSession {
 }
 
 impl AuthenticationSession {
-    pub(crate) fn new(config: SaslConfig) -> Result<Self, AuthenticationFailure> {
+    pub(crate) fn new(config: SaslConfig) -> Result<Self, AuthenticationSessionStartError> {
         match config.mechanism() {
-            SaslMechanism::Plain => PlainSession::new(config).map(Self::Plain),
+            SaslMechanism::Plain => Ok(Self::Plain(PlainSession::new(config))),
             SaslMechanism::ScramSha256 | SaslMechanism::ScramSha512 => {
                 ScramSession::new(&config).map(Self::Scram)
             }

@@ -4,12 +4,13 @@ use std::{fmt, mem};
 
 use kafka_driver_core::{AuthenticationFailure, ExchangeOutcome, SaslMechanism};
 use sasl_scram::{
-    Algorithm, AwaitingServerFinal, AwaitingServerFirst, ChannelBindingMode, Client, ClientConfig,
-    ClientPolicy, Error, NonceSource, OutboundMessage, PendingDerivation,
-    PreparedAuthenticationIdentity, PreparedCredentials, PreparedPassword, SecretBytes,
+    AwaitingServerFinal, AwaitingServerFirst, Client, Error, NonceSource, OutboundMessage,
+    PendingDerivation,
 };
 
-use crate::SaslConfig;
+use crate::{
+    SaslConfig, authentication::AuthenticationSessionStartError, config::kafka_scram_client_config,
+};
 
 use super::{error::failure, nonce::SecureNonceSource};
 
@@ -41,7 +42,7 @@ pub(in crate::authentication) enum ScramReceive {
 impl ScramSession {
     pub(in crate::authentication) fn new(
         config: &SaslConfig,
-    ) -> Result<Self, AuthenticationFailure> {
+    ) -> Result<Self, AuthenticationSessionStartError> {
         Self::with_nonce_source(config, &mut SecureNonceSource::new())
     }
 
@@ -49,28 +50,19 @@ impl ScramSession {
     pub(super) fn new_with_nonce_source(
         config: &SaslConfig,
         nonce: &mut impl NonceSource,
-    ) -> Result<Self, AuthenticationFailure> {
+    ) -> Result<Self, AuthenticationSessionStartError> {
         Self::with_nonce_source(config, nonce)
     }
 
     fn with_nonce_source(
         config: &SaslConfig,
         nonce: &mut impl NonceSource,
-    ) -> Result<Self, AuthenticationFailure> {
+    ) -> Result<Self, AuthenticationSessionStartError> {
         let mechanism = config.mechanism();
-        let algorithm = algorithm(mechanism)?;
-        let identity = PreparedAuthenticationIdentity::from_protocol_profile(config.username())
-            .map_err(|_| AuthenticationFailure::Protocol)?;
-        let password =
-            PreparedPassword::from_protocol_profile(SecretBytes::new(config.password().as_bytes()));
-        let credentials = PreparedCredentials::from_protocol_profile(identity, None, password);
-        let config = ClientConfig::builder(algorithm)
-            .credentials(credentials)
-            .channel_binding(ChannelBindingMode::Unsupported)
-            .policy(ClientPolicy::default())
-            .build()
-            .map_err(|error| failure(Error::Policy(error)))?;
-        let (next, message) = Client::start(config, nonce).map_err(failure)?;
+        let config =
+            kafka_scram_client_config(mechanism, config.username(), config.password().as_bytes())
+                .map_err(|_| AuthenticationSessionStartError::ScramConfigurationInvalid)?;
+        let (next, message) = Client::start(config, nonce).map_err(start_error)?;
         Ok(Self {
             mechanism,
             state: ScramState::ClientFirstReady { next, message },
@@ -149,11 +141,10 @@ impl ScramSession {
     }
 }
 
-fn algorithm(mechanism: SaslMechanism) -> Result<Algorithm, AuthenticationFailure> {
-    match mechanism {
-        SaslMechanism::ScramSha256 => Ok(Algorithm::Sha256),
-        SaslMechanism::ScramSha512 => Ok(Algorithm::Sha512),
-        SaslMechanism::Plain => Err(AuthenticationFailure::Protocol),
+fn start_error(error: Error) -> AuthenticationSessionStartError {
+    match error {
+        Error::Nonce(_) => AuthenticationSessionStartError::ScramNonceUnavailable,
+        _ => AuthenticationSessionStartError::ScramConfigurationInvalid,
     }
 }
 

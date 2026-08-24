@@ -5,6 +5,7 @@ use std::{fmt, io};
 use kafka_driver_core::{BrokerEffect, CallId, ConnectionEffect, ConnectionMachineError};
 use kafka_driver_transport::WriteAdmissionFailure;
 
+use crate::authentication::AuthenticationSessionStartError;
 use crate::reactor::timer::TimerScheduleError;
 use crate::response::{ResponseDispatchError, ResponseFailError};
 
@@ -37,6 +38,10 @@ pub(in crate::reactor) enum BrokerError {
     ReplacementBeforeTerminal,
     /// The shared SCRAM proof worker closed while a broker still required it.
     ScramProofWorkerLost,
+    /// A validated SCRAM configuration contradicted the session-start invariant.
+    ScramConfigurationInvalid,
+    /// System randomness was unavailable for a fresh SCRAM client nonce.
+    ScramNonceUnavailable,
     /// Authentication write admission contradicted the generated exchange contract.
     AuthenticationWrite(WriteAdmissionFailure),
 }
@@ -70,6 +75,12 @@ impl fmt::Display for BrokerError {
                 formatter.write_str("broker replacement started before prior terminal state")
             }
             Self::ScramProofWorkerLost => formatter.write_str("SCRAM proof worker was lost"),
+            Self::ScramConfigurationInvalid => {
+                formatter.write_str("validated SCRAM configuration could not start a session")
+            }
+            Self::ScramNonceUnavailable => {
+                formatter.write_str("SCRAM nonce generation is unavailable")
+            }
             Self::AuthenticationWrite(failure) => {
                 write!(
                     formatter,
@@ -95,8 +106,21 @@ impl std::error::Error for BrokerError {
             | Self::DeadlineOverflow
             | Self::ReplacementBeforeTerminal
             | Self::ScramProofWorkerLost
+            | Self::ScramConfigurationInvalid
+            | Self::ScramNonceUnavailable
             | Self::AuthenticationWrite(_)
             | Self::RequestOwnership { .. } => None,
+        }
+    }
+}
+
+impl From<AuthenticationSessionStartError> for BrokerError {
+    fn from(error: AuthenticationSessionStartError) -> Self {
+        match error {
+            AuthenticationSessionStartError::ScramConfigurationInvalid => {
+                Self::ScramConfigurationInvalid
+            }
+            AuthenticationSessionStartError::ScramNonceUnavailable => Self::ScramNonceUnavailable,
         }
     }
 }

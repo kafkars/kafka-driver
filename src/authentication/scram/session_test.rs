@@ -1,7 +1,8 @@
 //! Kafka-profile adapter checks across both configured SCRAM algorithms.
 
-use crate::SaslConfig;
+use crate::{SaslConfig, authentication::AuthenticationSessionStartError};
 use kafka_driver_core::{AuthenticationFailure, ExchangeOutcome};
+use sasl_scram::{NonceError, NonceSource};
 
 use super::{
     nonce::FixedNonceSource,
@@ -92,6 +93,89 @@ fn outbound_capacity_failure_does_not_advance_the_consuming_state() {
         Err(AuthenticationFailure::PolicyLimitExceeded)
     ));
     assert_eq!(next(&mut session).as_bytes(), CLIENT_FIRST);
+}
+
+#[test]
+fn accepted_scram_config_cannot_fail_client_policy_at_connection_start() {
+    let config = SaslConfig::scram_sha_512("a".repeat(1_024), "password")
+        .unwrap_or_else(|error| panic!("identity at policy limit: {error}"));
+
+    let mut nonce = FixedNonceSource::new(CLIENT_ENTROPY);
+    let session = ScramSession::new_with_nonce_source(&config, &mut nonce);
+
+    assert!(session.is_ok());
+}
+
+#[test]
+fn unavailable_nonce_is_a_session_start_infrastructure_failure() {
+    let config = SaslConfig::scram_sha_256("user", "pencil")
+        .unwrap_or_else(|error| panic!("valid credentials: {error}"));
+
+    let error = ScramSession::new_with_nonce_source(&config, &mut UnavailableNonce).err();
+
+    assert_eq!(
+        error,
+        Some(AuthenticationSessionStartError::ScramNonceUnavailable)
+    );
+}
+
+#[test]
+fn kafka_nonce_limit_accepts_256_bytes_and_rejects_one_more() {
+    assert!(matches!(
+        receive_server_first(server_first(256, "YWJj", 4_096).as_bytes()),
+        ScramReceive::Derive(_)
+    ));
+    assert!(matches!(
+        receive_server_first(server_first(257, "YWJj", 4_096).as_bytes()),
+        ScramReceive::Outcome(ExchangeOutcome::Failed(_))
+    ));
+}
+
+#[test]
+fn kafka_salt_limit_accepts_1024_bytes_and_rejects_one_more() {
+    let salt_at_limit = format!("{}==", "A".repeat(1_366));
+    let salt_over_limit = format!("{}=", "A".repeat(1_367));
+    assert!(matches!(
+        receive_server_first(server_first(21, &salt_at_limit, 4_096).as_bytes()),
+        ScramReceive::Derive(_)
+    ));
+    assert!(matches!(
+        receive_server_first(server_first(21, &salt_over_limit, 4_096).as_bytes()),
+        ScramReceive::Outcome(ExchangeOutcome::Failed(
+            AuthenticationFailure::PolicyLimitExceeded
+        ))
+    ));
+}
+
+#[test]
+fn kafka_iteration_limit_rejects_one_more_than_one_million() {
+    assert!(matches!(
+        receive_server_first(server_first(21, "YWJj", 1_000_001).as_bytes()),
+        ScramReceive::Outcome(ExchangeOutcome::Failed(
+            AuthenticationFailure::PolicyLimitExceeded
+        ))
+    ));
+}
+
+struct UnavailableNonce;
+
+impl NonceSource for UnavailableNonce {
+    fn fill(&mut self, _output: &mut [u8]) -> Result<(), NonceError> {
+        Err(NonceError::unavailable())
+    }
+}
+
+fn receive_server_first(response: &[u8]) -> ScramReceive {
+    let config = SaslConfig::scram_sha_256("user", "pencil")
+        .unwrap_or_else(|error| panic!("valid credentials: {error}"));
+    let mut session = session(&config);
+    drop(next(&mut session));
+    session.receive(response)
+}
+
+fn server_first(nonce_bytes: usize, salt: &str, iterations: u32) -> String {
+    let nonce_suffix = "x".repeat(nonce_bytes - 20);
+    format!("r=rOprNGfwEbeRWgbNEkqO{nonce_suffix},s={salt},i={iterations}")
 }
 
 fn session(config: &SaslConfig) -> ScramSession {

@@ -3,8 +3,10 @@
 use std::{fmt, sync::Arc};
 
 use kafka_driver_core::SaslMechanism;
-use sasl_scram::{PreparationError, Rfc5802Profile, SecretString};
+use sasl_scram::{PolicyError, PreparationError, Rfc5802Profile, SecretString};
 use zeroize::Zeroizing;
+
+use super::{ScramClientConfigError, kafka_scram_client_config};
 
 /// Validated credentials and mechanism selection for broker authentication.
 #[must_use]
@@ -23,14 +25,14 @@ impl SaslConfig {
         password: impl Into<String>,
     ) -> Result<Self, SaslConfigError> {
         let username = username.into();
-        let password = password.into();
+        let password = SecretText(Zeroizing::new(password.into()));
         validate_username(&username)?;
-        validate_plain_field(&password, SaslConfigError::PasswordContainsNul)?;
+        validate_plain_field(password.0.as_str(), SaslConfigError::PasswordContainsNul)?;
         Ok(Self {
             mechanism: SaslMechanism::Plain,
             authorization_identity: Arc::from(""),
             username: Arc::from(username),
-            password: Arc::new(SecretText(Zeroizing::new(password))),
+            password: Arc::new(password),
         })
     }
 
@@ -73,21 +75,26 @@ impl SaslConfig {
         password: impl Into<String>,
     ) -> Result<Self, SaslConfigError> {
         let username = username.into();
-        let password = password.into();
+        let password = SecretString::new(password.into());
         if username.is_empty() {
             return Err(SaslConfigError::EmptyUsername);
         }
-        let prepared = Rfc5802Profile::prepare(&username, SecretString::new(password))
-            .map_err(scram_config_error)?;
+        let prepared = Rfc5802Profile::prepare(&username, password).map_err(scram_config_error)?;
         let username = Arc::from(prepared.authentication_identity().as_str());
-        let password = std::str::from_utf8(prepared.password().expose_secret())
-            .map_err(|_| SaslConfigError::PasswordPreparation)?
-            .to_owned();
+        let password = SecretText(Zeroizing::new(
+            std::str::from_utf8(prepared.password().expose_secret())
+                .map_err(|_| SaslConfigError::PasswordPreparation)?
+                .to_owned(),
+        ));
+        drop(
+            kafka_scram_client_config(mechanism, &username, password.as_bytes())
+                .map_err(scram_policy_error)?,
+        );
         Ok(Self {
             mechanism,
             authorization_identity: Arc::from(""),
             username,
-            password: Arc::new(SecretText(Zeroizing::new(password))),
+            password: Arc::new(password),
         })
     }
 
@@ -140,13 +147,22 @@ pub enum SaslConfigError {
     UsernamePreparation,
     /// The SCRAM password could not be normalized safely.
     PasswordPreparation,
+    /// The prepared SCRAM username exceeded the driver policy.
+    UsernameTooLong {
+        /// The prepared username length in bytes.
+        length: usize,
+        /// The maximum prepared username length in bytes.
+        maximum: usize,
+    },
+    /// Prepared SCRAM credentials contradicted the driver's fixed policy.
+    ScramPolicy,
     /// A nonempty authorization identity is not supported for SCRAM.
     UnsupportedAuthorizationIdentity,
 }
 
 impl fmt::Display for SaslConfigError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
+        let message = match self {
             Self::EmptyUsername => "the SASL username is empty",
             Self::UsernameContainsNul => "the SASL username contains a NUL delimiter",
             Self::PasswordContainsNul => "the SASL password contains a NUL delimiter",
@@ -155,16 +171,30 @@ impl fmt::Display for SaslConfigError {
             }
             Self::UsernamePreparation => "the SCRAM username failed SASLprep",
             Self::PasswordPreparation => "the SCRAM password failed SASLprep",
+            Self::UsernameTooLong { length, maximum } => {
+                return write!(
+                    formatter,
+                    "the prepared SCRAM username is {length} bytes; maximum is {maximum}"
+                );
+            }
+            Self::ScramPolicy => "the prepared SCRAM credentials violate driver policy",
             Self::UnsupportedAuthorizationIdentity => {
                 "SCRAM authorization identities are not supported"
             }
-        })
+        };
+        formatter.write_str(message)
     }
 }
 
 impl std::error::Error for SaslConfigError {}
 
 struct SecretText(Zeroizing<String>);
+
+impl SecretText {
+    fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+}
 
 fn validate_username(username: &str) -> Result<(), SaslConfigError> {
     if username.is_empty() {
@@ -189,5 +219,21 @@ fn scram_config_error(error: PreparationError) -> SaslConfigError {
             SaslConfigError::UnsupportedAuthorizationIdentity
         }
         _ => SaslConfigError::UsernamePreparation,
+    }
+}
+
+fn scram_policy_error(error: ScramClientConfigError) -> SaslConfigError {
+    match error {
+        ScramClientConfigError::Policy(PolicyError::AuthenticationIdentityTooLong {
+            length,
+            maximum,
+        }) => SaslConfigError::UsernameTooLong { length, maximum },
+        ScramClientConfigError::Preparation(PreparationError::InvalidAuthenticationIdentity) => {
+            SaslConfigError::UsernamePreparation
+        }
+        ScramClientConfigError::Preparation(PreparationError::InvalidPassword) => {
+            SaslConfigError::PasswordPreparation
+        }
+        _ => SaslConfigError::ScramPolicy,
     }
 }

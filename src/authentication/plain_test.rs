@@ -10,8 +10,7 @@ fn valid_credentials_form_the_exact_plain_message_once() {
         .unwrap_or_else(|error| panic!("valid credentials: {error}"))
         .with_authorization_identity("admin")
         .unwrap_or_else(|error| panic!("valid authorization identity: {error}"));
-    let mut session =
-        PlainSession::new(config).unwrap_or_else(|failure| panic!("PLAIN session: {failure:?}"));
+    let mut session = PlainSession::new(config);
 
     let message = session
         .next_message(64)
@@ -29,10 +28,8 @@ fn valid_credentials_form_the_exact_plain_message_once() {
 fn exact_capacity_is_accepted_and_one_fewer_byte_is_rejected() {
     let config = SaslConfig::plain("alice", "s3cret")
         .unwrap_or_else(|error| panic!("valid credentials: {error}"));
-    let mut accepted = PlainSession::new(config.clone())
-        .unwrap_or_else(|failure| panic!("PLAIN session: {failure:?}"));
-    let mut rejected =
-        PlainSession::new(config).unwrap_or_else(|failure| panic!("PLAIN session: {failure:?}"));
+    let mut accepted = PlainSession::new(config.clone());
+    let mut rejected = PlainSession::new(config);
 
     assert_eq!(
         accepted
@@ -51,8 +48,7 @@ fn exact_capacity_is_accepted_and_one_fewer_byte_is_rejected() {
 fn plain_accepts_only_an_empty_terminal_server_message() {
     let config = SaslConfig::plain("alice", "s3cret")
         .unwrap_or_else(|error| panic!("valid credentials: {error}"));
-    let mut session =
-        PlainSession::new(config).unwrap_or_else(|failure| panic!("PLAIN session: {failure:?}"));
+    let mut session = PlainSession::new(config);
     session
         .next_message(64)
         .unwrap_or_else(|failure| panic!("bounded message: {failure:?}"));
