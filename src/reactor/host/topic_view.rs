@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use crate::{
-    TopicName, TopicView, TopicViewError, completion::CompletionSender,
+    MetadataGeneration, TopicName, TopicView, TopicViewError, completion::CompletionSender,
     reactor::metadata::TopicViewWait,
 };
 
@@ -13,6 +13,7 @@ impl Reactor {
     pub(super) fn process_topic_view(
         &mut self,
         topic: TopicName,
+        newer_than: Option<MetadataGeneration>,
         deadline: Instant,
         result_capacity_bytes: usize,
         completion: CompletionSender<Result<TopicView, TopicViewError>>,
@@ -30,7 +31,10 @@ impl Reactor {
             let _ = completion.complete(Err(TopicViewError::Unavailable));
             return Ok(());
         };
-        if let Some(snapshot) = metadata.current() {
+        if let Some(snapshot) = metadata
+            .current()
+            .filter(|snapshot| newer_than.is_none_or(|floor| snapshot.generation() > floor))
+        {
             match TopicView::from_snapshot(snapshot, &topic) {
                 Ok(Some(view)) => {
                     let _ = completion.complete(Ok(view));
@@ -46,7 +50,13 @@ impl Reactor {
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         metadata
             .wait_for_topic_view(
-                TopicViewWait::new(topic, deadline, result_capacity_bytes, completion),
+                TopicViewWait::new(
+                    topic,
+                    newer_than,
+                    deadline,
+                    result_capacity_bytes,
+                    completion,
+                ),
                 self.brokers.seed_mut(),
                 &self.poller,
                 now,

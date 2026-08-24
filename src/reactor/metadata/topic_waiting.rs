@@ -2,7 +2,7 @@
 
 use std::num::NonZeroUsize;
 
-use kafka_driver_core::{MetadataMachine, MetadataQuery, Moment, TopicName};
+use kafka_driver_core::{MetadataGeneration, MetadataMachine, MetadataQuery, Moment, TopicName};
 
 use crate::{
     TopicView, TopicViewError, completion::CompletionSender, reactor::wait_queue::WaitQueue,
@@ -44,6 +44,7 @@ impl TopicViewWaiters {
         let deadline = waiting.deadline;
         let waiting = WaitingTopicView {
             topic: waiting.topic,
+            newer_than: waiting.newer_than,
             completion: waiting.completion,
             bytes,
             terminal: None,
@@ -116,7 +117,11 @@ impl TopicViewWaiters {
                 progress.settled += 1;
                 continue;
             }
-            if let Some(snapshot) = machine.current() {
+            if let Some(snapshot) = machine.current().filter(|snapshot| {
+                waiting
+                    .newer_than
+                    .is_none_or(|floor| snapshot.generation() > floor)
+            }) {
                 match TopicView::from_snapshot(snapshot, &waiting.topic) {
                     Ok(Some(view)) => {
                         Self::complete(waiting, Ok(view));
@@ -206,6 +211,7 @@ impl TopicViewWaitProgress {
 
 pub(super) struct WaitingTopicView {
     pub(super) topic: TopicName,
+    pub(super) newer_than: Option<MetadataGeneration>,
     pub(super) completion: CompletionSender<Result<TopicView, TopicViewError>>,
     pub(super) bytes: usize,
     pub(super) terminal: Option<TopicViewError>,

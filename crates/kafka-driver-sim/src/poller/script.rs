@@ -1,52 +1,80 @@
 //! FIFO poller expectation matching with non-consuming mismatch failures.
 
-use std::{collections::VecDeque, error::Error, fmt};
+use std::{error::Error, fmt};
 
-use crate::{Planned, PollRequest, PollStep, ReadinessEvent};
+use criticality::{
+    plan::Plan,
+    retained::RetainedBytes,
+    script::{ExactScript, ScriptFailure, ScriptLimits, ScriptStep},
+};
+
+use crate::{PollRequest, PollStep, ReadinessEvent};
 
 /// Finite ordered readiness script.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ScriptedPoller {
-    steps: VecDeque<PollStep>,
+    script: ExactScript<PollRequest, ReadinessEvent>,
 }
 
 impl ScriptedPoller {
     /// Owns a finite sequence of interest expectations.
     pub fn new(steps: impl IntoIterator<Item = PollStep>) -> Self {
-        Self {
-            steps: steps.into_iter().collect(),
-        }
+        let steps = steps
+            .into_iter()
+            .map(PollStep::into_script_step)
+            .collect::<Vec<_>>();
+        let limits = script_limits(&steps);
+        // Compatibility contract: these pre-existing fixtures had no retained-byte
+        // budget. Count admission is exact; variable bytes remain unmeasured.
+        let script = ExactScript::try_with_measure(
+            limits,
+            steps,
+            |_| RetainedBytes::ZERO,
+            |_| RetainedBytes::ZERO,
+        )
+        .unwrap_or_else(|error| panic!("exact poller script must fit derived limits: {error}"));
+        Self { script }
     }
 
     /// Matches and consumes exactly the next interest arm.
-    pub fn arm(
-        &mut self,
-        request: PollRequest,
-    ) -> Result<Planned<ReadinessEvent>, PollScriptError> {
-        let Some(next) = self.steps.front() else {
-            return Err(PollScriptError::PlanExhausted { received: request });
-        };
-        if next.expected() != request {
-            return Err(PollScriptError::UnexpectedRequest {
-                expected: next.expected(),
-                received: request,
-            });
+    pub fn arm(&mut self, request: PollRequest) -> Result<Plan<ReadinessEvent>, PollScriptError> {
+        match self.script.respond(&request) {
+            Ok(response) => Ok(response),
+            Err(ScriptFailure::Exhausted { .. }) => {
+                Err(PollScriptError::PlanExhausted { received: request })
+            }
+            Err(ScriptFailure::Mismatch { .. }) => match self.script.expected().copied() {
+                Some(expected) => Err(PollScriptError::UnexpectedRequest {
+                    expected,
+                    received: request,
+                }),
+                None => Err(PollScriptError::PlanExhausted { received: request }),
+            },
         }
-        let Some(step) = self.steps.pop_front() else {
-            return Err(PollScriptError::PlanExhausted { received: request });
-        };
-        Ok(step.into_planned())
     }
 
     /// Returns interest expectations not yet consumed.
     pub fn remaining_steps(&self) -> usize {
-        self.steps.len()
+        self.script.len()
     }
 
     /// Returns whether every interest expectation was consumed.
     pub fn is_complete(&self) -> bool {
-        self.steps.is_empty()
+        self.script.is_empty()
     }
+}
+
+impl Default for ScriptedPoller {
+    fn default() -> Self {
+        Self::new([])
+    }
+}
+
+fn script_limits(steps: &[ScriptStep<PollRequest, ReadinessEvent>]) -> ScriptLimits {
+    let outcomes = steps.iter().fold(0_usize, |total, step| {
+        total.saturating_add(step.response().len())
+    });
+    ScriptLimits::new(steps.len(), outcomes, RetainedBytes::ZERO)
 }
 
 /// Why an interest arm could not consume the next deterministic step.

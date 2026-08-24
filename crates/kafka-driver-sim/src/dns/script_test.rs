@@ -2,18 +2,20 @@
 
 use std::{num::NonZeroU16, time::Duration};
 
-use calandria::Span;
+use criticality::timeline::TimelineId;
 use kafka_driver_core::{ConnectionEpoch, EffectId, Moment};
 
 use super::{
     BrokerEndpoint, DnsFailure, DnsOutcome, DnsRequest, DnsScriptError, DnsStep, HostName,
     IpAddress, ResolutionLimits, ResolvedAddress, ResolvedAddressSet, ScriptedDns,
 };
-use crate::Scenario;
+use crate::{Scenario, Span};
 
 const CURRENT_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(7);
 const STALE_EPOCH: ConnectionEpoch = ConnectionEpoch::from_raw(6);
 const EFFECT: EffectId = EffectId::from_raw(11);
+const MATCHING_SCENARIO_TIMELINE: TimelineId = TimelineId::new(7);
+const PLAN_SCENARIO_TIMELINE: TimelineId = TimelineId::new(8);
 
 #[test]
 fn matching_request_schedules_its_outcome_in_virtual_time() {
@@ -25,16 +27,16 @@ fn matching_request_schedules_its_outcome_in_virtual_time() {
         Duration::from_nanos(5),
         outcome,
     )]);
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(MATCHING_SCENARIO_TIMELINE);
 
-    let Ok(planned) = dns.resolve(request) else {
+    let Ok(plan) = dns.resolve(request) else {
         panic!("matching resolver request must consume its step");
     };
-    assert_eq!(planned.delay(), Span::from_nanos(5));
-    assert!(
-        simulator.schedule_planned(planned).is_ok(),
-        "planned DNS result must fit simulator bounds"
-    );
+    let [planned] = plan.as_slice() else {
+        panic!("single DNS step must retain one planned outcome");
+    };
+    assert_eq!(planned.delay(), Span::from_ticks(5));
+    schedule(&mut simulator, plan);
     let Some((at, event)) = simulator.next_event() else {
         panic!("planned DNS result must become observable");
     };
@@ -68,13 +70,51 @@ fn delayed_result_can_intentionally_carry_a_stale_epoch() {
         stale,
     )]);
 
-    let Ok(planned) = dns.resolve(requested) else {
+    let Ok(plan) = dns.resolve(requested) else {
         panic!("matching request must return its stale scripted outcome");
+    };
+    let [planned] = plan.as_slice() else {
+        panic!("single DNS step must retain one planned outcome");
     };
 
     assert_eq!(planned.outcome().epoch(), STALE_EPOCH);
     assert_eq!(planned.outcome().effect_id(), EFFECT);
     assert_eq!(planned.outcome().result(), &Err(DnsFailure::NameNotFound));
+}
+
+#[test]
+fn plans_model_drops_delays_and_duplicate_dns_outcomes() {
+    let request = request(CURRENT_EPOCH, EFFECT);
+    let outcome = DnsOutcome::new(CURRENT_EPOCH, EFFECT, Err(DnsFailure::Temporary));
+    let duplicate = crate::Plan::new(vec![
+        crate::Planned::new(Span::from_ticks(7), outcome.clone()),
+        crate::Planned::new(Span::from_ticks(3), outcome.clone()),
+    ]);
+    let dropped = crate::Plan::empty();
+    let mut dns = ScriptedDns::new([
+        DnsStep::with_plan(request.clone(), dropped),
+        DnsStep::with_plan(request.clone(), duplicate),
+    ]);
+    let mut simulator = Scenario::new(PLAN_SCENARIO_TIMELINE);
+
+    let Ok(drop) = dns.resolve(request.clone()) else {
+        panic!("matching dropped request must consume its step");
+    };
+    assert!(drop.is_empty());
+    let Ok(plan) = dns.resolve(request) else {
+        panic!("matching duplicate request must consume its step");
+    };
+    schedule(&mut simulator, plan);
+
+    assert_eq!(
+        simulator.next_event(),
+        Some((Moment::from_nanos(3), outcome.clone()))
+    );
+    assert_eq!(
+        simulator.next_event(),
+        Some((Moment::from_nanos(7), outcome))
+    );
+    assert!(dns.is_complete());
 }
 
 #[test]
@@ -106,6 +146,15 @@ fn resolved(octets: [u8; 4]) -> ResolvedAddress {
 fn addresses<const N: usize>(items: [ResolvedAddress; N]) -> ResolvedAddressSet {
     ResolvedAddressSet::try_from_iter(items, ResolutionLimits::default())
         .unwrap_or_else(|error| panic!("test resolver result must be valid: {error}"))
+}
+
+fn schedule(simulator: &mut Scenario<DnsOutcome>, plan: crate::Plan<DnsOutcome>) {
+    for planned in plan.into_outcomes() {
+        assert!(
+            simulator.schedule_planned(planned).is_ok(),
+            "planned DNS result must fit simulator bounds"
+        );
+    }
 }
 
 const fn port() -> NonZeroU16 {

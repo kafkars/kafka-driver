@@ -1,7 +1,8 @@
 //! Exact-topic view admission into the existing metadata refresh owner.
 
 use kafka_driver_core::{
-    EvidenceStamp, MetadataDisposition, MetadataInput, MetadataQuery, Moment, TopicName,
+    EvidenceStamp, MetadataDisposition, MetadataGeneration, MetadataInput, MetadataQuery, Moment,
+    TopicName,
 };
 
 use crate::{
@@ -24,14 +25,22 @@ impl MetadataOwner {
         evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
         let exact_topic = waiting.topic.clone();
+        let requires_newer_generation = waiting.newer_than.is_some();
         let query = MetadataQuery::Topic(exact_topic.clone());
         let operation_id = self.reserve_operation()?;
         if !self.topic_views.admit(waiting) {
             return Ok(());
         }
-        let transition = self.machine.apply(MetadataInput::Resolve {
-            query: query.clone(),
-            operation_id,
+        let transition = self.machine.apply(if requires_newer_generation {
+            MetadataInput::Refresh {
+                query: query.clone(),
+                operation_id,
+            }
+        } else {
+            MetadataInput::Resolve {
+                query: query.clone(),
+                operation_id,
+            }
         });
         if transition.disposition() == MetadataDisposition::QueryCapacityReached {
             let waiting = self
@@ -61,6 +70,7 @@ impl MetadataOwner {
 
 pub(in crate::reactor) struct TopicViewWait {
     pub(super) topic: TopicName,
+    pub(super) newer_than: Option<MetadataGeneration>,
     pub(super) deadline: Moment,
     pub(super) result_capacity_bytes: usize,
     pub(super) completion: CompletionSender<Result<TopicView, TopicViewError>>,
@@ -69,12 +79,14 @@ pub(in crate::reactor) struct TopicViewWait {
 impl TopicViewWait {
     pub(in crate::reactor) const fn new(
         topic: TopicName,
+        newer_than: Option<MetadataGeneration>,
         deadline: Moment,
         result_capacity_bytes: usize,
         completion: CompletionSender<Result<TopicView, TopicViewError>>,
     ) -> Self {
         Self {
             topic,
+            newer_than,
             deadline,
             result_capacity_bytes,
             completion,

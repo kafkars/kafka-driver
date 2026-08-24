@@ -2,13 +2,19 @@
 
 use std::{error::Error, fmt};
 
+use criticality::{
+    plan::{Plan, Planned},
+    script::ScriptStep,
+    time::Span,
+};
+
 use crate::{ReadRequest, ReadResult, TransportOutcome, WriteRequest, WriteResult};
 
 /// One validated expected read and its independently identified result.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReadStep {
     expected: ReadRequest,
-    outcome: TransportOutcome<ReadResult>,
+    response: Plan<TransportOutcome<ReadResult>>,
 }
 
 impl ReadStep {
@@ -17,24 +23,30 @@ impl ReadStep {
         expected: ReadRequest,
         outcome: TransportOutcome<ReadResult>,
     ) -> Result<Self, TransportPlanError> {
-        if let ReadResult::Bytes(bytes) = outcome.result()
-            && bytes.len() > expected.max_bytes()
-        {
-            return Err(TransportPlanError::ReadExceedsRequest {
-                returned: bytes.len(),
-                maximum: expected.max_bytes(),
-            });
+        Self::with_plan(expected, Plan::single(Planned::new(Span::ZERO, outcome)))
+    }
+
+    /// Validates every delayed outcome against the expected read bound.
+    pub fn with_plan(
+        expected: ReadRequest,
+        response: Plan<TransportOutcome<ReadResult>>,
+    ) -> Result<Self, TransportPlanError> {
+        for planned in response.iter() {
+            if let ReadResult::Bytes(bytes) = planned.outcome().result()
+                && bytes.len() > expected.max_bytes()
+            {
+                return Err(TransportPlanError::ReadExceedsRequest {
+                    returned: bytes.len(),
+                    maximum: expected.max_bytes(),
+                });
+            }
         }
-        Ok(Self { expected, outcome })
+        Ok(Self { expected, response })
     }
 
     /// Returns the exact read required to consume this step.
     pub const fn expected(&self) -> ReadRequest {
         self.expected
-    }
-
-    pub(super) fn into_outcome(self) -> TransportOutcome<ReadResult> {
-        self.outcome
     }
 }
 
@@ -42,7 +54,7 @@ impl ReadStep {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WriteStep {
     expected: WriteRequest,
-    outcome: TransportOutcome<WriteResult>,
+    response: Plan<TransportOutcome<WriteResult>>,
 }
 
 impl WriteStep {
@@ -51,24 +63,30 @@ impl WriteStep {
         expected: WriteRequest,
         outcome: TransportOutcome<WriteResult>,
     ) -> Result<Self, TransportPlanError> {
-        if let WriteResult::Written(written) = *outcome.result()
-            && written > expected.bytes().len()
-        {
-            return Err(TransportPlanError::WriteExceedsRequest {
-                written,
-                offered: expected.bytes().len(),
-            });
+        Self::with_plan(expected, Plan::single(Planned::new(Span::ZERO, outcome)))
+    }
+
+    /// Validates every delayed outcome against the offered write bytes.
+    pub fn with_plan(
+        expected: WriteRequest,
+        response: Plan<TransportOutcome<WriteResult>>,
+    ) -> Result<Self, TransportPlanError> {
+        for planned in response.iter() {
+            if let WriteResult::Written(written) = *planned.outcome().result()
+                && written > expected.bytes().len()
+            {
+                return Err(TransportPlanError::WriteExceedsRequest {
+                    written,
+                    offered: expected.bytes().len(),
+                });
+            }
         }
-        Ok(Self { expected, outcome })
+        Ok(Self { expected, response })
     }
 
     /// Returns the exact write required to consume this step.
     pub const fn expected(&self) -> &WriteRequest {
         &self.expected
-    }
-
-    pub(super) fn into_outcome(self) -> TransportOutcome<WriteResult> {
-        self.outcome
     }
 }
 
@@ -79,6 +97,43 @@ pub enum TransportStep {
     Read(ReadStep),
     /// Expected exact write.
     Write(WriteStep),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum TransportRequest {
+    Read(ReadRequest),
+    Write(WriteRequest),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum TransportResponse {
+    Read(TransportOutcome<ReadResult>),
+    Write(TransportOutcome<WriteResult>),
+}
+
+impl TransportStep {
+    fn into_script_step(self) -> ScriptStep<TransportRequest, TransportResponse> {
+        match self {
+            Self::Read(step) => {
+                let response = step
+                    .response
+                    .into_outcomes()
+                    .into_iter()
+                    .map(|planned| planned.map(TransportResponse::Read))
+                    .collect();
+                ScriptStep::new(TransportRequest::Read(step.expected), response)
+            }
+            Self::Write(step) => {
+                let response = step
+                    .response
+                    .into_outcomes()
+                    .into_iter()
+                    .map(|planned| planned.map(TransportResponse::Write))
+                    .collect();
+                ScriptStep::new(TransportRequest::Write(step.expected), response)
+            }
+        }
+    }
 }
 
 /// Finite ordered plan containing progress, blocking, closure, or faults.
@@ -95,8 +150,11 @@ impl FaultPlan {
         }
     }
 
-    pub(super) fn into_steps(self) -> Vec<TransportStep> {
+    pub(super) fn into_script_steps(self) -> Vec<ScriptStep<TransportRequest, TransportResponse>> {
         self.steps
+            .into_iter()
+            .map(TransportStep::into_script_step)
+            .collect()
     }
 }
 

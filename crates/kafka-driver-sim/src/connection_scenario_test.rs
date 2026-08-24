@@ -2,6 +2,7 @@
 
 use std::num::NonZeroUsize;
 
+use criticality::timeline::TimelineId;
 use kafka_driver_core::{
     CallFailure, CallId, CloseReason, ConnectionEffect, ConnectionEpoch, ConnectionInput,
     ConnectionLimits, ConnectionMachine, ConnectionPhase, Delivery, EffectId, Moment,
@@ -21,10 +22,12 @@ const NEGOTIATION_TIMER: TimerId = TimerId::from_raw(8);
 const CALL: CallId = CallId::from_raw(4);
 const WRITE_EFFECT: EffectId = EffectId::from_raw(5);
 const DEADLINE_TIMER: TimerId = TimerId::from_raw(6);
+const DEADLINE_SCENARIO_TIMELINE: TimelineId = TimelineId::new(5);
+const STALE_SCENARIO_TIMELINE: TimelineId = TimelineId::new(6);
 
 #[test]
 fn virtual_deadline_closes_a_possibly_delivered_call() {
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(DEADLINE_SCENARIO_TIMELINE);
     let mut machine = ConnectionMachine::new(EPOCH, ConnectionLimits::default());
     schedule(
         &mut simulator,
@@ -107,7 +110,7 @@ fn virtual_deadline_closes_a_possibly_delivered_call() {
 
 #[test]
 fn delayed_old_epoch_result_is_ordinary_stale_data() {
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(STALE_SCENARIO_TIMELINE);
     let mut machine = ConnectionMachine::new(EPOCH, ConnectionLimits::default());
     schedule(
         &mut simulator,

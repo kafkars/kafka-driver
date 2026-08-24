@@ -26,6 +26,7 @@ bytes = "1.10"
 calandria = "=0.0.1-rc.2"
 calandria-mio = "=0.0.1-rc.2"
 calandria-sim = "=0.0.1-rc.2"
+criticality = "=0.0.1-rc.2"
 kafka-driver = { version = "0.1.0-rc.1", path = "." }
 kafka-driver-core = { version = "0.1.0-rc.1", path = "crates/kafka-driver-core" }
 kafka-driver-sim = { path = "crates/kafka-driver-sim" }

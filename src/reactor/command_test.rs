@@ -2,7 +2,7 @@
 
 use std::{time::Duration, time::Instant};
 
-use kafka_driver_core::{CallId, PartitionId, TopicName};
+use kafka_driver_core::{CallId, MetadataGeneration, PartitionId, TopicName};
 use kafka_wire::ApiVersionsRequest;
 
 use crate::{
@@ -62,8 +62,10 @@ fn topic_view_command_retains_exact_topic_deadline_and_completion_weight() {
     let result_capacity_bytes = 4_096;
     let completion_bytes =
         CompletionSender::<Result<TopicView, TopicViewError>>::retained_state_bytes();
+    let newer_than = MetadataGeneration::from_raw(7);
     let command = Command::TopicView {
         topic: topic.clone(),
+        newer_than: Some(newer_than),
         deadline,
         result_capacity_bytes,
         completion,
@@ -71,6 +73,7 @@ fn topic_view_command_retains_exact_topic_deadline_and_completion_weight() {
 
     let Command::TopicView {
         topic: retained,
+        newer_than: retained_floor,
         deadline: retained_deadline,
         ..
     } = &command
@@ -78,6 +81,7 @@ fn topic_view_command_retains_exact_topic_deadline_and_completion_weight() {
         panic!("topic-view command changed variant");
     };
     assert_eq!(retained, &topic);
+    assert_eq!(*retained_floor, Some(newer_than));
     assert_eq!(*retained_deadline, deadline);
     assert_eq!(
         command.retained_bytes(),

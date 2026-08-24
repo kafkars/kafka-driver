@@ -9,8 +9,7 @@ description = "Deterministic simulation support for kafka-driver"
 publish = false
 
 [dependencies]
-calandria.workspace = true
-calandria-sim.workspace = true
+criticality.workspace = true
 kafka-driver-core.workspace = true
 
 [lints]

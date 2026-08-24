@@ -22,3 +22,22 @@ impl ResponseRegistry {
         self.slots.len()
     }
 }
+
+pub(crate) fn single_outcome<T>(plan: kafka_driver_sim::Plan<T>) -> T {
+    let mut outcomes = plan.into_outcomes();
+    assert_eq!(
+        outcomes.len(),
+        1,
+        "legacy transport step must retain exactly one outcome"
+    );
+    let Some(planned) = outcomes.pop() else {
+        panic!("legacy transport step must retain its outcome");
+    };
+    let (delay, outcome) = planned.into_parts();
+    assert_eq!(
+        delay.ticks(),
+        0,
+        "legacy immediate transport adapter cannot erase a planned delay"
+    );
+    outcome
+}

@@ -2,6 +2,7 @@
 
 use std::{num::NonZeroU16, time::Duration};
 
+use criticality::timeline::TimelineId;
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
     BrokerResolutionDisposition, BrokerResolutionEffect, BrokerResolutionInput,
@@ -11,6 +12,8 @@ use kafka_driver_core::{
 };
 
 use crate::{DnsStep, Scenario, ScriptedDns};
+
+const SCENARIO_TIMELINE: TimelineId = TimelineId::new(3);
 
 #[test]
 fn delayed_old_metadata_route_cannot_install_a_discovered_broker_address() {
@@ -32,7 +35,7 @@ fn delayed_old_metadata_route_cannot_install_a_discovered_broker_address() {
             DnsOutcome::new(epoch(2), effect(11), Ok(current_addresses.clone())),
         ),
     ]);
-    let mut simulator = Scenario::new();
+    let mut simulator = Scenario::new(SCENARIO_TIMELINE);
     schedule(&mut simulator, &mut dns, old);
     schedule(&mut simulator, &mut dns, current);
 
@@ -87,12 +90,14 @@ fn start(
 }
 
 fn schedule(simulator: &mut Scenario<DnsOutcome>, dns: &mut ScriptedDns, request: DnsRequest) {
-    let planned = dns
+    let plan = dns
         .resolve(request)
         .unwrap_or_else(|error| panic!("scripted DNS must match: {error}"));
-    simulator
-        .schedule_planned(planned)
-        .unwrap_or_else(|error| panic!("DNS outcome must fit simulation: {error:?}"));
+    for planned in plan.into_outcomes() {
+        simulator
+            .schedule_planned(planned)
+            .unwrap_or_else(|error| panic!("DNS outcome must fit simulation: {error:?}"));
+    }
 }
 
 fn next(simulator: &mut Scenario<DnsOutcome>) -> DnsOutcome {

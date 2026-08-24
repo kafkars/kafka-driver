@@ -197,10 +197,30 @@ impl Driver {
         topic: TopicName,
         deadline: Instant,
     ) -> Result<Call<Result<TopicView, TopicViewError>>, SubmitError> {
+        self.request_topic_view(topic, None, deadline)
+    }
+
+    /// Requests an exact-topic view strictly newer than an observed driver generation.
+    pub fn topic_view_newer_than(
+        &self,
+        topic: TopicName,
+        observed: MetadataGeneration,
+        deadline: Instant,
+    ) -> Result<Call<Result<TopicView, TopicViewError>>, SubmitError> {
+        self.request_topic_view(topic, Some(observed), deadline)
+    }
+
+    fn request_topic_view(
+        &self,
+        topic: TopicName,
+        newer_than: Option<MetadataGeneration>,
+        deadline: Instant,
+    ) -> Result<Call<Result<TopicView, TopicViewError>>, SubmitError> {
         let (completion, sender) = completion_pair();
         self.commands
             .try_send(Command::TopicView {
                 topic,
+                newer_than,
                 deadline,
                 result_capacity_bytes: self.topic_view_result_capacity_bytes,
                 completion: sender,
