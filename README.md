@@ -131,7 +131,7 @@ scripts/check
 
 ## Status
 
-`kafka-driver` 0.1.0-rc.1 is the first release candidate. Its protocol authority
+`kafka-driver` 0.1.0-rc.2 is the second release candidate. Its protocol authority
 is `kafka-wire` 0.1.0-rc.2. Public APIs may still change before 0.1.0.
 
 ## License

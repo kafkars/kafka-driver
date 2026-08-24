@@ -175,7 +175,7 @@ dependencies = [
 
 [[package]]
 name = "kafka-driver"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "base64",
  "bytes",
@@ -199,14 +199,14 @@ dependencies = [
 
 [[package]]
 name = "kafka-driver-core"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "kafka-wire-core",
 ]
 
 [[package]]
 name = "kafka-driver-probe"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "kafka-driver",
  "kafka-wire",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "kafka-driver-sim"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "criticality",
  "kafka-driver-core",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "kafka-driver-transport"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 dependencies = [
  "bytes",
  "kafka-driver-core",
