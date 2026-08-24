@@ -2,21 +2,18 @@
 
 use std::num::NonZeroUsize;
 
-#[cfg(test)]
-use calandria::ResourceGeneration;
-use calandria::ResourceTable;
-use kafka_driver_core::TransportId;
-
 use super::{
     ResourceAdmissionError, ResourceAdmissionFailure, ResourceIdentity, ResourceNamespace,
     ResourceToken,
 };
+#[cfg(test)]
+use calandria::ResourceGeneration;
+use calandria::ResourceTable;
 
 /// Single-owner registry for resources associated with poll readiness tokens.
 #[derive(Debug)]
 pub(in crate::reactor) struct ResourceRegistry<R> {
     table: ResourceTable<ResourceIdentity, R>,
-    transport_ids: Vec<TransportId>,
 }
 
 impl<R> ResourceRegistry<R> {
@@ -31,7 +28,6 @@ impl<R> ResourceRegistry<R> {
     ) -> Self {
         Self {
             table: ResourceTable::new(namespace.owner(), capacity),
-            transport_ids: Vec::with_capacity(capacity.get()),
         }
     }
 
@@ -40,7 +36,11 @@ impl<R> ResourceRegistry<R> {
         identity: ResourceIdentity,
         resource: R,
     ) -> Result<ResourceToken, ResourceAdmissionError<R>> {
-        if self.transport_ids.contains(&identity.transport_id()) {
+        if self
+            .table
+            .iter()
+            .any(|(_, current, _)| current.transport_id() == identity.transport_id())
+        {
             return Err(ResourceAdmissionError::new(
                 ResourceAdmissionFailure::IdentityInUse {
                     transport_id: identity.transport_id(),
@@ -65,7 +65,6 @@ impl<R> ResourceRegistry<R> {
             };
             ResourceAdmissionError::new(failure, resource)
         })?;
-        self.transport_ids.push(identity.transport_id());
         Ok(token)
     }
 
@@ -97,15 +96,7 @@ impl<R> ResourceRegistry<R> {
         &mut self,
         token: ResourceToken,
     ) -> Option<(ResourceIdentity, R)> {
-        let (identity, resource) = self.table.remove(token).ok()?;
-        if let Some(position) = self
-            .transport_ids
-            .iter()
-            .position(|transport_id| *transport_id == identity.transport_id())
-        {
-            self.transport_ids.swap_remove(position);
-        }
-        Some((identity, resource))
+        self.table.remove(token).ok()
     }
 
     #[cfg(test)]
@@ -121,7 +112,6 @@ impl<R> ResourceRegistry<R> {
                 capacity,
                 ResourceGeneration::new(generation),
             ),
-            transport_ids: Vec::with_capacity(capacity.get()),
         }
     }
 }

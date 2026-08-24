@@ -14,7 +14,6 @@ use super::{DeadlineTimer, TimerDrain, TimerScheduleError};
 #[derive(Debug)]
 pub(in crate::reactor) struct TimerHeap {
     queue: TimerQueue<DeadlineTimer>,
-    tokens: Vec<(TimerId, TimerToken)>,
 }
 
 impl TimerHeap {
@@ -31,28 +30,17 @@ impl TimerHeap {
                 timer_id: deadline.timer_id(),
             });
         }
-        let timer_id = deadline.timer_id();
-        let token = self
-            .queue
+        self.queue
             .schedule(calandria_deadline(deadline.at()), deadline)
             .map_err(map_schedule_error)?;
-        self.tokens.push((timer_id, token));
         Ok(())
     }
 
     pub(in crate::reactor) fn cancel(&mut self, timer_id: TimerId) -> bool {
-        let Some(position) = self
-            .tokens
-            .iter()
-            .position(|(candidate, _)| *candidate == timer_id)
-        else {
+        let Some(token) = self.token_for(timer_id) else {
             return false;
         };
-        let (_, token) = self.tokens.swap_remove(position);
-        self.queue
-            .cancel(token)
-            .unwrap_or_else(|| panic!("driver timer token diverged from Calandria queue"));
-        true
+        self.queue.cancel(token).is_some()
     }
 
     pub(in crate::reactor) fn next_deadline(&self) -> Option<Moment> {
@@ -67,16 +55,11 @@ impl TimerHeap {
         destination: &mut Vec<Timer<DeadlineTimer>>,
         budget: NonZeroUsize,
     ) -> TimerDrain {
-        let retained = destination.len();
-        let drain = self.queue.drain_due_into(
+        self.queue.drain_due_into(
             calandria::Moment::from_nanos(now.as_nanos()),
             destination,
             budget,
-        );
-        for timer in &destination[retained..] {
-            self.forget_token(timer.token());
-        }
-        drain
+        )
     }
 
     #[cfg(test)]
@@ -85,20 +68,14 @@ impl TimerHeap {
     }
 
     fn contains(&self, timer_id: TimerId) -> bool {
-        self.tokens
-            .iter()
-            .any(|(candidate, _)| *candidate == timer_id)
+        self.token_for(timer_id).is_some()
     }
 
-    fn forget_token(&mut self, token: TimerToken) {
-        let Some(position) = self
-            .tokens
+    fn token_for(&self, timer_id: TimerId) -> Option<TimerToken> {
+        self.queue
             .iter()
-            .position(|(_, candidate)| *candidate == token)
-        else {
-            panic!("delivered Calandria timer has no driver identity");
-        };
-        self.tokens.swap_remove(position);
+            .find(|timer| timer.value().timer_id() == timer_id)
+            .map(Timer::token)
     }
 
     fn starting_at(capacity: NonZeroUsize, first_id: CalandriaTimerId) -> Self {
@@ -110,7 +87,6 @@ impl TimerHeap {
                 first_id,
                 |_| RetainedBytes::ZERO,
             ),
-            tokens: Vec::with_capacity(capacity.get()),
         }
     }
 

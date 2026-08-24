@@ -46,7 +46,7 @@ impl<T> Call<T> {
 impl<T> Future for Call<T> {
     type Output = Result<T, CompletionError>;
 
-    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         self.completion.poll_result(context)
     }
 }

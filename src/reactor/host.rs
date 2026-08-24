@@ -103,13 +103,11 @@ impl Reactor {
                 .map_err(std::io::Error::other)?;
         let poller =
             Poller::with_registration_capacity(limits.poll_event_budget(), registration_capacity)?;
-        let poll_wake = poller.wake_handle();
-        let command_wake = WakeHandle::new(poll_wake.clone());
         let (sender, commands) = mailbox(
             limits.mailbox_capacity(),
             limits.mailbox_byte_capacity(),
             Command::retained_bytes,
-            command_wake,
+            poller.wake_handle(),
         );
         let clock = ReactorClock::new();
         let (shutdown_requester, shutdown) = shutdown_barrier(limits.mailbox_capacity());
@@ -122,7 +120,10 @@ impl Reactor {
             .as_ref()
             .filter(|target| target.requires_proof_worker())
             .map(|_| {
-                ScramProofWorker::spawn(limits.scram_proof(), WakeHandle::new(poll_wake.clone()))
+                ScramProofWorker::spawn(
+                    limits.scram_proof(),
+                    WakeHandle::new(poller.pulse_handle()),
+                )
             })
             .transpose()?;
         let proof_sender = scram_proof.as_ref().map(ScramProofWorker::sender);
@@ -144,7 +145,7 @@ impl Reactor {
                 Some(NameResolution::start(
                     config,
                     limits.resolver(),
-                    WakeHandle::new(poll_wake),
+                    WakeHandle::new(poller.pulse_handle()),
                 )?),
                 Some(MetadataOwner::new(limits.metadata())),
                 Some(CoordinatorOwner::new(limits.coordinator())),
@@ -217,13 +218,12 @@ impl Reactor {
     }
 
     pub(crate) fn termination_wake(&self) -> calandria::WakeHandle {
-        let wake = self.poller.wake_handle();
-        calandria::WakeHandle::new(move || wake.wake())
+        self.poller.wake_handle()
     }
 
     /// Returns a cloneable notification handle for embedded-host integration.
     pub fn wake_handle(&self) -> WakeHandle {
-        WakeHandle::new(self.poller.wake_handle())
+        WakeHandle::new(self.poller.pulse_handle())
     }
 
     /// Returns whether shutdown has reached its terminal state.

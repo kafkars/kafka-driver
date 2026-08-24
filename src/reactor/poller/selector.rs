@@ -3,7 +3,7 @@
 use std::{cell::RefCell, io, num::NonZeroUsize, time::Duration};
 
 use calandria::{PollEvents, ResourceToken, Span};
-use calandria_mio::{MioPoller, MioPollerLimits};
+use calandria_mio::{MioPoller, MioPollerLimits, MioPulseHandle};
 use mio::event::Source;
 
 use super::{PollEvent, PollInterest};
@@ -36,6 +36,10 @@ impl Poller {
 
     pub(in crate::reactor) fn wake_handle(&self) -> calandria::WakeHandle {
         self.backend.borrow().wake_handle()
+    }
+
+    pub(in crate::reactor) fn pulse_handle(&self) -> MioPulseHandle {
+        self.backend.borrow().pulse_handle()
     }
 
     pub(in crate::reactor) fn register<S: Source>(
