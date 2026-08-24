@@ -44,12 +44,14 @@ impl Reactor {
                     }
                     Command::TopicView {
                         topic,
+                        newer_than,
                         deadline,
                         result_capacity_bytes,
                         completion,
                     } if self.state == HostState::Running => {
                         self.process_topic_view(
                             topic,
+                            newer_than,
                             deadline,
                             result_capacity_bytes,
                             completion,

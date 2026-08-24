@@ -3,8 +3,9 @@
 use std::time::Instant;
 
 use crate::{
-    DriverSnapshot, InvalidationDisposition, Route, RouteFailureToken, SnapshotError, TopicName,
-    TopicView, TopicViewError, completion::CompletionSender, request::ErasedRequest,
+    DriverSnapshot, InvalidationDisposition, MetadataGeneration, Route, RouteFailureToken,
+    SnapshotError, TopicName, TopicView, TopicViewError, completion::CompletionSender,
+    request::ErasedRequest,
 };
 
 type SnapshotCompletion = CompletionSender<Result<DriverSnapshot, SnapshotError>>;
@@ -25,6 +26,7 @@ pub(crate) enum Command {
     },
     TopicView {
         topic: TopicName,
+        newer_than: Option<MetadataGeneration>,
         deadline: Instant,
         result_capacity_bytes: usize,
         completion: TopicViewCompletion,
