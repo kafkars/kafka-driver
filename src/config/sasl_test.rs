@@ -75,3 +75,28 @@ fn scram_rejects_unpreparable_credentials_and_nonempty_authzid() {
         Some(SaslConfigError::UnsupportedAuthorizationIdentity)
     );
 }
+
+#[test]
+fn scram_identity_at_limit_is_accepted() {
+    let username = "a".repeat(1_024);
+
+    let config = SaslConfig::scram_sha_256(&username, "password")
+        .unwrap_or_else(|error| panic!("identity at limit: {error}"));
+
+    assert_eq!(config.username(), username);
+}
+
+#[test]
+fn scram_identity_over_limit_is_rejected_by_config() {
+    let username = "a".repeat(1_025);
+
+    let error = SaslConfig::scram_sha_512(username, "password").err();
+
+    assert_eq!(
+        error,
+        Some(SaslConfigError::UsernameTooLong {
+            length: 1_025,
+            maximum: 1_024,
+        })
+    );
+}

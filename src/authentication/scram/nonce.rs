@@ -1,68 +1,42 @@
-//! Validated client nonce generation and server-extension checks.
+//! System randomness adapted to the library's injected nonce-source boundary.
 
-use std::fmt;
-
-use base64::{Engine as _, engine::general_purpose::STANDARD_NO_PAD};
-use kafka_driver_core::AuthenticationFailure;
 use ring::rand::{SecureRandom as _, SystemRandom};
-use zeroize::Zeroizing;
+use sasl_scram::{NonceError, NonceSource};
 
-use super::limits::ScramLimits;
+pub(super) struct SecureNonceSource(SystemRandom);
 
-/// One printable, comma-free nonce hidden from diagnostics.
-pub(super) struct ScramNonce(Zeroizing<String>);
-
-impl ScramNonce {
-    pub(super) fn generate(limits: ScramLimits) -> Result<Self, AuthenticationFailure> {
-        let mut entropy = Zeroizing::new([0_u8; 24]);
-        SystemRandom::new()
-            .fill(entropy.as_mut())
-            .map_err(|_| AuthenticationFailure::Protocol)?;
-        Self::new(STANDARD_NO_PAD.encode(entropy.as_ref()), limits)
+impl SecureNonceSource {
+    pub(super) fn new() -> Self {
+        Self(SystemRandom::new())
     }
+}
 
-    pub(super) fn new(
-        nonce: impl Into<String>,
-        limits: ScramLimits,
-    ) -> Result<Self, AuthenticationFailure> {
-        let nonce = Zeroizing::new(nonce.into());
-        validate_nonce(&nonce, limits)?;
-        Ok(Self(nonce))
+impl NonceSource for SecureNonceSource {
+    fn fill(&mut self, output: &mut [u8]) -> Result<(), NonceError> {
+        self.0.fill(output).map_err(|_| NonceError::unavailable())
     }
+}
 
-    pub(super) fn validate_server(
-        &self,
-        server_nonce: &str,
-        limits: ScramLimits,
-    ) -> Result<(), AuthenticationFailure> {
-        validate_nonce(server_nonce, limits)?;
-        if server_nonce.len() <= self.0.len() || !server_nonce.starts_with(self.as_str()) {
-            return Err(AuthenticationFailure::Malformed);
+#[cfg(test)]
+pub(super) struct FixedNonceSource(Option<[u8; 15]>);
+
+#[cfg(test)]
+impl FixedNonceSource {
+    pub(super) const fn new(entropy: [u8; 15]) -> Self {
+        Self(Some(entropy))
+    }
+}
+
+#[cfg(test)]
+impl NonceSource for FixedNonceSource {
+    fn fill(&mut self, output: &mut [u8]) -> Result<(), NonceError> {
+        let Some(entropy) = self.0.take() else {
+            return Err(NonceError::unavailable());
+        };
+        if output.len() != entropy.len() {
+            return Err(NonceError::unavailable());
         }
+        output.copy_from_slice(&entropy);
         Ok(())
     }
-
-    pub(super) fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for ScramNonce {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("ScramNonce(..)")
-    }
-}
-
-fn validate_nonce(nonce: &str, limits: ScramLimits) -> Result<(), AuthenticationFailure> {
-    if nonce.is_empty()
-        || !nonce
-            .bytes()
-            .all(|byte| (0x21..=0x7e).contains(&byte) && byte != b',')
-    {
-        return Err(AuthenticationFailure::Malformed);
-    }
-    if nonce.len() > limits.max_nonce_bytes() {
-        return Err(AuthenticationFailure::PolicyLimitExceeded);
-    }
-    Ok(())
 }

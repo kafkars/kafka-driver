@@ -7,6 +7,7 @@ mod pending;
 mod plain;
 mod scram;
 mod session;
+mod start_error;
 
 #[cfg(test)]
 mod framing_test;
@@ -17,7 +18,8 @@ pub(crate) use error::AuthenticationExchangeError;
 pub(crate) use exchange::AuthenticateExchange;
 pub(crate) use handshake::{HandshakeExchange, HandshakeOutcome};
 pub(crate) use pending::AuthenticationExchange;
-pub(crate) use session::AuthenticationSession;
+pub(crate) use session::{AuthenticationReceive, AuthenticationSession};
+pub(crate) use start_error::AuthenticationSessionStartError;
 
 use plain::PlainSession;
-use scram::ScramSession;
+use scram::{ScramReceive, ScramSession};

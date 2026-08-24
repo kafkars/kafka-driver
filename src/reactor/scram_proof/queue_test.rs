@@ -2,14 +2,11 @@
 
 use std::num::{NonZeroU8, NonZeroUsize};
 
-use kafka_driver_core::{
-    AuthenticationRound, ConnectionEpoch, EffectId, ExchangeOutcome, TransportId,
-};
-use kafka_wire_core::Bytes;
+use kafka_driver_core::{AuthenticationRound, ConnectionEpoch, EffectId, TransportId};
 
 use crate::{
     SaslConfig, ScramProofLimits,
-    authentication::AuthenticationSession,
+    authentication::{AuthenticationReceive, AuthenticationSession},
     reactor::resource::{ResourceIdentity, ResourceToken},
 };
 
@@ -69,12 +66,15 @@ pub(in crate::reactor) fn request(raw: u64) -> ScramProofRequest {
     let first = session
         .next_message(1_024)
         .unwrap_or_else(|failure| panic!("worker client first: {failure:?}"));
-    let first =
-        std::str::from_utf8(&first).unwrap_or_else(|error| panic!("UTF-8 client first: {error}"));
+    let first = std::str::from_utf8(first.as_bytes())
+        .unwrap_or_else(|error| panic!("UTF-8 client first: {error}"));
     let nonce = first
         .rsplit_once("r=")
         .map_or_else(|| panic!("client first nonce missing"), |(_, nonce)| nonce);
     let challenge = format!("r={nonce}-server,s=YWJj,i=4096");
+    let AuthenticationReceive::Derive(pending) = session.receive(challenge.as_bytes()) else {
+        panic!("worker challenge must request derivation");
+    };
     ScramProofRequest::new(
         ResourceToken::new(
             calandria::ResourceOwnerId::new(raw),
@@ -84,14 +84,12 @@ pub(in crate::reactor) fn request(raw: u64) -> ScramProofRequest {
         ResourceIdentity::new(TransportId::from_raw(raw), ConnectionEpoch::from_raw(raw)),
         EffectId::from_raw(raw),
         AuthenticationRound::new(NonZeroU8::MIN),
-        session,
-        Bytes::from(challenge),
+        pending,
     )
 }
 
 pub(super) fn assert_continues(outcome: super::ScramProofOutcome) {
-    let (_, outcome) = outcome.into_parts();
-    assert_eq!(outcome, ExchangeOutcome::Continue);
+    assert!(outcome.into_result().is_ok());
 }
 
 fn limits(requests: usize, outcomes: usize, budget: usize) -> ScramProofLimits {

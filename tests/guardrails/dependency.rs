@@ -154,6 +154,30 @@ fn rustls_is_a_runtime_neutral_optional_transport_feature() {
 }
 
 #[test]
+fn sasl_scram_is_an_exact_packaged_dependency_with_both_kafka_algorithms() {
+    let root = workspace_root();
+    let value = parse_manifest(&root.join("Cargo.toml"));
+    let policy = &value["workspace"]["dependencies"]["sasl-scram"];
+    let dependency = &value["dependencies"]["sasl-scram"];
+    let features = policy["features"]
+        .as_array()
+        .unwrap_or_else(|| panic!("sasl-scram must name its complete feature contract"));
+
+    assert_eq!(policy["version"].as_str(), Some("=0.0.1-rc.3"));
+    assert_eq!(policy["default-features"].as_bool(), Some(false));
+    assert_eq!(
+        features,
+        &[
+            toml::Value::String("std".to_owned()),
+            toml::Value::String("sha256".to_owned()),
+            toml::Value::String("sha512".to_owned()),
+            toml::Value::String("saslprep".to_owned()),
+        ]
+    );
+    assert_eq!(dependency["workspace"].as_bool(), Some(true));
+}
+
+#[test]
 fn deterministic_core_depends_only_on_protocol_authority() {
     let root = workspace_root();
     let guardrails = load_guardrails(&root);

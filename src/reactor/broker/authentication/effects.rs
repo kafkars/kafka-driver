@@ -174,7 +174,7 @@ impl SingleBroker {
             round,
             correlation_id,
             version,
-            &message,
+            message.as_bytes(),
             self.client_id.as_ref().map(crate::config::ClientId::wire),
             self.outbound_frame,
             self.negotiation_limits.decode_limits(),

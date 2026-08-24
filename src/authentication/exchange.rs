@@ -1,5 +1,6 @@
 //! Generated `SaslAuthenticate` framing around zeroizing mechanism messages.
 
+use super::AuthenticationExchangeError;
 use bytes::BytesMut;
 use kafka_driver_core::{AuthenticationRound, CorrelationId, EffectId};
 use kafka_driver_transport::FrameBody;
@@ -8,9 +9,6 @@ use kafka_wire::{
     encode_request, response_header_version_for,
 };
 use kafka_wire_core::{ApiVersion, Bytes, DecodeLimits, Decoder, KafkaDecode, StrBytes};
-use zeroize::Zeroizing;
-
-use super::AuthenticationExchangeError;
 
 /// Identities and decode policy for one outstanding mechanism message.
 #[derive(Debug)]
@@ -32,7 +30,7 @@ impl AuthenticateExchange {
         round: AuthenticationRound,
         correlation_id: CorrelationId,
         version: ApiVersion,
-        auth_bytes: &Zeroizing<Vec<u8>>,
+        auth_bytes: &[u8],
         client_id: Option<&StrBytes>,
         outbound_limits: OutboundFrameLimits,
         decode_limits: DecodeLimits,

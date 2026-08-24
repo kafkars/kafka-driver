@@ -4,7 +4,7 @@ use kafka_driver_core::{
     AuthenticationFailure, AuthenticationInput, AuthenticationState, ConnectionInput,
     ConnectionState,
 };
-use kafka_wire_core::Bytes;
+use sasl_scram::PendingDerivation;
 
 use crate::reactor::{
     Poller,
@@ -25,21 +25,16 @@ impl SingleBroker {
         identity: ResourceIdentity,
         effect_id: kafka_driver_core::EffectId,
         round: kafka_driver_core::AuthenticationRound,
-        response: Bytes,
-    ) -> Result<bool, BrokerError> {
+        pending: PendingDerivation,
+    ) -> Result<(), BrokerError> {
         let Some(sender) = self.scram_proof.clone() else {
-            return Ok(false);
+            return Err(BrokerError::ScramProofWorkerLost);
         };
         let token = self.resource_token.ok_or(BrokerError::MissingEffect)?;
-        let session = self
-            .authentication_session
-            .take()
-            .ok_or(BrokerError::MissingEffect)?;
-        let request = ScramProofRequest::new(token, identity, effect_id, round, session, response);
+        let request = ScramProofRequest::new(token, identity, effect_id, round, pending);
         match sender.submit(request) {
-            Ok(()) => Ok(true),
-            Err(ScramProofSubmitError::Full(request)) => {
-                self.authentication_session = Some(request.into_session());
+            Ok(()) => Ok(()),
+            Err(ScramProofSubmitError::Full(_request)) => {
                 self.fail_exchange(
                     poller,
                     identity,
@@ -47,12 +42,9 @@ impl SingleBroker {
                     round,
                     AuthenticationFailure::LocalCapacity,
                 )?;
-                Ok(true)
+                Ok(())
             }
-            Err(ScramProofSubmitError::Closed(request)) => {
-                self.authentication_session = Some(request.into_session());
-                Err(BrokerError::ScramProofWorkerLost)
-            }
+            Err(ScramProofSubmitError::Closed(_request)) => Err(BrokerError::ScramProofWorkerLost),
         }
     }
 
@@ -75,11 +67,11 @@ impl SingleBroker {
         {
             return Ok(false);
         }
-        if self.authentication_session.is_some() {
-            return Err(BrokerError::MissingEffect);
-        }
-        let (session, outcome) = proof.into_parts();
-        self.authentication_session = Some(session);
+        let outcome = self
+            .authentication_session
+            .as_mut()
+            .ok_or(BrokerError::MissingEffect)?
+            .complete_derivation(proof.into_result());
         let transition = self.connection.apply(ConnectionInput::Authentication {
             input: AuthenticationInput::ExchangeCompleted {
                 epoch: identity.epoch(),

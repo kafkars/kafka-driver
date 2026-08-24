@@ -42,9 +42,7 @@ impl SingleBroker {
         let Some(config) = self.sasl.clone() else {
             return Err(BrokerError::MissingEffect);
         };
-        let Ok(session) = AuthenticationSession::new(config) else {
-            return Err(BrokerError::MissingEffect);
-        };
+        let session = AuthenticationSession::new(config).map_err(BrokerError::from)?;
         let Some(ids) = self.ids.reserve_authentication() else {
             return Err(BrokerError::IdentityExhausted);
         };

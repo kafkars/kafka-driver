@@ -9,6 +9,7 @@ mod limits;
 mod metadata;
 mod resolver;
 mod sasl;
+mod scram_policy;
 mod scram_proof;
 mod target;
 #[cfg(feature = "tls-rustls")]
@@ -24,6 +25,8 @@ mod metadata_test;
 mod resolver_test;
 #[cfg(test)]
 mod sasl_test;
+#[cfg(test)]
+mod scram_policy_test;
 #[cfg(test)]
 mod scram_proof_test;
 #[cfg(all(test, feature = "tls-rustls"))]
@@ -42,6 +45,7 @@ pub use tls::{TlsClientConfig, TlsClientPolicy};
 pub(crate) use bootstrap::BootstrapConfig;
 pub(crate) use broker::{BrokerAddresses, BrokerConfig, BrokerSecurity, BrokerTemplate};
 pub(crate) use client_id::{ClientId, ClientIdError};
+pub(crate) use scram_policy::{ScramClientConfigError, kafka_scram_client_config};
 pub(crate) use target::DriverTarget;
 #[cfg(feature = "tls-rustls")]
 pub(crate) use tls::{TlsConnectionConfig, TlsSessionError};

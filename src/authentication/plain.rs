@@ -19,13 +19,11 @@ enum PlainState {
 }
 
 impl PlainSession {
-    pub(crate) fn new(config: SaslConfig) -> Result<Self, AuthenticationFailure> {
-        if config.mechanism() != SaslMechanism::Plain {
-            return Err(AuthenticationFailure::Protocol);
-        }
-        Ok(Self {
+    pub(crate) fn new(config: SaslConfig) -> Self {
+        debug_assert_eq!(config.mechanism(), SaslMechanism::Plain);
+        Self {
             state: PlainState::Ready(config),
-        })
+        }
     }
 
     pub(crate) fn next_message(

@@ -60,6 +60,8 @@ mod scram_authentication_failure_test;
 #[cfg(test)]
 mod scram_authentication_test;
 #[cfg(test)]
+mod scram_start_error_test;
+#[cfg(test)]
 mod submission_test;
 
 pub(in crate::reactor) use deadline::DeadlineProgress;
