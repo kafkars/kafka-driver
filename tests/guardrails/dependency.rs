@@ -149,11 +149,15 @@ fn rustls_is_a_runtime_neutral_optional_transport_feature() {
         &[
             toml::Value::String("ring".to_owned()),
             toml::Value::String("std".to_owned()),
+            toml::Value::String("tls12".to_owned()),
         ]
     );
     assert_eq!(
         transport_feature,
-        &[toml::Value::String("dep:rustls".to_owned())]
+        &[
+            toml::Value::String("dep:bornera-rustls".to_owned()),
+            toml::Value::String("dep:rustls".to_owned()),
+        ]
     );
 }
 

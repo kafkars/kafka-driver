@@ -23,6 +23,9 @@ repository = "https://github.com/kafkars/kafka-driver"
 
 [workspace.dependencies]
 bytes = "1.10"
+bornera = "=0.0.1-rc.3"
+bornera-core = "=0.0.1-rc.3"
+bornera-rustls = "=0.0.1-rc.3"
 calandria = "=0.0.1-rc.2"
 calandria-mio = "=0.0.1-rc.2"
 calandria-sim = "=0.0.1-rc.2"
@@ -35,7 +38,7 @@ kafka-wire = "=0.1.0-rc.3"
 kafka-wire-core = "=0.1.0-rc.3"
 mio = { version = "1.2", default-features = false, features = ["net", "os-poll"] }
 ring = "0.17.14"
-rustls = { version = "0.23.42", default-features = false, features = ["ring", "std"] }
+rustls = { version = "=0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
 sasl-scram = { version = "=0.0.1-rc.3", default-features = false, features = ["std", "sha256", "sha512", "saslprep"] }
 serde = { version = "1.0", features = ["derive"] }
 syn = { version = "2.0", features = ["full"] }
@@ -57,10 +60,13 @@ categories = ["network-programming"]
 
 [features]
 default = ["tls-rustls"]
-tls-rustls = ["dep:rustls"]
+tls-rustls = ["dep:bornera-rustls", "dep:rustls"]
 
 [dependencies]
 bytes.workspace = true
+bornera.workspace = true
+bornera-core.workspace = true
+bornera-rustls = { workspace = true, optional = true }
 calandria.workspace = true
 calandria-mio.workspace = true
 kafka-driver-core.workspace = true

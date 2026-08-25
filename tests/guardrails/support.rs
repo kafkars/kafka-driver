@@ -39,6 +39,12 @@ pub(crate) struct Dependencies {
     pub(crate) kafka_wire_checksum: String,
     pub(crate) kafka_wire_core_version: String,
     pub(crate) kafka_wire_core_checksum: String,
+    pub(crate) bornera_version: String,
+    pub(crate) bornera_checksum: String,
+    pub(crate) bornera_core_version: String,
+    pub(crate) bornera_core_checksum: String,
+    pub(crate) bornera_rustls_version: String,
+    pub(crate) bornera_rustls_checksum: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -31,7 +31,13 @@ kafka_wire_version = "=0.1.0-rc.3"
 kafka_wire_checksum = "ef04e07a7f2f73a4d00e3341b60504e0f2baf91491ce55e023f2bdfa5ea60b32"
 kafka_wire_core_version = "=0.1.0-rc.3"
 kafka_wire_core_checksum = "ac4f6d455c6371e95044818fbbdc816d35fa0fff3f5bbc7669ce8c83ccf1c6a4"
-driver_allowed = ["bytes", "calandria", "calandria-mio", "kafka-driver-core", "kafka-driver-transport", "kafka-wire", "kafka-wire-core", "mio", "ring", "rustls", "sasl-scram", "zeroize"]
+bornera_version = "=0.0.1-rc.3"
+bornera_checksum = "5cb9b37b34c2be2c5131277760464022d46be96dfb96f53b5baf184eca08960f"
+bornera_core_version = "=0.0.1-rc.3"
+bornera_core_checksum = "31b50b618633b9cdc95fc3b37461b6c303218baefe14d7958c1cddf3c71c87a1"
+bornera_rustls_version = "=0.0.1-rc.3"
+bornera_rustls_checksum = "51d5c22e456b51a2f135f7050c7415aa1dd8359e0e2749db3263541f613a07a9"
+driver_allowed = ["bornera", "bornera-core", "bornera-rustls", "bytes", "calandria", "calandria-mio", "kafka-driver-core", "kafka-driver-transport", "kafka-wire", "kafka-wire-core", "mio", "ring", "rustls", "sasl-scram", "zeroize"]
 core_allowed = ["kafka-wire-core"]
 probe_allowed = ["kafka-driver", "kafka-wire", "rustls"]
 transport_allowed = ["bytes", "kafka-driver-core", "kafka-wire-core"]

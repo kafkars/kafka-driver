@@ -19,6 +19,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "bornera"
+version = "0.0.1-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cb9b37b34c2be2c5131277760464022d46be96dfb96f53b5baf184eca08960f"
+dependencies = [
+ "bornera-core",
+ "bytes",
+ "calandria",
+ "calandria-mio",
+ "mio",
+ "socket2",
+]
+
+[[package]]
+name = "bornera-core"
+version = "0.0.1-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31b50b618633b9cdc95fc3b37461b6c303218baefe14d7958c1cddf3c71c87a1"
+dependencies = [
+ "calandria",
+]
+
+[[package]]
+name = "bornera-rustls"
+version = "0.0.1-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51d5c22e456b51a2f135f7050c7415aa1dd8359e0e2749db3263541f613a07a9"
+dependencies = [
+ "bornera",
+ "calandria",
+ "mio",
+ "rustls",
+ "socket2",
+]
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -178,6 +214,9 @@ name = "kafka-driver"
 version = "0.1.0-rc.2"
 dependencies = [
  "base64",
+ "bornera",
+ "bornera-core",
+ "bornera-rustls",
  "bytes",
  "calandria",
  "calandria-mio",
@@ -323,9 +362,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.42"
+version = "0.23.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c54fcab019b409d04215d3a17cb438fd7fbf192ee61461f20f4fe18704bc138"
+checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
 dependencies = [
  "once_cell",
  "ring",
@@ -425,6 +464,16 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "socket2"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "stringprep"

@@ -1,4 +1,4 @@
-//! Published protocol dependencies remain exact crates.io artifacts.
+//! Published protocol and connection dependencies remain exact crates.io artifacts.
 
 use std::path::Path;
 
@@ -24,24 +24,69 @@ fn protocol_lock_entries_match_the_audited_registry_artifacts() {
         &guardrails.dependencies.kafka_wire_core_version,
         &guardrails.dependencies.kafka_wire_core_checksum,
     );
+    assert_locked(
+        &lock,
+        "bornera",
+        &guardrails.dependencies.bornera_version,
+        &guardrails.dependencies.bornera_checksum,
+    );
+    assert_locked(
+        &lock,
+        "bornera-core",
+        &guardrails.dependencies.bornera_core_version,
+        &guardrails.dependencies.bornera_core_checksum,
+    );
+    assert_locked(
+        &lock,
+        "bornera-rustls",
+        &guardrails.dependencies.bornera_rustls_version,
+        &guardrails.dependencies.bornera_rustls_checksum,
+    );
 }
 
 #[test]
 fn protocol_dependencies_have_no_source_override_escape_hatch() {
     let root = workspace_root();
+    let guardrails = load_guardrails(&root);
     let workspace = parse(&root.join("Cargo.toml"));
     let probe = parse(&root.join("crates/kafka-driver-probe/Cargo.toml"));
 
-    for package in ["kafka-wire", "kafka-wire-core"] {
+    for (package, expected) in [
+        (
+            "kafka-wire",
+            guardrails.dependencies.kafka_wire_version.as_str(),
+        ),
+        (
+            "kafka-wire-core",
+            guardrails.dependencies.kafka_wire_core_version.as_str(),
+        ),
+        ("bornera", guardrails.dependencies.bornera_version.as_str()),
+        (
+            "bornera-core",
+            guardrails.dependencies.bornera_core_version.as_str(),
+        ),
+        (
+            "bornera-rustls",
+            guardrails.dependencies.bornera_rustls_version.as_str(),
+        ),
+    ] {
         let dependency = &workspace["workspace"]["dependencies"][package];
         assert!(
             dependency.is_str(),
             "{package} must be an exact registry version string"
         );
+        assert_eq!(
+            dependency.as_str(),
+            Some(expected),
+            "{package} must be exact"
+        );
     }
     assert_workspace_reference(&workspace["dependencies"]["kafka-wire"]);
     assert_workspace_reference(&workspace["dependencies"]["kafka-wire-core"]);
     assert_workspace_reference(&probe["dependencies"]["kafka-wire"]);
+    assert_workspace_reference(&workspace["dependencies"]["bornera"]);
+    assert_workspace_reference(&workspace["dependencies"]["bornera-core"]);
+    assert_optional_workspace_reference(&workspace["dependencies"]["bornera-rustls"]);
 
     for manifest in [&workspace, &probe] {
         assert!(
@@ -57,6 +102,25 @@ fn protocol_dependencies_have_no_source_override_escape_hatch() {
             "target-specific protocol redeclaration is forbidden"
         );
     }
+}
+
+fn assert_optional_workspace_reference(dependency: &toml::Value) {
+    let table = dependency
+        .as_table()
+        .unwrap_or_else(|| panic!("optional dependency must use the workspace authority"));
+    assert_eq!(
+        table.len(),
+        2,
+        "optional dependency may only add its optional marker"
+    );
+    assert_eq!(
+        table.get("workspace").and_then(toml::Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        table.get("optional").and_then(toml::Value::as_bool),
+        Some(true)
+    );
 }
 
 fn assert_workspace_reference(dependency: &toml::Value) {
