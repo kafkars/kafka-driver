@@ -3,14 +3,15 @@
 use crate::AuthenticationEffect;
 
 use super::{
-    ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, Decision, StateData,
+    ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, Decision,
+    KafkaSessionMachine, StateData,
 };
 
 impl ConnectionMachine {
     pub(super) fn begin_drain(&mut self) -> Decision {
-        match &mut self.state {
+        match &mut self.session.state {
             StateData::Dormant { epoch } => {
-                self.state = StateData::Closed {
+                self.session.state = StateData::Closed {
                     epoch: *epoch,
                     reason: CloseReason::Requested,
                 };
@@ -21,8 +22,59 @@ impl ConnectionMachine {
                 transport_id,
                 deadline_timer,
                 ..
+            } => {
+                let epoch = *epoch;
+                let transport_id = *transport_id;
+                let deadline_timer = *deadline_timer;
+                self.session.state = StateData::Closing {
+                    epoch,
+                    transport_id,
+                    reason: CloseReason::Requested,
+                };
+                Decision::applied(vec![
+                    ConnectionEffect::CloseTransport {
+                        epoch,
+                        transport_id,
+                        reason: CloseReason::Requested,
+                    },
+                    ConnectionEffect::CancelDeadline {
+                        timer_id: deadline_timer,
+                    },
+                ])
             }
-            | StateData::Negotiating {
+            StateData::Negotiating { .. }
+            | StateData::Authenticating { .. }
+            | StateData::Active { .. }
+            | StateData::Closing { .. }
+            | StateData::Closed { .. } => self.session.begin_drain(),
+        }
+    }
+
+    pub(super) fn failure_for_closed_state(&self) -> CallFailure {
+        match &self.session.state {
+            StateData::Active {
+                mode: ActiveMode::Draining,
+                ..
+            } => CallFailure::Draining,
+            StateData::Dormant { .. }
+            | StateData::Opening { .. }
+            | StateData::Negotiating { .. }
+            | StateData::Authenticating { .. }
+            | StateData::Active {
+                mode: ActiveMode::Ready,
+                ..
+            } => CallFailure::NotReady,
+            StateData::Closing { reason, .. } | StateData::Closed { reason, .. } => {
+                CallFailure::ConnectionClosed { reason: *reason }
+            }
+        }
+    }
+}
+
+impl KafkaSessionMachine {
+    pub(super) fn begin_drain(&mut self) -> Decision {
+        match &mut self.state {
+            StateData::Negotiating {
                 epoch,
                 transport_id,
                 deadline_timer,
@@ -69,6 +121,7 @@ impl ConnectionMachine {
                 *mode = ActiveMode::Draining;
                 Decision::applied(Vec::new())
             }
+            StateData::Dormant { .. } | StateData::Opening { .. } => Decision::stale(),
             StateData::Active { .. } | StateData::Closing { .. } | StateData::Closed { .. } => {
                 Decision::ignored()
             }
@@ -104,25 +157,5 @@ impl ConnectionMachine {
             });
         }
         Decision::applied(effects)
-    }
-
-    pub(super) fn failure_for_closed_state(&self) -> CallFailure {
-        match &self.state {
-            StateData::Active {
-                mode: ActiveMode::Draining,
-                ..
-            } => CallFailure::Draining,
-            StateData::Dormant { .. }
-            | StateData::Opening { .. }
-            | StateData::Negotiating { .. }
-            | StateData::Authenticating { .. }
-            | StateData::Active {
-                mode: ActiveMode::Ready,
-                ..
-            } => CallFailure::NotReady,
-            StateData::Closing { reason, .. } | StateData::Closed { reason, .. } => {
-                CallFailure::ConnectionClosed { reason: *reason }
-            }
-        }
     }
 }

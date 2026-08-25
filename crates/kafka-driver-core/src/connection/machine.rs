@@ -7,15 +7,14 @@ use kafka_wire_core::{ApiKey, ApiVersion};
 
 use super::{
     ConnectionInput, ConnectionLimits, ConnectionMachineError, ConnectionState,
-    ConnectionTransition, Decision, PendingCall, StateData, TransitionRecord, TransitionTrace,
+    ConnectionTransition, Decision, KafkaSessionMachine, PendingCall, TransitionRecord,
+    TransitionTrace,
 };
 
 /// Deterministic policy owner for exactly one Kafka connection epoch.
 #[must_use]
 pub struct ConnectionMachine {
-    pub(super) state: StateData,
-    pub(super) limits: ConnectionLimits,
-    pub(super) authentication: Option<AuthenticationPolicy>,
+    pub(super) session: KafkaSessionMachine,
     trace: TransitionTrace,
     next_sequence: Option<u64>,
 }
@@ -24,9 +23,7 @@ impl ConnectionMachine {
     /// Creates a dormant machine for a new connection epoch.
     pub fn new(epoch: ConnectionEpoch, limits: ConnectionLimits) -> Self {
         Self {
-            state: StateData::Dormant { epoch },
-            limits,
-            authentication: None,
+            session: KafkaSessionMachine::new(epoch, limits),
             trace: TransitionTrace::new(limits.max_trace_records()),
             next_sequence: Some(0),
         }
@@ -39,9 +36,7 @@ impl ConnectionMachine {
         authentication: AuthenticationPolicy,
     ) -> Self {
         Self {
-            state: StateData::Dormant { epoch },
-            limits,
-            authentication: Some(authentication),
+            session: KafkaSessionMachine::new_authenticated(epoch, limits, authentication),
             trace: TransitionTrace::new(limits.max_trace_records()),
             next_sequence: Some(0),
         }
@@ -56,15 +51,15 @@ impl ConnectionMachine {
         let Some(sequence) = self.next_sequence else {
             return Err(ConnectionMachineError::TransitionSequenceExhausted);
         };
-        let from = self.state.phase();
+        let from = self.session.phase();
         let input_kind = input.kind();
         let decision = self.dispatch(input)?;
         let record = TransitionRecord::new(
             sequence,
-            self.state.epoch(),
+            self.session.epoch(),
             from,
             input_kind,
-            self.state.phase(),
+            self.session.phase(),
             decision.disposition,
             decision.effects.len(),
         );
@@ -75,12 +70,12 @@ impl ConnectionMachine {
 
     /// Returns an immutable snapshot of current lifecycle state.
     pub fn state(&self) -> ConnectionState {
-        self.state.snapshot()
+        self.session.state()
     }
 
     /// Returns the connection epoch permanently owned by this machine.
     pub const fn epoch(&self) -> ConnectionEpoch {
-        self.state.epoch()
+        self.session.epoch()
     }
 
     /// Returns the number of FIFO response obligations currently pending.
@@ -107,14 +102,12 @@ impl ConnectionMachine {
 
     /// Returns the selected API version for the active epoch, if negotiated.
     pub fn negotiated_version(&self, api_key: ApiKey) -> Option<ApiVersion> {
-        self.active()
-            .and_then(|connection| connection.negotiated_version(api_key))
+        self.session.negotiated_version(api_key)
     }
 
     /// Returns the usable API version overlap for the active epoch, if negotiated.
     pub fn negotiated_api(&self, api_key: ApiKey) -> Option<crate::NegotiatedApi> {
-        self.active()
-            .and_then(|connection| connection.negotiated_api(api_key))
+        self.session.negotiated_api(api_key)
     }
 
     /// Iterates retained transition records from oldest to newest.
@@ -147,14 +140,19 @@ impl ConnectionMachine {
                 transport_id,
                 effect_id,
                 capabilities,
-            } => Ok(self.api_versions_negotiated(epoch, transport_id, effect_id, capabilities)),
+            } => Ok(self.session.api_versions_negotiated(
+                epoch,
+                transport_id,
+                effect_id,
+                capabilities,
+            )),
             ConnectionInput::ApiVersionsNegotiatedWithAuthentication {
                 epoch,
                 transport_id,
                 effect_id,
                 capabilities,
                 authentication,
-            } => Ok(self.begin_authentication(
+            } => Ok(self.session.begin_authentication(
                 epoch,
                 transport_id,
                 effect_id,
@@ -166,8 +164,12 @@ impl ConnectionMachine {
                 transport_id,
                 effect_id,
                 failure,
-            } => Ok(self.api_versions_failed(epoch, transport_id, effect_id, failure)),
-            ConnectionInput::Authentication { input } => Ok(self.authentication_input(input)),
+            } => Ok(self
+                .session
+                .api_versions_failed(epoch, transport_id, effect_id, failure)),
+            ConnectionInput::Authentication { input } => {
+                Ok(self.session.authentication_input(input))
+            }
             ConnectionInput::Submit {
                 call_id,
                 write_effect,
@@ -217,10 +219,7 @@ impl ConnectionMachine {
     }
 
     pub(super) fn active(&self) -> Option<&super::ActiveConnection> {
-        match &self.state {
-            StateData::Active { connection, .. } => Some(connection),
-            _ => None,
-        }
+        self.session.active()
     }
 }
 

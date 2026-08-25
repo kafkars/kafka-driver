@@ -8,11 +8,11 @@ use crate::{
 };
 
 use super::{
-    ActiveConnection, ActiveMode, CloseReason, ConnectionEffect, ConnectionMachine, Decision,
+    ActiveConnection, ActiveMode, CloseReason, ConnectionEffect, Decision, KafkaSessionMachine,
     StateData,
 };
 
-impl ConnectionMachine {
+impl KafkaSessionMachine {
     pub(super) fn begin_authentication(
         &mut self,
         epoch: crate::ConnectionEpoch,

@@ -15,6 +15,7 @@ mod negotiation;
 mod opening;
 mod pending;
 mod response;
+mod session;
 mod state;
 mod state_data;
 mod trace;
@@ -44,6 +45,8 @@ mod response_test;
 #[cfg(test)]
 mod scenario_support_test;
 #[cfg(test)]
+mod session_test;
+#[cfg(test)]
 mod shutdown_test;
 #[cfg(test)]
 mod unsent_abort_test;
@@ -66,6 +69,7 @@ pub use transition::ConnectionTransition;
 use active::{ActiveConnection, ActiveMode};
 use correlation::CorrelationAllocator;
 use pending::PendingQueue;
+use session::KafkaSessionMachine;
 use state_data::StateData;
 use trace::TransitionTrace;
 use transition::Decision;

@@ -13,17 +13,17 @@ impl ConnectionMachine {
         transport_id: TransportId,
         failure: TransportFailure,
     ) -> Decision {
-        if epoch != self.state.epoch() {
+        if epoch != self.session.state.epoch() {
             return Decision::stale();
         }
-        match &self.state {
+        match &self.session.state {
             StateData::Opening {
                 transport_id: expected,
                 deadline_timer,
                 ..
             } if *expected == transport_id => {
                 let deadline_timer = *deadline_timer;
-                self.state = StateData::Closed {
+                self.session.state = StateData::Closed {
                     epoch,
                     reason: CloseReason::TransportLost(failure),
                 };
@@ -37,7 +37,7 @@ impl ConnectionMachine {
                 ..
             } if *expected == transport_id => {
                 let deadline_timer = *deadline_timer;
-                self.state = StateData::Closed {
+                self.session.state = StateData::Closed {
                     epoch,
                     reason: CloseReason::TransportLost(failure),
                 };
@@ -51,7 +51,7 @@ impl ConnectionMachine {
                 ..
             } if *expected == transport_id => {
                 let deadline_timer = authentication.deadline_timer();
-                self.state = StateData::Closed {
+                self.session.state = StateData::Closed {
                     epoch,
                     reason: CloseReason::TransportLost(failure),
                 };
@@ -74,7 +74,7 @@ impl ConnectionMachine {
                 ..
             } if *expected == transport_id => {
                 let reason = *reason;
-                self.state = StateData::Closed { epoch, reason };
+                self.session.state = StateData::Closed { epoch, reason };
                 Decision::applied(Vec::new())
             }
             StateData::Dormant { .. }

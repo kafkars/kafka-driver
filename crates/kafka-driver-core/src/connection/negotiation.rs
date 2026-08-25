@@ -6,7 +6,7 @@ use crate::{
 };
 
 use super::{
-    ActiveConnection, ActiveMode, CloseReason, ConnectionEffect, ConnectionMachine, Decision,
+    ActiveConnection, ActiveMode, CloseReason, ConnectionEffect, Decision, KafkaSessionMachine,
     NegotiationFailure, StateData,
 };
 
@@ -38,7 +38,7 @@ impl NegotiationAttempt {
     }
 }
 
-impl ConnectionMachine {
+impl KafkaSessionMachine {
     pub(super) fn begin_negotiation(
         &mut self,
         epoch: ConnectionEpoch,
