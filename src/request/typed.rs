@@ -2,17 +2,16 @@
 
 use std::time::Instant;
 
-use bytes::BytesMut;
 use kafka_driver_core::{CallId, CorrelationId, OutcomeStamp};
-use kafka_wire::{OutboundFrameLimits, RequestResponsePair, encode_request};
-use kafka_wire_core::{ApiVersion, Bytes, StrBytes};
+use kafka_wire::{OutboundFrameLimits, RequestResponsePair};
+use kafka_wire_core::{ApiVersion, Bytes, DecodeLimits, StrBytes};
 
 use crate::{
     RequestError, TrafficClass,
     api::RouteFact,
     observation::{CallOutcome, CallTimeline},
-    request::{RequestCompletion, RequestPolicy},
-    response::{ResponseAdmissionError, ResponseRegistry},
+    request::{BorneraRequestPreparation, RequestCompletion, RequestPolicy},
+    response::ResponseRegistry,
 };
 
 use super::{ErasedRequest, footprint::retained_bytes};
@@ -21,18 +20,18 @@ pub(super) struct TypedRequest<R>
 where
     R: RequestResponsePair,
 {
-    call_id: CallId,
+    pub(super) call_id: CallId,
     traffic_class: TrafficClass,
-    request: R,
+    pub(super) request: R,
     policy: RequestPolicy,
     selected_version: Option<ApiVersion>,
     retained_bytes: usize,
-    completion: RequestCompletion<R::Response>,
-    lifecycle: RequestLifecycle,
+    pub(super) completion: RequestCompletion<R::Response>,
+    pub(super) lifecycle: RequestLifecycle,
 }
 
 pub(super) struct RequestLifecycle {
-    timeline: Option<CallTimeline>,
+    pub(super) timeline: Option<CallTimeline>,
 }
 
 impl RequestLifecycle {
@@ -140,54 +139,24 @@ where
         outbound_limits: OutboundFrameLimits,
         responses: &mut ResponseRegistry,
     ) -> Result<Bytes, RequestError> {
-        let Self {
-            call_id,
-            request,
-            completion,
-            lifecycle,
-            ..
-        } = *self;
-        let mut timeline = lifecycle.timeline;
-        let header_version =
-            match responses.validate_admission::<R>(call_id, correlation_id, version) {
-                Ok(header_version) => header_version,
-                Err(source) => {
-                    return fail(
-                        completion,
-                        timeline,
-                        admission_failure(source),
-                        Some(version),
-                    );
-                }
-            };
-        let mut frame = BytesMut::new();
-        if let Err(source) = encode_request(
-            &mut frame,
-            correlation_id.get(),
-            client_id.cloned(),
-            &request,
-            version,
-            outbound_limits,
-        ) {
-            return fail(
-                completion,
-                timeline,
-                RequestError::Encode(source),
-                Some(version),
-            );
-        }
-        if let Some(timeline) = &mut timeline {
-            timeline.mark_prepared(Instant::now());
-        }
-        responses.insert_validated::<R>(
-            call_id,
+        super::typed_legacy::prepare(
+            *self,
             correlation_id,
             version,
-            header_version,
-            completion,
-            timeline,
-        );
-        Ok(frame.freeze())
+            client_id,
+            outbound_limits,
+            responses,
+        )
+    }
+
+    fn prepare_bornera(
+        self: Box<Self>,
+        version: ApiVersion,
+        client_id: Option<&StrBytes>,
+        outbound_limits: OutboundFrameLimits,
+        decode_limits: DecodeLimits,
+    ) -> Result<BorneraRequestPreparation, RequestError> {
+        super::typed_bornera::prepare(*self, version, client_id, outbound_limits, decode_limits)
     }
 
     fn fail(self: Box<Self>, failure: RequestError) {
@@ -211,28 +180,15 @@ where
     }
 }
 
-fn fail<T>(
+pub(super) fn settle_failure<T, U>(
     completion: RequestCompletion<T>,
     timeline: Option<CallTimeline>,
     failure: RequestError,
     selected_version: Option<ApiVersion>,
-) -> Result<Bytes, RequestError> {
+) -> Result<U, RequestError> {
     let delivered = completion.complete_unobserved(Err(failure.clone()), selected_version);
     if let Some(timeline) = timeline {
         timeline.finish(CallOutcome::Failed(&failure), delivered);
     }
     Err(failure)
-}
-
-const fn admission_failure(source: ResponseAdmissionError) -> RequestError {
-    match source {
-        ResponseAdmissionError::CapacityReached { limit } => {
-            RequestError::ResponseCapacityReached { limit }
-        }
-        ResponseAdmissionError::UnsupportedVersion { message, version } => {
-            RequestError::UnsupportedVersion { message, version }
-        }
-        ResponseAdmissionError::CallInUse { .. }
-        | ResponseAdmissionError::CorrelationInUse { .. } => RequestError::IdentityConflict,
-    }
 }

@@ -1,5 +1,10 @@
 //! Typed response ownership between frame decoding and public completion.
 
+#[allow(
+    dead_code,
+    reason = "private completion ownership is activated by the first Bornera broker slice"
+)]
+mod context_owner;
 mod delivery;
 mod diagnostic;
 mod envelope;
@@ -7,6 +12,11 @@ mod error;
 mod local_rejection;
 mod observation;
 mod outcome;
+#[allow(
+    dead_code,
+    reason = "private completion ownership is activated by the first Bornera broker slice"
+)]
+mod public_context;
 mod registry;
 mod slot;
 
@@ -15,6 +25,10 @@ mod testing;
 
 #[cfg(test)]
 mod admission_test;
+#[cfg(test)]
+mod context_owner_test;
+#[cfg(test)]
+mod context_test;
 #[cfg(test)]
 mod delivery_test;
 #[cfg(test)]
@@ -34,4 +48,7 @@ pub(crate) use error::{
 pub(crate) use outcome::FailedResponses;
 pub(crate) use outcome::{CompletionDisposition, ResponseDispatch, ResponseFailure};
 pub use outcome::{RequestError, ResponseCloseReason};
+pub(crate) use public_context::{
+    PublicResponseCompletionError, PublicResponseContext, PublicResponseFailure,
+};
 pub(crate) use registry::ResponseRegistry;

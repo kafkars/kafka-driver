@@ -4,9 +4,11 @@ use std::time::Instant;
 
 use kafka_driver_core::{CallId, CorrelationId, Moment, NegotiatedApi, OutcomeStamp};
 use kafka_wire::OutboundFrameLimits;
-use kafka_wire_core::{ApiKey, ApiVersion, Bytes, StrBytes};
+use kafka_wire_core::{ApiKey, ApiVersion, Bytes, DecodeLimits, StrBytes};
 
 use crate::{RequestError, TrafficClass, api::RouteFact, response::ResponseRegistry};
+
+use super::BorneraRequestPreparation;
 
 /// One generated request whose response type remains owned behind its completion.
 pub(crate) trait ErasedRequest: Send {
@@ -49,6 +51,19 @@ pub(crate) trait ErasedRequest: Send {
         outbound_limits: OutboundFrameLimits,
         responses: &mut ResponseRegistry,
     ) -> Result<Bytes, RequestError>;
+
+    /// Measures and transfers typed completion into Bornera preparation ownership.
+    #[allow(
+        dead_code,
+        reason = "private preparation is activated by the first Bornera broker slice"
+    )]
+    fn prepare_bornera(
+        self: Box<Self>,
+        version: ApiVersion,
+        client_id: Option<&StrBytes>,
+        outbound_limits: OutboundFrameLimits,
+        decode_limits: DecodeLimits,
+    ) -> Result<BorneraRequestPreparation, RequestError>;
 
     /// Settles a request that cannot reach typed FIFO response ownership.
     fn fail(self: Box<Self>, failure: RequestError);

@@ -9,7 +9,7 @@ use super::{RequestCompletion, typed::TypedRequest};
 ///
 /// This is intentionally explicit rather than pretending allocator internals
 /// are portable or observable.
-pub(super) const ALLOCATION_ALLOWANCE_BYTES: usize = 4 * size_of::<usize>();
+pub(crate) const ALLOCATION_ALLOWANCE_BYTES: usize = 4 * size_of::<usize>();
 
 /// The erased request box and the shared completion state.
 pub(super) const BASE_OWNER_ALLOCATIONS: usize = 2;
