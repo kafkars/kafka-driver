@@ -2,19 +2,16 @@
 
 use bornera::{ConnectionEvent, EngineOutcome, RegisteredTransport};
 use bornera_core::{CloseReason as BorneraCloseReason, OperationOutcome};
-use kafka_driver_core::{
-    CallFailure, Delivery, KafkaSessionInput, KafkaSessionProtocolFailure, Moment,
-    NegotiationFailure,
-};
+use kafka_driver_core::{AuthenticationFailure, Delivery, Moment, NegotiationFailure};
 
 use crate::{RequestError, reactor::causality::CausalSequence};
 
 use super::{
-    failure_translation::{negotiation, operation, recovery, sent},
+    failure_translation::{negotiation, recovery},
     operation_owner::DirectOperationContext,
     owner::{DirectOwner, message},
 };
-use crate::reactor::bornera::{OperationContextKey, driver_delivery};
+use crate::reactor::bornera::OperationContextKey;
 
 impl<T: RegisteredTransport> DirectOwner<T> {
     pub(super) fn settle_event(
@@ -94,67 +91,19 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             {
                 self.negotiation_failed(negotiation(failure), now)?;
             }
-            (DirectOperationContext::Public(context), OperationOutcome::Reply(frame)) => {
-                let observed = causality.outcome().map_err(message)?;
-                if context.complete(frame.into_bytes(), observed).is_err() && session_live {
-                    self.apply_session(
-                        KafkaSessionInput::ProtocolFailed {
-                            failure: KafkaSessionProtocolFailure::Malformed,
-                        },
-                        now,
-                    )?;
-                }
-            }
             (
-                DirectOperationContext::Public(context),
-                OperationOutcome::Failed { failure, delivery },
-            ) => {
-                let observed = causality.outcome().map_err(message)?;
-                let delivery = driver_delivery(delivery);
-                let translated = match failure {
-                    bornera_core::OperationFailure::ConnectionClosed(reason) => {
-                        let effective = self.last_close_reason.or_else(|| {
-                            self.set
-                                .connection_snapshot(self.connection)
-                                .ok()
-                                .and_then(|snapshot| snapshot.transport_diagnostic)
-                                .map(|diagnostic| {
-                                    super::failure_translation::connection_close_reason(
-                                        reason,
-                                        Some(diagnostic),
-                                    )
-                                })
-                        });
-                        effective.map_or_else(
-                            || {
-                                operation(
-                                    bornera_core::OperationFailure::ConnectionClosed(reason),
-                                    delivery,
-                                )
-                            },
-                            |reason| recovery(reason, delivery),
-                        )
-                    }
-                    failure => operation(failure, delivery),
-                };
-                let _ = context.fail_observed(translated, observed);
-            }
-            (DirectOperationContext::Public(context), OperationOutcome::Cancelled { delivery }) => {
-                let observed = causality.outcome().map_err(message)?;
-                let _ = context.fail_observed(
-                    sent(CallFailure::LocallyRejected, driver_delivery(delivery)),
-                    observed,
-                );
-            }
+                DirectOperationContext::Authentication(Some(exchange)),
+                OperationOutcome::Reply(frame),
+            ) if session_live => self.settle_authentication_reply(exchange, frame, now)?,
             (
-                DirectOperationContext::Public(context),
-                OperationOutcome::WriteComplete { delivery },
-            ) => {
-                let observed = causality.outcome().map_err(message)?;
-                let _ = context.fail_observed(
-                    sent(CallFailure::LocallyRejected, driver_delivery(delivery)),
-                    observed,
-                );
+                DirectOperationContext::Authentication(exchange),
+                OperationOutcome::Failed { failure, .. },
+            ) if session_live => self.settle_authentication_failure(exchange, failure, now)?,
+            (DirectOperationContext::Authentication(_), _) if session_live => {
+                self.fail_active_authentication(AuthenticationFailure::Malformed, now)?;
+            }
+            (DirectOperationContext::Public(context), outcome) => {
+                self.settle_public_outcome(context, outcome, now, causality, session_live)?;
             }
             (DirectOperationContext::Negotiation(_), _) => {
                 if session_live {

@@ -10,7 +10,9 @@ use kafka_driver_core::{CallFailure, Delivery, KafkaSessionMachine, Moment};
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::DecodeLimits;
 
-use crate::{RequestError, config::ClientId, request::ErasedRequest};
+use crate::{
+    RequestError, authentication::AuthenticationSession, config::ClientId, request::ErasedRequest,
+};
 
 use super::{operation_owner::DirectOperationContext, pending::PendingRequests};
 use crate::reactor::bornera::{KafkaFrame, KafkaReplyClassifier, OperationContexts};
@@ -25,6 +27,8 @@ pub(in crate::reactor) struct DirectOwner<T: RegisteredTransport> {
     pub(super) set: DirectSet<T>,
     pub(super) connection: ConnectionToken,
     pub(super) session: KafkaSessionMachine,
+    pub(super) authentication_session: Option<AuthenticationSession>,
+    pub(super) session_deadline: Option<Moment>,
     pub(super) contexts: OperationContexts<DirectOperationContext>,
     pub(super) pending: PendingRequests,
     pub(super) client_id: Option<ClientId>,
@@ -32,6 +36,7 @@ pub(in crate::reactor) struct DirectOwner<T: RegisteredTransport> {
     pub(super) decode_limits: DecodeLimits,
     pub(super) negotiation_limits: crate::negotiation::NegotiationLimits,
     pub(super) negotiation_timeout: Duration,
+    pub(super) authentication_timeout: Duration,
     pub(super) response_capacity: usize,
     pub(super) write_frame_capacity: usize,
     pub(super) write_byte_capacity: usize,
@@ -80,7 +85,11 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             Next::WakeOr(deadline) => Some(Moment::from_nanos(deadline.moment().as_nanos())),
             Next::Wake | Next::Stop => None,
         };
-        engine.into_iter().chain(self.pending.next_deadline()).min()
+        engine
+            .into_iter()
+            .chain(self.session_deadline)
+            .chain(self.pending.next_deadline())
+            .min()
     }
 
     pub(in crate::reactor) fn has_local_work(&self) -> bool {

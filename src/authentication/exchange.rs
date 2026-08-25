@@ -37,12 +37,38 @@ impl AuthenticateExchange {
     ) -> Result<(Self, Bytes), AuthenticationExchangeError> {
         let mut request = SaslAuthenticateRequest::default();
         request.auth_bytes = Bytes::copy_from_slice(auth_bytes);
+        Self::start_prepared(
+            effect_id,
+            round,
+            correlation_id,
+            version,
+            &request,
+            client_id,
+            outbound_limits,
+            decode_limits,
+        )
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the framing boundary retains five protocol identities beside a prepared request and encode/decode policy"
+    )]
+    pub(crate) fn start_prepared(
+        effect_id: EffectId,
+        round: AuthenticationRound,
+        correlation_id: CorrelationId,
+        version: ApiVersion,
+        request: &SaslAuthenticateRequest,
+        client_id: Option<&StrBytes>,
+        outbound_limits: OutboundFrameLimits,
+        decode_limits: DecodeLimits,
+    ) -> Result<(Self, Bytes), AuthenticationExchangeError> {
         let mut frame = BytesMut::new();
         encode_request(
             &mut frame,
             correlation_id.get(),
             client_id.cloned(),
-            &request,
+            request,
             version,
             outbound_limits,
         )?;

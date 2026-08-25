@@ -2,7 +2,7 @@
 
 use std::net::SocketAddr;
 
-use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
+use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet, SaslMechanism};
 
 #[cfg(feature = "tls-rustls")]
 use super::{TlsClientConfig, TlsClientPolicy, TlsConnectionConfig};
@@ -66,21 +66,28 @@ impl BrokerConfig {
             sasl,
             client_id,
         } = self;
-        match (addresses, security, sasl) {
-            (BrokerAddresses::Direct(address), BrokerSecurity::Plaintext, None) => {
-                DirectBrokerSelection::Direct(DirectBrokerConfig::Plaintext { address, client_id })
+        let direct_sasl = sasl
+            .as_ref()
+            .is_none_or(|config| config.mechanism() == SaslMechanism::Plain);
+        match (addresses, security) {
+            (BrokerAddresses::Direct(address), BrokerSecurity::Plaintext) if direct_sasl => {
+                DirectBrokerSelection::Direct(DirectBrokerConfig::Plaintext {
+                    address,
+                    sasl,
+                    client_id,
+                })
             }
             #[cfg(feature = "tls-rustls")]
             (
                 BrokerAddresses::Direct(address),
                 BrokerSecurity::Rustls(TlsConnectionConfig::Configured(tls)),
-                None,
-            ) => DirectBrokerSelection::Direct(DirectBrokerConfig::Rustls {
+            ) if direct_sasl => DirectBrokerSelection::Direct(DirectBrokerConfig::Rustls {
                 address,
                 tls,
+                sasl,
                 client_id,
             }),
-            (addresses, security, sasl) => DirectBrokerSelection::Legacy(Self {
+            (addresses, security) => DirectBrokerSelection::Legacy(Self {
                 addresses,
                 security,
                 sasl,
@@ -100,16 +107,18 @@ impl BrokerConfig {
     }
 }
 
-/// One direct numeric target without Kafka SASL supported by the Bornera backend.
+/// One direct numeric target supported by the Bornera backend.
 pub(crate) enum DirectBrokerConfig {
     Plaintext {
         address: SocketAddr,
+        sasl: Option<SaslConfig>,
         client_id: Option<ClientId>,
     },
     #[cfg(feature = "tls-rustls")]
     Rustls {
         address: SocketAddr,
         tls: TlsClientConfig,
+        sasl: Option<SaslConfig>,
         client_id: Option<ClientId>,
     },
 }

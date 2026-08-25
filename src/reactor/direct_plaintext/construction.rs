@@ -8,14 +8,18 @@ use bornera::{
 };
 use bornera_core::{ConnectionEpoch, ConnectionId, EndpointId, LaneId};
 use calandria::{Deadline, ResourceOwnerId, RetainedBytes, TimerOwnerId, Turn};
-use kafka_driver_core::{KafkaSessionLimits, KafkaSessionMachine, Moment};
+use kafka_driver_core::{
+    AuthenticationPolicy, KafkaSessionLimits, KafkaSessionMachine, Moment, SaslMechanism,
+};
+use kafka_wire::{KafkaRequest, SaslAuthenticateRequest, SaslHandshakeRequest};
 use kafka_wire_core::DecodeLimits;
 
 #[cfg(feature = "tls-rustls")]
 use bornera_rustls::RustlsConnector;
 
 use crate::{
-    config::{ClientId, DriverLimits},
+    authentication::AuthenticationSession,
+    config::{ClientId, DriverLimits, SaslConfig},
     reactor::{
         bornera::{KafkaReplyClassifier, OperationContexts},
         broker::BrokerLimits,
@@ -39,10 +43,12 @@ impl DirectOwner<TcpTransport> {
     pub(in crate::reactor) fn new(
         driver: &DriverLimits,
         address: SocketAddr,
+        sasl: Option<SaslConfig>,
         client_id: Option<ClientId>,
         now: Moment,
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
+        let session = session_ownership(sasl, broker)?;
         let (decoder, slot) = slot_limits(
             driver,
             broker,
@@ -58,7 +64,7 @@ impl DirectOwner<TcpTransport> {
                 KafkaReplyClassifier,
             )
             .map_err(message)?;
-        finish(driver, broker, client_id, set, connection)
+        finish(driver, broker, client_id, session, set, connection)
     }
 }
 
@@ -68,10 +74,12 @@ impl DirectOwner<DirectRustlsTransport> {
         driver: &DriverLimits,
         address: SocketAddr,
         tls: crate::config::TlsClientConfig,
+        sasl: Option<SaslConfig>,
         client_id: Option<ClientId>,
         now: Moment,
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
+        let session = session_ownership(sasl, broker)?;
         let transport = rustls_transport_limits()?;
         let decoder_gate = DecoderGate::new();
         let (decoder, slot) = slot_limits(
@@ -94,7 +102,7 @@ impl DirectOwner<DirectRustlsTransport> {
                 connector,
             )
             .map_err(message)?;
-        finish(driver, broker, client_id, set, connection)
+        finish(driver, broker, client_id, session, set, connection)
     }
 }
 
@@ -133,6 +141,7 @@ fn finish<T: RegisteredTransport>(
     driver: &DriverLimits,
     broker: BrokerLimits,
     client_id: Option<ClientId>,
+    session: SessionOwnership,
     set: DirectSet<T>,
     connection: ConnectionToken,
 ) -> io::Result<DirectOwner<T>> {
@@ -141,7 +150,9 @@ fn finish<T: RegisteredTransport>(
     Ok(DirectOwner {
         set,
         connection,
-        session: KafkaSessionMachine::new(KafkaSessionLimits::default()),
+        session: session.machine,
+        authentication_session: session.authentication,
+        session_deadline: None,
         contexts: OperationContexts::<DirectOperationContext>::new(
             broker.response_capacity(),
             retained,
@@ -152,6 +163,7 @@ fn finish<T: RegisteredTransport>(
         decode_limits: DecodeLimits::default(),
         negotiation_limits: broker.negotiation(),
         negotiation_timeout: broker.negotiation_timeout(),
+        authentication_timeout: broker.authentication_timeout(),
         response_capacity: broker.response_capacity().get(),
         write_frame_capacity: broker.transport().write().max_queued_frames(),
         write_byte_capacity: broker.transport().write().max_buffered_bytes(),
@@ -164,5 +176,42 @@ fn finish<T: RegisteredTransport>(
         admission_open: false,
         terminal: false,
         pending_recovery: None,
+    })
+}
+
+struct SessionOwnership {
+    machine: KafkaSessionMachine,
+    authentication: Option<AuthenticationSession>,
+}
+
+fn session_ownership(
+    sasl: Option<SaslConfig>,
+    broker: BrokerLimits,
+) -> io::Result<SessionOwnership> {
+    let Some(sasl) = sasl else {
+        return Ok(SessionOwnership {
+            machine: KafkaSessionMachine::new(KafkaSessionLimits::default()),
+            authentication: None,
+        });
+    };
+    if sasl.mechanism() != SaslMechanism::Plain {
+        return Err(io::Error::other(
+            "direct Bornera authentication currently supports SASL PLAIN only",
+        ));
+    }
+    let policy = AuthenticationPolicy::new(
+        sasl.mechanism(),
+        SaslHandshakeRequest::API_KEY,
+        SaslAuthenticateRequest::API_KEY,
+        broker.authentication(),
+    );
+    let authentication = AuthenticationSession::new(sasl).map_err(|error| {
+        io::Error::other(format!(
+            "direct authentication session could not start: {error:?}"
+        ))
+    })?;
+    Ok(SessionOwnership {
+        machine: KafkaSessionMachine::new_authenticated(KafkaSessionLimits::default(), policy),
+        authentication: Some(authentication),
     })
 }

@@ -1,11 +1,10 @@
 //! `ApiVersions` session operation and admission opening on the direct Bornera connection.
 
 use bornera::{ConnectionCommitError, EngineCommitError, OutboundFrame, RegisteredTransport};
-use bornera_core::{CloseReason, OperationOptions};
+use bornera_core::OperationOptions;
 use calandria::{Deadline, RetainedBytes};
 use kafka_driver_core::{
-    EffectId, KafkaSessionCloseReason, KafkaSessionDeadline, KafkaSessionEffect, KafkaSessionInput,
-    Moment, NegotiationFailure,
+    EffectId, KafkaSessionDeadline, KafkaSessionInput, Moment, NegotiationFailure,
 };
 use kafka_wire::{API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, measure_request};
 
@@ -19,7 +18,6 @@ use crate::{
 };
 
 const NEGOTIATION_EFFECT: EffectId = EffectId::from_raw(1);
-const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 impl<T: RegisteredTransport> DirectOwner<T> {
     pub(super) fn transport_opened(&mut self, now: Moment) -> std::io::Result<()> {
@@ -45,6 +43,16 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                 negotiate(response, self.negotiation_limits).map_err(|e| e.failure())
             });
         match capabilities {
+            Ok(capabilities) if self.authentication_session.is_some() => {
+                let deadline = add(now, self.authentication_timeout)?;
+                self.apply_session(
+                    KafkaSessionInput::ApiVersionsSucceededWithAuthentication {
+                        capabilities,
+                        deadline: KafkaSessionDeadline::new(now, deadline),
+                    },
+                    now,
+                )
+            }
             Ok(capabilities) => self.apply_session(
                 KafkaSessionInput::ApiVersionsSucceeded { capabilities },
                 now,
@@ -63,51 +71,11 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         self.apply_session(KafkaSessionInput::ApiVersionsFailed { failure }, now)
     }
 
-    pub(super) fn apply_session(
+    pub(super) fn start_negotiation(
         &mut self,
-        input: KafkaSessionInput,
         now: Moment,
+        deadline: Moment,
     ) -> std::io::Result<()> {
-        let effects = self.session.apply(input).into_effects();
-        for effect in effects {
-            match effect {
-                KafkaSessionEffect::StartApiVersions { deadline } => {
-                    self.start_negotiation(now, deadline)?;
-                }
-                KafkaSessionEffect::SessionReady => {
-                    self.set.open_admission(self.connection).map_err(message)?;
-                    self.mark_runnable();
-                }
-                KafkaSessionEffect::BeginDrain => {
-                    self.admission_open = false;
-                    let deadline = add(now, DRAIN_TIMEOUT)?;
-                    self.set
-                        .begin_drain(self.connection, Deadline::at(calandria_moment(deadline)))
-                        .map_err(message)?;
-                    self.mark_runnable();
-                }
-                KafkaSessionEffect::CloseSession { reason } => {
-                    self.admission_open = false;
-                    self.record_session_close(reason);
-                    self.set
-                        .finalize(self.connection, close_reason(reason))
-                        .map_err(message)?;
-                    self.mark_runnable();
-                }
-                KafkaSessionEffect::CancelDeadline
-                | KafkaSessionEffect::RescheduleDeadline { .. } => {}
-                KafkaSessionEffect::StartAuthenticationHandshake { .. }
-                | KafkaSessionEffect::StartAuthenticationExchange { .. } => {
-                    return Err(std::io::Error::other(
-                        "plaintext direct session unexpectedly requested authentication",
-                    ));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn start_negotiation(&mut self, now: Moment, deadline: Moment) -> std::io::Result<()> {
         let version = API_VERSIONS_API_DESCRIPTOR.supported_versions.min();
         let request = ApiVersionsRequest::default();
         let client_id = self.client_id.as_ref().map(crate::config::ClientId::wire);
@@ -207,16 +175,5 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             );
         }
         Ok(())
-    }
-}
-
-const fn close_reason(reason: KafkaSessionCloseReason) -> CloseReason {
-    match reason {
-        KafkaSessionCloseReason::Drained => CloseReason::Drained,
-        KafkaSessionCloseReason::ProtocolFailed(_) => CloseReason::MalformedReply,
-        KafkaSessionCloseReason::Requested
-        | KafkaSessionCloseReason::NegotiationFailed(_)
-        | KafkaSessionCloseReason::AuthenticationFailed(_)
-        | KafkaSessionCloseReason::TransportClosed => CloseReason::Requested,
     }
 }

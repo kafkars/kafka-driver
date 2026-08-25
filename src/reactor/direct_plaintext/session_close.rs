@@ -16,6 +16,8 @@ impl<T: RegisteredTransport> DirectOwner<T> {
     }
 
     pub(super) fn session_closed(&mut self, now: Moment) -> std::io::Result<()> {
+        self.authentication_session = None;
+        self.session_deadline = None;
         self.apply_session(KafkaSessionInput::Closed, now)?;
         if let KafkaSessionState::Closed { reason } = self.session.state()
             && reason != KafkaSessionCloseReason::TransportClosed

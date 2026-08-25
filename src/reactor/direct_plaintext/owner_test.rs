@@ -30,7 +30,7 @@ fn loopback_session_round_trip_releases_every_semantic_context() {
         .unwrap_or_else(|error| panic!("read private direct address: {error}"));
     let server = thread::spawn(move || serve_one(&listener));
     let now = Moment::from_nanos(1);
-    let owner = DirectPlaintextOwner::new(&DriverLimits::default(), address, None, now)
+    let owner = DirectPlaintextOwner::new(&DriverLimits::default(), address, None, None, now)
         .unwrap_or_else(|error| panic!("construct direct owner: {error}"));
     let mut backend = ReactorBackend::Direct(Box::new(DirectBackend::Plaintext(Box::new(owner))));
     assert_eq!(backend.selector_count(), 1);
@@ -106,7 +106,7 @@ fn drain_rejects_pre_admission_request_as_not_sent_immediately() {
         .local_addr()
         .unwrap_or_else(|error| panic!("read pending-drain address: {error}"));
     let now = Moment::from_nanos(1);
-    let mut owner = DirectPlaintextOwner::new(&DriverLimits::default(), address, None, now)
+    let mut owner = DirectPlaintextOwner::new(&DriverLimits::default(), address, None, None, now)
         .unwrap_or_else(|error| panic!("construct pending-drain owner: {error}"));
     let mut causality = CausalSequence::new();
     let (call, request) = erased_request(

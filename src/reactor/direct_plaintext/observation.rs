@@ -51,6 +51,14 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         match transport {
             TransportState::Closing => {
                 return match session {
+                    KafkaSessionState::Closing {
+                        reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
+                    }
+                    | KafkaSessionState::Closed {
+                        reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
+                    } => Some(BrokerState::Closed {
+                        reason: BrokerCloseReason::AuthenticationFailed(failure),
+                    }),
                     KafkaSessionState::Draining { .. }
                     | KafkaSessionState::Closing {
                         reason:
@@ -65,6 +73,14 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             }
             TransportState::Closed => {
                 return match session {
+                    KafkaSessionState::Closing {
+                        reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
+                    }
+                    | KafkaSessionState::Closed {
+                        reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
+                    } => Some(BrokerState::Closed {
+                        reason: BrokerCloseReason::AuthenticationFailed(failure),
+                    }),
                     KafkaSessionState::Closed {
                         reason:
                             KafkaSessionCloseReason::Requested | KafkaSessionCloseReason::Drained,
@@ -102,6 +118,14 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                 reason: KafkaSessionCloseReason::Requested | KafkaSessionCloseReason::Drained,
             } => Some(BrokerState::Closed {
                 reason: BrokerCloseReason::Requested,
+            }),
+            KafkaSessionState::Closing {
+                reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
+            }
+            | KafkaSessionState::Closed {
+                reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
+            } => Some(BrokerState::Closed {
+                reason: BrokerCloseReason::AuthenticationFailed(failure),
             }),
             // A fixed direct slot has no reconnect state capable of honestly
             // representing a generic fatal terminal failure.

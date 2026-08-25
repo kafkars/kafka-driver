@@ -17,6 +17,8 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         report: DirectRecovery,
         causality: &mut CausalSequence,
     ) -> std::io::Result<()> {
+        self.authentication_session = None;
+        self.session_deadline = None;
         let bornera::RecoveryReport {
             epoch,
             reason,

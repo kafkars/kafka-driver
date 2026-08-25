@@ -3,12 +3,12 @@
 use bornera::RegisteredTransport;
 use bornera_core::OperationOptions;
 use calandria::{Deadline, RetainedBytes};
-use kafka_driver_core::{CallFailure, KafkaSessionPhase, Moment};
+use kafka_driver_core::{CallFailure, CloseReason, Delivery, KafkaSessionPhase, Moment};
 
 use crate::{RequestError, request::ErasedRequest};
 
 use super::{
-    failure_translation::{context_reserve, fail_context, not_sent, operation_reserve},
+    failure_translation::{context_reserve, fail_context, not_sent, operation_reserve, recovery},
     operation_owner::DirectOperationContext,
     owner::{DirectOwner, calandria_moment},
 };
@@ -22,7 +22,13 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         causality: &mut CausalSequence,
     ) -> std::io::Result<()> {
         if self.terminal {
-            request.fail(not_sent(CallFailure::Closed));
+            let failure = match self.last_close_reason {
+                Some(reason @ CloseReason::AuthenticationFailed(_)) => {
+                    recovery(reason, Delivery::NotSent)
+                }
+                _ => not_sent(CallFailure::Closed),
+            };
+            request.fail(failure);
             return Ok(());
         }
         if self.session.state().phase() != KafkaSessionPhase::Ready || !self.admission_open {
@@ -144,7 +150,9 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             DirectOperationContext::Public(context) => {
                 encoder.bind_and_encode(correlation, context)
             }
-            DirectOperationContext::Negotiation(_) => Err(RequestError::IdentityConflict),
+            DirectOperationContext::Negotiation(_) | DirectOperationContext::Authentication(_) => {
+                Err(RequestError::IdentityConflict)
+            }
         }) {
             Ok(frame) => frame,
             Err(failure) => {

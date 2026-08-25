@@ -48,6 +48,12 @@ impl Reactor {
         &mut self,
         now: Moment,
     ) -> Result<DeadlineProgress, ReactorError> {
+        if let Some(direct) = self.backend.direct_mut() {
+            let fired = direct
+                .fire_due_session_deadline(now)
+                .map_err(ReactorError::host)?;
+            return Ok(DeadlineProgress::from_work(usize::from(fired), false));
+        }
         let Some(legacy) = self.backend.legacy_mut() else {
             return Ok(DeadlineProgress::idle());
         };

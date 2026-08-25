@@ -13,8 +13,9 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         now: Moment,
         causality: &mut CausalSequence,
     ) -> std::io::Result<bool> {
+        let mut progress = self.fire_due_session_deadline(now)?;
         let expiration = self.pending.expire_due(now, self.submission_budget.get());
-        let mut progress = expiration.settled() != 0;
+        progress |= expiration.settled() != 0;
         let more_due = expiration.more_due();
         progress |= self.settle_pending_recovery(causality)?;
         if self.terminal {

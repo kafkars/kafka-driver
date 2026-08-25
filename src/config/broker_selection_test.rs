@@ -2,6 +2,8 @@
 
 use std::net::SocketAddr;
 
+use kafka_driver_core::SaslMechanism;
+
 use super::{BrokerConfig, DirectBrokerConfig, DirectBrokerSelection, SaslConfig};
 
 #[test]
@@ -14,15 +16,36 @@ fn numeric_plaintext_without_sasl_selects_the_direct_backend() {
         selected,
         DirectBrokerSelection::Direct(DirectBrokerConfig::Plaintext {
             address: selected,
+            sasl: None,
             client_id: None,
         }) if selected == address
     ));
 }
 
 #[test]
-fn numeric_plaintext_with_sasl_stays_on_the_legacy_backend() {
+fn numeric_plaintext_with_plain_selects_the_direct_backend() {
     let sasl = SaslConfig::plain("alice", "secret")
         .unwrap_or_else(|error| panic!("construct test SASL config: {error}"));
+    let address = address();
+
+    let selected = BrokerConfig::plaintext(address)
+        .with_sasl(Some(sasl))
+        .select_direct();
+
+    assert!(matches!(
+        selected,
+        DirectBrokerSelection::Direct(DirectBrokerConfig::Plaintext {
+            address: selected,
+            sasl: Some(sasl),
+            client_id: None,
+        }) if selected == address && sasl.mechanism() == SaslMechanism::Plain
+    ));
+}
+
+#[test]
+fn numeric_plaintext_with_scram_stays_on_the_legacy_backend() {
+    let sasl = SaslConfig::scram_sha_256("alice", "secret")
+        .unwrap_or_else(|error| panic!("construct test SCRAM config: {error}"));
 
     let selected = BrokerConfig::plaintext(address())
         .with_sasl(Some(sasl))
@@ -42,6 +65,7 @@ fn configured_numeric_rustls_without_sasl_selects_the_direct_backend() {
         selected,
         DirectBrokerSelection::Direct(DirectBrokerConfig::Rustls {
             address: selected,
+            sasl: None,
             client_id: None,
             ..
         }) if selected == address
@@ -50,9 +74,31 @@ fn configured_numeric_rustls_without_sasl_selects_the_direct_backend() {
 
 #[cfg(feature = "tls-rustls")]
 #[test]
-fn configured_numeric_rustls_with_sasl_stays_on_the_legacy_backend() {
+fn configured_numeric_rustls_with_plain_selects_the_direct_backend() {
     let sasl = SaslConfig::plain("alice", "secret")
         .unwrap_or_else(|error| panic!("construct test SASL config: {error}"));
+    let address = address();
+
+    let selected = BrokerConfig::rustls(address, tls())
+        .with_sasl(Some(sasl))
+        .select_direct();
+
+    assert!(matches!(
+        selected,
+        DirectBrokerSelection::Direct(DirectBrokerConfig::Rustls {
+            address: selected,
+            sasl: Some(sasl),
+            client_id: None,
+            ..
+        }) if selected == address && sasl.mechanism() == SaslMechanism::Plain
+    ));
+}
+
+#[cfg(feature = "tls-rustls")]
+#[test]
+fn configured_numeric_rustls_with_scram_stays_on_the_legacy_backend() {
+    let sasl = SaslConfig::scram_sha_512("alice", "secret")
+        .unwrap_or_else(|error| panic!("construct test SCRAM config: {error}"));
 
     let selected = BrokerConfig::rustls(address(), tls())
         .with_sasl(Some(sasl))

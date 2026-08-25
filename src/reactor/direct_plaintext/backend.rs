@@ -31,16 +31,23 @@ impl DirectBackend {
         now: Moment,
     ) -> io::Result<Self> {
         match config {
-            DirectBrokerConfig::Plaintext { address, client_id } => Ok(Self::Plaintext(Box::new(
-                DirectOwner::<TcpTransport>::new(limits, address, client_id, now)?,
-            ))),
+            DirectBrokerConfig::Plaintext {
+                address,
+                sasl,
+                client_id,
+            } => Ok(Self::Plaintext(Box::new(DirectOwner::<TcpTransport>::new(
+                limits, address, sasl, client_id, now,
+            )?))),
             #[cfg(feature = "tls-rustls")]
             DirectBrokerConfig::Rustls {
                 address,
                 tls,
+                sasl,
                 client_id,
             } => Ok(Self::Rustls(Box::new(
-                DirectOwner::<DirectRustlsTransport>::new(limits, address, tls, client_id, now)?,
+                DirectOwner::<DirectRustlsTransport>::new(
+                    limits, address, tls, sasl, client_id, now,
+                )?,
             ))),
         }
     }
@@ -107,6 +114,17 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.next_deadline(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.next_deadline(),
+        }
+    }
+
+    pub(in crate::reactor) fn fire_due_session_deadline(
+        &mut self,
+        now: Moment,
+    ) -> io::Result<bool> {
+        match self {
+            Self::Plaintext(owner) => owner.fire_due_session_deadline(now),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(owner) => owner.fire_due_session_deadline(now),
         }
     }
 

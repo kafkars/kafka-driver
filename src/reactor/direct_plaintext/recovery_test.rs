@@ -34,7 +34,7 @@ fn recovery_settles_missing_outcome_and_live_operation_once() {
     let (release, hold) = mpsc::sync_channel(1);
     let server = thread::spawn(move || serve_negotiation(&listener, &hold));
     let now = Moment::from_nanos(1);
-    let mut owner = DirectPlaintextOwner::new(&DriverLimits::default(), address, None, now)
+    let mut owner = DirectPlaintextOwner::new(&DriverLimits::default(), address, None, None, now)
         .unwrap_or_else(|error| panic!("construct recovery owner: {error}"));
     let mut causality = CausalSequence::new();
     drive_until_ready(&mut owner, now, &mut causality);

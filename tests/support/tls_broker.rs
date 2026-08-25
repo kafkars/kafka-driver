@@ -86,6 +86,10 @@ impl TlsBroker {
         TlsClientPolicy::new(Arc::clone(&self.client))
     }
 
+    pub(crate) fn into_server_parts(self) -> (TcpListener, Arc<ServerConfig>) {
+        (self.listener, self.server)
+    }
+
     pub(crate) fn spawn(self) -> (mpsc::Receiver<BrokerStep>, thread::JoinHandle<()>) {
         self.spawn_with(Self::serve)
     }
