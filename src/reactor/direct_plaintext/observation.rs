@@ -1,6 +1,6 @@
 //! Compatibility observation projected from Bornera and the Kafka session owner.
 
-use bornera::{ConnectionReserveError, TransportState};
+use bornera::{ConnectionReserveError, RegisteredTransport, TransportState};
 use bornera_core::{ReserveError, RetainedBytes};
 use kafka_driver_core::{
     BrokerCloseReason, BrokerState, CloseReason, ConnectionEpoch, ConnectionPhase,
@@ -9,9 +9,9 @@ use kafka_driver_core::{
 
 use crate::{SeedSnapshot, WriteQueueSnapshot};
 
-use super::{failure_translation::connection_close_reason, owner::DirectPlaintextOwner};
+use super::{failure_translation::connection_close_reason, owner::DirectOwner};
 
-impl DirectPlaintextOwner {
+impl<T: RegisteredTransport> DirectOwner<T> {
     pub(in crate::reactor) fn seed_snapshot(&self) -> Option<SeedSnapshot> {
         self.live_seed_snapshot().or(self.retired_seed)
     }

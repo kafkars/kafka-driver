@@ -1,17 +1,17 @@
 //! Terminal semantic settlement of every owner transferred by Bornera recovery.
 
-use bornera::{ConnectionEvent, OwnerFailure, TransportDiagnostic};
+use bornera::{ConnectionEvent, OwnerFailure, RegisteredTransport, TransportDiagnostic};
 use kafka_driver_core::{CloseReason, Delivery, KafkaSessionState, Moment, TransportFailure};
 
 use crate::reactor::{bornera::OperationContextKey, causality::CausalSequence};
 
 use super::{
     failure_translation::{connection_close_reason, diagnostic_close_reason, recovery},
-    owner::{DirectPlaintextOwner, DirectRecovery},
+    owner::{DirectOwner, DirectRecovery},
 };
 use crate::reactor::bornera::driver_delivery;
 
-impl DirectPlaintextOwner {
+impl<T: RegisteredTransport> DirectOwner<T> {
     pub(super) fn settle_recovery(
         &mut self,
         report: DirectRecovery,

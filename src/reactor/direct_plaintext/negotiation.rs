@@ -1,6 +1,6 @@
 //! `ApiVersions` session operation and admission opening on the direct Bornera connection.
 
-use bornera::{ConnectionCommitError, EngineCommitError, OutboundFrame};
+use bornera::{ConnectionCommitError, EngineCommitError, OutboundFrame, RegisteredTransport};
 use bornera_core::{CloseReason, OperationOptions};
 use calandria::{Deadline, RetainedBytes};
 use kafka_driver_core::{
@@ -11,7 +11,7 @@ use kafka_wire::{API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, measure_reques
 
 use super::{
     operation_owner::DirectOperationContext,
-    owner::{DirectPlaintextOwner, add, calandria_moment, message},
+    owner::{DirectOwner, add, calandria_moment, message},
 };
 use crate::{
     negotiation::{NegotiationExchange, negotiate},
@@ -21,7 +21,7 @@ use crate::{
 const NEGOTIATION_EFFECT: EffectId = EffectId::from_raw(1);
 const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
-impl DirectPlaintextOwner {
+impl<T: RegisteredTransport> DirectOwner<T> {
     pub(super) fn transport_opened(&mut self, now: Moment) -> std::io::Result<()> {
         let deadline = add(now, self.negotiation_timeout)?;
         self.apply_session(

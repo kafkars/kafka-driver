@@ -1,13 +1,14 @@
 //! Session-machine settlement for owner-requested and engine-observed closure.
 
+use bornera::RegisteredTransport;
 use kafka_driver_core::{
     CallFailure, KafkaSessionCloseReason, KafkaSessionEffect, KafkaSessionInput, KafkaSessionState,
     Moment,
 };
 
-use super::{failure_translation::not_sent, owner::DirectPlaintextOwner};
+use super::{failure_translation::not_sent, owner::DirectOwner};
 
-impl DirectPlaintextOwner {
+impl<T: RegisteredTransport> DirectOwner<T> {
     pub(in crate::reactor) fn begin_session_drain(&mut self, now: Moment) -> std::io::Result<()> {
         self.admission_open = false;
         self.fail_pending(&not_sent(CallFailure::Draining), None)?;

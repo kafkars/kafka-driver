@@ -1,12 +1,13 @@
 //! Fair host turn over Bornera mechanics, publications, and semantic admission.
 
+use bornera::RegisteredTransport;
 use kafka_driver_core::Moment;
 
 use crate::reactor::causality::CausalSequence;
 
-use super::owner::{DirectPlaintextOwner, calandria_moment, message};
+use super::owner::{DirectOwner, calandria_moment, message};
 
-impl DirectPlaintextOwner {
+impl<T: RegisteredTransport> DirectOwner<T> {
     pub(in crate::reactor) fn drive(
         &mut self,
         now: Moment,

@@ -1,6 +1,6 @@
 //! Exact outcome, lifecycle, and fatal-recovery settlement for direct operations.
 
-use bornera::{ConnectionEvent, EngineOutcome};
+use bornera::{ConnectionEvent, EngineOutcome, RegisteredTransport};
 use bornera_core::{CloseReason as BorneraCloseReason, OperationOutcome};
 use kafka_driver_core::{
     CallFailure, Delivery, KafkaSessionInput, KafkaSessionProtocolFailure, Moment,
@@ -12,11 +12,11 @@ use crate::{RequestError, reactor::causality::CausalSequence};
 use super::{
     failure_translation::{negotiation, operation, recovery, sent},
     operation_owner::DirectOperationContext,
-    owner::{DirectPlaintextOwner, message},
+    owner::{DirectOwner, message},
 };
 use crate::reactor::bornera::{OperationContextKey, driver_delivery};
 
-impl DirectPlaintextOwner {
+impl<T: RegisteredTransport> DirectOwner<T> {
     pub(super) fn settle_event(
         &mut self,
         event: ConnectionEvent,

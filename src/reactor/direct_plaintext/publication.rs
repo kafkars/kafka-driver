@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use bornera::{ConnectionCommitError, EngineCommitError};
+use bornera::{ConnectionCommitError, EngineCommitError, RegisteredTransport};
 use kafka_driver_core::CallFailure;
 
 use crate::{RequestError, reactor::bornera::OperationContextKey};
@@ -10,11 +10,11 @@ use crate::{RequestError, reactor::bornera::OperationContextKey};
 use super::{
     failure_translation::{fail_context, not_sent},
     operation_owner::DirectOperationContext,
-    owner::{DirectPlaintextOwner, message},
+    owner::{DirectOwner, message},
 };
 use crate::reactor::causality::CausalSequence;
 
-impl DirectPlaintextOwner {
+impl<T: RegisteredTransport> DirectOwner<T> {
     pub(super) fn commit_public(
         &mut self,
         permit: bornera_core::OperationPermit,

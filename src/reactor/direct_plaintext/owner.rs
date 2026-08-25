@@ -4,6 +4,7 @@ use std::{io, net::SocketAddr, time::Duration};
 
 use bornera::{
     ConnectionConfig, ConnectionIdentity, ConnectionSet, ConnectionSetConfig, ConnectionToken,
+    RegisteredTransport, TcpTransport,
 };
 use bornera_core::{ConnectionEpoch, ConnectionId, EndpointId, LaneId};
 use calandria::{
@@ -29,12 +30,12 @@ use crate::reactor::{
     broker::BrokerLimits,
 };
 
-pub(super) type PlaintextSet = ConnectionSet<KafkaFrameDecoder, KafkaReplyClassifier>;
+pub(super) type DirectSet<T> = ConnectionSet<KafkaFrameDecoder, KafkaReplyClassifier, T>;
 
 const ID: u64 = 1;
 
-pub(in crate::reactor) struct DirectPlaintextOwner {
-    pub(super) set: PlaintextSet,
+pub(in crate::reactor) struct DirectOwner<T: RegisteredTransport> {
+    pub(super) set: DirectSet<T>,
     pub(super) connection: ConnectionToken,
     pub(super) session: KafkaSessionMachine,
     pub(super) contexts: OperationContexts<DirectOperationContext>,
@@ -58,7 +59,9 @@ pub(in crate::reactor) struct DirectPlaintextOwner {
     pub(super) pending_recovery: Option<DirectRecovery>,
 }
 
-impl DirectPlaintextOwner {
+pub(in crate::reactor) type DirectPlaintextOwner = DirectOwner<TcpTransport>;
+
+impl DirectOwner<TcpTransport> {
     pub(in crate::reactor) fn new(
         driver: &DriverLimits,
         address: SocketAddr,
@@ -67,7 +70,7 @@ impl DirectPlaintextOwner {
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
         let (decoder, slot) = slot_limits(driver, broker)?;
-        let mut set = PlaintextSet::new(
+        let mut set = DirectSet::<TcpTransport>::new(
             ConnectionSetConfig::new(ResourceOwnerId::new(ID)),
             set_limits(driver),
         )
@@ -126,7 +129,9 @@ impl DirectPlaintextOwner {
             pending_recovery: None,
         })
     }
+}
 
+impl<T: RegisteredTransport> DirectOwner<T> {
     pub(in crate::reactor) fn submit(
         &mut self,
         request: Box<dyn ErasedRequest>,

@@ -1,5 +1,6 @@
 //! Measure-first public request admission into one ready direct session.
 
+use bornera::RegisteredTransport;
 use bornera_core::OperationOptions;
 use calandria::{Deadline, RetainedBytes};
 use kafka_driver_core::{CallFailure, KafkaSessionPhase, Moment};
@@ -9,11 +10,11 @@ use crate::{RequestError, request::ErasedRequest};
 use super::{
     failure_translation::{context_reserve, fail_context, not_sent, operation_reserve},
     operation_owner::DirectOperationContext,
-    owner::{DirectPlaintextOwner, calandria_moment},
+    owner::{DirectOwner, calandria_moment},
 };
 use crate::reactor::{bornera::correlation_id, causality::CausalSequence};
 
-impl DirectPlaintextOwner {
+impl<T: RegisteredTransport> DirectOwner<T> {
     pub(super) fn submit_request(
         &mut self,
         request: Box<dyn ErasedRequest>,
