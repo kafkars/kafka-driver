@@ -121,8 +121,6 @@ impl DriverBuilder {
 
     /// Builds a driver and starts its reactor on one dedicated thread.
     pub fn spawn(self) -> Result<(Driver, DriverHost), DriverBuildError> {
-        let (driver, reactor) = self.build_reactor()?;
-        let host = DriverHost::spawn(reactor).map_err(DriverBuildError::new)?;
-        Ok((driver, host))
+        DriverHost::spawn(move || self.build_reactor())
     }
 }
