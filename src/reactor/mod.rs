@@ -1,6 +1,12 @@
 //! Single-owner host, bounded command mailbox, and cross-thread wake contract.
 
 mod bootstrap;
+#[allow(
+    dead_code,
+    unused_imports,
+    reason = "private adapters are activated incrementally by the Bornera cutover"
+)]
+mod bornera;
 mod broker;
 mod broker_set;
 mod causality;
