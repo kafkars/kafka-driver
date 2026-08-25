@@ -9,6 +9,9 @@ mod dns_rotation;
 mod dns_rotation_test;
 mod encryption;
 mod measurement;
+mod metadata_observer;
+#[cfg(test)]
+mod metadata_observer_test;
 mod movement;
 #[cfg(test)]
 mod movement_test;

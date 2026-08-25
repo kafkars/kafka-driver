@@ -3,6 +3,7 @@ import { expect, smoke } from "smoque";
 import {
   awaitBroker,
   composeCommand,
+  stopBroker,
   upBroker,
 } from "./support/kafka-cluster.mjs";
 
@@ -85,6 +86,19 @@ smoke.suite("real Kafka advertised broker movement", { tags: ["real-kafka-functi
     );
   });
 
+  await t.step("stop broker 1 and require the old registration to be fenced", async () => {
+    await stopBroker(t, docker.command, stack, composeFile, initialEnv, "kafka-1", "30");
+    await requireMetadata(
+      t,
+      probe,
+      root,
+      stack,
+      ["metadata-fenced", stableBootstrap, TOPIC, "1"],
+      "old broker registration fencing",
+      "PASS authoritative broker fencing",
+    );
+  });
+
   await t.step("recreate broker 1 at a new advertised host port", async () => {
     await upBroker(
       t,
@@ -99,22 +113,24 @@ smoke.suite("real Kafka advertised broker movement", { tags: ["real-kafka-functi
   });
 
   await t.step("require the moved endpoint in live cluster metadata", async () => {
-    await t.poll(
-      "moved endpoint public route proof",
-      async () => {
-        const result = await t.cmd(
-          probe,
-          ["routes", movedBootstrap, TOPIC, "kafka-driver-movement-registration"],
-          { cwd: root, check: false, timeout: "15s" },
-        );
-        if (result.exitCode !== 0) {
-          throw new Error(result.stderr || result.stdout || "moved endpoint is not ready");
-        }
-        expect.value(result.stdout).toContain("PASS partition-leader route");
-        return result;
-      },
-      { timeout: "2m", interval: "1s" },
+    await requireMetadata(
+      t,
+      probe,
+      root,
+      stack,
+      ["metadata", stableBootstrap, TOPIC, "1", movedBootstrap],
+      "moved broker and leader metadata",
+      "PASS authoritative movement metadata",
     );
+  });
+
+  await t.step("require a fresh public route through the moved endpoint", async () => {
+    const result = await t.cmd(
+      probe,
+      ["routes", movedBootstrap, TOPIC, "kafka-driver-movement-registration"],
+      { cwd: root, timeout: "30s" },
+    );
+    expect.value(result.stdout).toContain("PASS partition-leader route");
   });
 
   await t.step("invalidate the old route and require moved-endpoint progress", async () => {
@@ -145,4 +161,32 @@ async function requireOutput(t, process, expected) {
     },
     { timeout: "2m", interval: "250ms" },
   );
+}
+
+async function requireMetadata(t, probe, root, stack, args, label, expected) {
+  let lastObservation = "";
+  try {
+    await t.poll(
+      label,
+      async () => {
+        const result = await t.cmd(probe, args, { cwd: root, check: false, timeout: "15s" });
+        lastObservation = [result.stdout, result.stderr].filter(Boolean).join("\n");
+        if (result.exitCode !== 0) {
+          throw new Error(lastObservation || `${label} is not ready`);
+        }
+        expect.value(result.stdout).toContain(expected);
+        return result;
+      },
+      { timeout: "2m", interval: "1s" },
+    );
+  } catch (error) {
+    if (lastObservation) {
+      await t.log(`Last ${label} observation:\n${lastObservation}`);
+    }
+    const logs = await stack.logs({ services: ["kafka-1", "kafka-2", "kafka-3"] }).catch(() => "");
+    if (logs) {
+      await t.log(`Kafka movement logs:\n${logs}`);
+    }
+    throw error;
+  }
 }

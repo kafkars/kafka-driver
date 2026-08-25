@@ -2,6 +2,8 @@
 
 mod arguments;
 #[cfg(test)]
+mod arguments_metadata_test;
+#[cfg(test)]
 mod arguments_test;
 mod endpoint;
 #[cfg(test)]

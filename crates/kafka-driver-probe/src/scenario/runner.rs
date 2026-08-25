@@ -9,36 +9,55 @@ use crate::{
 };
 
 use super::{
-    authentication, authentication_rejection, dns_rotation, encryption, measurement, movement,
-    readiness, reconnect, routes, secure_authentication,
+    authentication, authentication_rejection, dns_rotation, encryption, measurement,
+    metadata_observer, movement, readiness, reconnect, routes, secure_authentication,
 };
 
 pub(crate) fn run(arguments: Arguments) -> Result<(), ProbeError> {
-    let (session, scenario) = prepare(arguments)?;
-    let outcome = execute(&session, scenario);
-    let close = session.close();
-    outcome.and(close)
+    match prepare(arguments)? {
+        Prepared::Metadata {
+            bootstrap,
+            topic,
+            broker_id,
+            advertised,
+        } => metadata_observer::run(&bootstrap, &topic, broker_id, advertised.as_deref()),
+        Prepared::Driver { session, scenario } => {
+            let outcome = execute(&session, scenario);
+            let close = session.close();
+            outcome.and(close)
+        }
+    }
 }
 
-fn prepare(arguments: Arguments) -> Result<(ProbeSession, Scenario), ProbeError> {
+fn prepare(arguments: Arguments) -> Result<Prepared, ProbeError> {
     let prepared = match arguments {
-        Arguments::Readiness { bootstrap } => (spawn_plaintext(&bootstrap)?, Scenario::Readiness),
+        Arguments::Readiness { bootstrap } => {
+            driver(spawn_plaintext(&bootstrap)?, Scenario::Readiness)
+        }
         Arguments::DnsRotation { bootstrap } => {
-            (spawn_plaintext(&bootstrap)?, Scenario::DnsRotation)
+            driver(spawn_plaintext(&bootstrap)?, Scenario::DnsRotation)
         }
         Arguments::Routes {
             bootstrap,
             topic,
             group,
-        } => (
+        } => driver(
             spawn_plaintext(&bootstrap)?,
             Scenario::Routes { topic, group },
         ),
-        Arguments::Reconnect { bootstrap } => (spawn_plaintext(&bootstrap)?, Scenario::Reconnect),
+        Arguments::Metadata {
+            bootstrap,
+            topic,
+            broker_id,
+            advertised,
+        } => metadata(bootstrap, topic, broker_id, advertised),
+        Arguments::Reconnect { bootstrap } => {
+            driver(spawn_plaintext(&bootstrap)?, Scenario::Reconnect)
+        }
         Arguments::Rolling {
             bootstrap,
             coordination,
-        } => (
+        } => driver(
             spawn_plaintext(&bootstrap)?,
             Scenario::Rolling { coordination },
         ),
@@ -49,7 +68,7 @@ fn prepare(arguments: Arguments) -> Result<(ProbeSession, Scenario), ProbeError>
         } => {
             let endpoints = endpoint::bootstrap(&bootstrap)
                 .map_err(|source| ProbeError::stage("validate TLS bootstrap endpoint", source))?;
-            (
+            driver(
                 security::tls_bootstrap_session(endpoints, &certificate)?,
                 Scenario::TlsRolling { coordination },
             )
@@ -58,7 +77,7 @@ fn prepare(arguments: Arguments) -> Result<(ProbeSession, Scenario), ProbeError>
             bootstrap,
             topic,
             coordination,
-        } => (
+        } => driver(
             spawn_plaintext(&bootstrap)?,
             Scenario::Movement {
                 topic,
@@ -68,14 +87,14 @@ fn prepare(arguments: Arguments) -> Result<(ProbeSession, Scenario), ProbeError>
         Arguments::Authenticate {
             mechanism,
             bootstrap,
-        } => (
+        } => driver(
             spawn_sasl(&bootstrap, mechanism)?,
             Scenario::Authentication { mechanism },
         ),
         Arguments::RejectAuthentication {
             mechanism,
             bootstrap,
-        } => (
+        } => driver(
             spawn_sasl(&bootstrap, mechanism)?,
             Scenario::AuthenticationRejection { mechanism },
         ),
@@ -86,7 +105,7 @@ fn prepare(arguments: Arguments) -> Result<(ProbeSession, Scenario), ProbeError>
         } => {
             let address = endpoint::socket(&address)
                 .map_err(|source| ProbeError::stage("validate direct TLS endpoint", source))?;
-            (
+            driver(
                 security::tls_session(address, &certificate, server_name)?,
                 Scenario::Tls,
             )
@@ -100,16 +119,34 @@ fn prepare(arguments: Arguments) -> Result<(ProbeSession, Scenario), ProbeError>
             let address = endpoint::socket(&address)
                 .map_err(|source| ProbeError::stage("validate direct TLS endpoint", source))?;
             let sasl = security::sasl_config(mechanism)?;
-            (
+            driver(
                 security::tls_sasl_session(address, &certificate, server_name, sasl)?,
                 Scenario::TlsAuthentication { mechanism },
             )
         }
         Arguments::Measure { bootstrap, samples } => {
-            (spawn_plaintext(&bootstrap)?, Scenario::Measure { samples })
+            driver(spawn_plaintext(&bootstrap)?, Scenario::Measure { samples })
         }
     };
     Ok(prepared)
+}
+
+fn driver(session: ProbeSession, scenario: Scenario) -> Prepared {
+    Prepared::Driver { session, scenario }
+}
+
+fn metadata(
+    bootstrap: String,
+    topic: String,
+    broker_id: i32,
+    advertised: Option<String>,
+) -> Prepared {
+    Prepared::Metadata {
+        bootstrap,
+        topic,
+        broker_id,
+        advertised,
+    }
 }
 
 fn execute(session: &ProbeSession, scenario: Scenario) -> Result<(), ProbeError> {
@@ -159,4 +196,17 @@ enum Scenario {
     Tls,
     TlsAuthentication { mechanism: SaslSelection },
     Measure { samples: std::num::NonZeroUsize },
+}
+
+enum Prepared {
+    Metadata {
+        bootstrap: String,
+        topic: String,
+        broker_id: i32,
+        advertised: Option<String>,
+    },
+    Driver {
+        session: ProbeSession,
+        scenario: Scenario,
+    },
 }

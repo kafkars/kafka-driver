@@ -2,6 +2,8 @@
 
 use std::{error::Error, fmt, num::NonZeroUsize};
 
+mod metadata;
+
 const MAX_MEASUREMENT_SAMPLES: usize = 10_000;
 
 /// One explicitly selected real-broker qualification scenario.
@@ -18,6 +20,14 @@ pub(crate) enum Arguments {
         bootstrap: String,
         topic: String,
         group: String,
+    },
+
+    /// Observes one broker endpoint and partition leader without the driver.
+    Metadata {
+        bootstrap: String,
+        topic: String,
+        broker_id: i32,
+        advertised: Option<String>,
     },
 
     /// Proves one driver survives an externally orchestrated broker restart.
@@ -92,6 +102,12 @@ impl Arguments {
                 topic: topic.clone(),
                 group: group.clone(),
             }),
+            [command, bootstrap, topic, broker_id, advertised] if command == "metadata" => {
+                metadata::parse(bootstrap, topic, broker_id, Some(advertised))
+            }
+            [command, bootstrap, topic, broker_id] if command == "metadata-fenced" => {
+                metadata::parse(bootstrap, topic, broker_id, None)
+            }
             [command, bootstrap] if command == "reconnect" => Ok(Self::Reconnect {
                 bootstrap: bootstrap.clone(),
             }),
@@ -161,6 +177,7 @@ impl Arguments {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ArgumentError {
     Shape,
+    BrokerId,
     Samples,
     SaslMechanism,
 }
@@ -169,8 +186,9 @@ impl fmt::Display for ArgumentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Shape => formatter.write_str(
-                "usage: kafka-driver-probe readiness <bootstrap-set> | dns-rotation <bootstrap-set> | routes <bootstrap-set> <topic> <group> | reconnect <bootstrap-set> | rolling <bootstrap-set> <coordination-directory> | tls-rolling <bootstrap-set> <ca.pem> <coordination-directory> | movement <bootstrap-set> <topic> <coordination-directory> | authenticate <mechanism> <bootstrap-set> | reject-authentication <mechanism> <bootstrap-set> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <bootstrap-set> <samples>",
+                "usage: kafka-driver-probe readiness <bootstrap-set> | dns-rotation <bootstrap-set> | routes <bootstrap-set> <topic> <group> | metadata <bootstrap-address> <topic> <broker-id> <advertised-address> | metadata-fenced <bootstrap-address> <topic> <broker-id> | reconnect <bootstrap-set> | rolling <bootstrap-set> <coordination-directory> | tls-rolling <bootstrap-set> <ca.pem> <coordination-directory> | movement <bootstrap-set> <topic> <coordination-directory> | authenticate <mechanism> <bootstrap-set> | reject-authentication <mechanism> <bootstrap-set> | tls <ip:port> <ca.pem> <server-name> | tls-authenticate <mechanism> <ip:port> <ca.pem> <server-name> | measure <bootstrap-set> <samples>",
             ),
+            Self::BrokerId => formatter.write_str("broker ID must be a non-negative integer"),
             Self::Samples => write!(
                 formatter,
                 "measurement samples must be between 1 and {MAX_MEASUREMENT_SAMPLES}"
