@@ -4,14 +4,18 @@ use super::{Reactor, ReactorError};
 
 impl Reactor {
     pub(super) fn schedule_address_refreshes(&mut self) -> Result<bool, ReactorError> {
-        let seed_refresh = self
+        let Some(legacy) = self.backend.legacy_mut() else {
+            return Ok(false);
+        };
+        let seed_refresh = legacy
             .brokers
             .take_seed_address_refresh()
             .map_err(ReactorError::broker_set)?
             .is_some();
         let Some(resolution) = &mut self.resolution else {
             if seed_refresh {
-                self.brokers
+                legacy
+                    .brokers
                     .restore_seed_address_refresh()
                     .map_err(ReactorError::broker_set)?;
             }
@@ -22,31 +26,36 @@ impl Reactor {
             match resolution.restart_bootstrap() {
                 Ok(restarted) => scheduled |= restarted,
                 Err(error) => {
-                    self.brokers
+                    legacy
+                        .brokers
                         .restore_seed_address_refresh()
                         .map_err(ReactorError::broker_set)?;
                     return Err(ReactorError::host(std::io::Error::other(error)));
                 }
             }
             if !scheduled {
-                self.brokers
+                legacy
+                    .brokers
                     .restore_seed_address_refresh()
                     .map_err(ReactorError::broker_set)?;
             }
         }
-        let Some(lane) = self.brokers.take_address_refresh() else {
+        let Some(lane) = legacy.brokers.take_address_refresh() else {
             return Ok(scheduled);
         };
         let Some(permit) = resolution
             .try_reserve_broker(lane)
             .map_err(|error| ReactorError::host(std::io::Error::other(error)))?
         else {
-            self.brokers
+            legacy
+                .brokers
                 .restore_address_refresh(lane)
                 .map_err(ReactorError::broker_set)?;
             return Ok(scheduled);
         };
-        let request = self.brokers.start_address_refresh(lane, permit.effect_id());
+        let request = legacy
+            .brokers
+            .start_address_refresh(lane, permit.effect_id());
         let request = match request {
             Ok(request) => request,
             Err(error) => {

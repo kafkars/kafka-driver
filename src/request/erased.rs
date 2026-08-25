@@ -53,10 +53,6 @@ pub(crate) trait ErasedRequest: Send {
     ) -> Result<Bytes, RequestError>;
 
     /// Measures and transfers typed completion into Bornera preparation ownership.
-    #[allow(
-        dead_code,
-        reason = "private preparation is activated by the first Bornera broker slice"
-    )]
     fn prepare_bornera(
         self: Box<Self>,
         version: ApiVersion,

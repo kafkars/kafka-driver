@@ -6,17 +6,16 @@ mod submission;
 #[cfg(test)]
 mod submission_test;
 
-use kafka_driver_core::{DnsOutcome, Moment};
-
 #[cfg(test)]
 use kafka_driver_core::DnsRequest;
+use kafka_driver_core::{DnsOutcome, Moment};
 
 use crate::{
     ResolverLimits,
     config::BootstrapConfig,
     reactor::{
         ReactorError, WakeHandle,
-        bootstrap::{BootstrapAction, BootstrapOwner, ResolvedSeed},
+        bootstrap::{BootstrapAction, BootstrapOwner},
         entropy::JitterEntropy,
         resolver::{
             ResolutionOwner, Resolver, ResolverEffectIds, ResolverOwnership, ResolverShutdown,
@@ -199,6 +198,9 @@ impl Reactor {
         &mut self,
         now: Moment,
     ) -> Result<ResolutionTurn, ReactorError> {
+        if self.backend.legacy().is_none() {
+            return Ok(ResolutionTurn::idle());
+        }
         let scheduled = self.schedule_address_refreshes()?;
         let Some(resolution) = &mut self.resolution else {
             return Ok(ResolutionTurn::idle());
@@ -211,27 +213,28 @@ impl Reactor {
             made_progress: scheduled || progress.made_progress(),
             more_work: progress.more_work,
         };
-        if let Some(config) = progress.broker {
-            self.install_broker(config, now)?;
+        let Some(legacy) = self.backend.legacy_mut() else {
+            return Ok(ResolutionTurn::idle());
+        };
+        if let Some(seed) = progress.broker {
+            if legacy.brokers.has_seed() {
+                legacy
+                    .brokers
+                    .replace_seed_endpoint(seed, &legacy.poller, now)
+                    .map_err(ReactorError::broker_set)?;
+            } else {
+                legacy
+                    .brokers
+                    .install_resolved_seed(seed, &legacy.poller, now)
+                    .map_err(ReactorError::broker_set)?;
+            }
         }
         for completed in self.broker_dns_outcomes.drain(..) {
-            self.brokers
-                .complete_resolution(completed.lane, completed.outcome, &self.poller, now)
+            legacy
+                .brokers
+                .complete_resolution(completed.lane, completed.outcome, &legacy.poller, now)
                 .map_err(ReactorError::broker_set)?;
         }
         Ok(turn)
-    }
-
-    fn install_broker(&mut self, seed: ResolvedSeed, now: Moment) -> Result<(), ReactorError> {
-        if self.brokers.has_seed() {
-            return self
-                .brokers
-                .replace_seed_endpoint(seed, &self.poller, now)
-                .map(|_| ())
-                .map_err(ReactorError::broker_set);
-        }
-        self.brokers
-            .install_resolved_seed(seed, &self.poller, now)
-            .map_err(ReactorError::broker_set)
     }
 }

@@ -1,5 +1,7 @@
 //! Public scenario proving shutdown drains one in-flight generated call.
 
+#[path = "support/readable.rs"]
+mod readable;
 mod support;
 
 use std::{
@@ -19,6 +21,7 @@ use kafka_wire::{
 };
 use kafka_wire_core::KafkaEncode;
 
+use readable::drive_until_readable;
 use support::complete_negotiation;
 
 #[test]
@@ -41,7 +44,8 @@ fn shutdown_waits_for_an_in_flight_call_and_closes_after_its_response() {
         panic!("admit generated call command");
     };
     drive_progress(&mut reactor, Duration::ZERO, 1);
-    read_request_frame(&mut peer);
+    drive_until_readable(&peer, &mut reactor);
+    let correlation = read_request_frame(&mut peer);
     let Ok(mut shutdown) = driver.shutdown() else {
         panic!("admit shutdown command");
     };
@@ -58,7 +62,7 @@ fn shutdown_waits_for_an_in_flight_call_and_closes_after_its_response() {
     assert_pending(&mut follower);
 
     // When
-    peer.write_all(&encoded_response(&response))
+    peer.write_all(&encoded_response(&response, correlation))
         .unwrap_or_else(|error| panic!("write generated broker response: {error}"));
     let outcome = drive_until_shutdown(&mut reactor);
 
@@ -104,7 +108,7 @@ fn assert_pending<T>(future: &mut kafka_driver::Call<T>) {
     ));
 }
 
-fn read_request_frame(peer: &mut TcpStream) {
+fn read_request_frame(peer: &mut TcpStream) -> i32 {
     let mut prefix = [0; size_of::<i32>()];
     peer.read_exact(&mut prefix)
         .unwrap_or_else(|error| panic!("read request frame length: {error}"));
@@ -114,12 +118,13 @@ fn read_request_frame(peer: &mut TcpStream) {
     let mut body = vec![0; length];
     peer.read_exact(&mut body)
         .unwrap_or_else(|error| panic!("read request frame body: {error}"));
+    request_correlation(&body)
 }
 
-fn encoded_response(response: &ApiVersionsResponse) -> Vec<u8> {
+fn encoded_response(response: &ApiVersionsResponse, correlation: i32) -> Vec<u8> {
     let mut body = BytesMut::new();
     let mut header = ResponseHeader::default();
-    header.correlation_id = 0;
+    header.correlation_id = correlation;
     let Ok(header_version) = response_header_version_for::<ApiVersionsRequest>(version()) else {
         panic!("supported test response must have header policy");
     };
@@ -132,6 +137,17 @@ fn encoded_response(response: &ApiVersionsResponse) -> Vec<u8> {
     let mut frame = length.to_be_bytes().to_vec();
     frame.extend_from_slice(&body);
     frame
+}
+
+fn request_correlation(body: &[u8]) -> i32 {
+    let bytes = body
+        .get(4..8)
+        .unwrap_or_else(|| panic!("request header must contain a correlation"));
+    i32::from_be_bytes(
+        bytes
+            .try_into()
+            .unwrap_or_else(|_| panic!("request correlation must be four bytes")),
+    )
 }
 
 const fn version() -> ApiVersion {

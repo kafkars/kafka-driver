@@ -1,5 +1,6 @@
 //! Single-owner host, bounded command mailbox, and cross-thread wake contract.
 
+mod backend;
 mod bootstrap;
 #[allow(
     dead_code,
@@ -13,6 +14,7 @@ mod causality;
 mod clock;
 mod command;
 mod coordinator;
+mod direct_plaintext;
 mod entropy;
 mod error;
 mod host;
@@ -48,6 +50,7 @@ mod mailbox_test;
 #[cfg(test)]
 mod wait_queue_test;
 
+pub(in crate::reactor) use backend::{LegacyBackend, ReactorBackend};
 pub(crate) use clock::ReactorClock;
 pub(crate) use command::Command;
 pub use error::ReactorError;

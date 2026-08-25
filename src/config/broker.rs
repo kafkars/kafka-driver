@@ -59,6 +59,15 @@ impl BrokerConfig {
         (self.addresses, self.security, self.sasl, self.client_id)
     }
 
+    pub(crate) fn direct_plaintext(&self) -> Option<(SocketAddr, Option<ClientId>)> {
+        match (&self.addresses, &self.security, &self.sasl) {
+            (BrokerAddresses::Direct(address), BrokerSecurity::Plaintext, None) => {
+                Some((*address, self.client_id.clone()))
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) const fn is_resolved(&self) -> bool {
         matches!(self.addresses, BrokerAddresses::Resolved { .. })
     }

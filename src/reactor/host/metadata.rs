@@ -10,14 +10,20 @@ impl Reactor {
         if self.state != HostState::Running {
             return Ok(false);
         }
+        if self.backend.legacy().is_none() {
+            return Ok(false);
+        }
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         let (progress, directory, controller_waiting, waiting, topic_views, invalidations) = {
             let Some(metadata) = &mut self.metadata else {
                 return Ok(false);
             };
-            let progress = if let Some(seed) = self.brokers.seed_mut() {
+            let Some(legacy) = self.backend.legacy_mut() else {
+                return Ok(false);
+            };
+            let progress = if let Some(seed) = legacy.brokers.seed_mut() {
                 metadata
-                    .drive(seed, &self.poller, now, &self.call_ids, evidence)
+                    .drive(seed, &legacy.poller, now, &self.call_ids, evidence)
                     .map_err(ReactorError::metadata)?
             } else {
                 false
@@ -38,11 +44,17 @@ impl Reactor {
                 invalidations,
             )
         };
-        let installed = directory.as_ref().map_or(Ok(false), |directory| {
-            self.brokers
+        let installed = if let Some(directory) = &directory {
+            let Some(legacy) = self.backend.legacy_mut() else {
+                return Ok(false);
+            };
+            legacy
+                .brokers
                 .install_directory(directory)
                 .map_err(ReactorError::broker_set)
-        })?;
+        } else {
+            Ok(false)
+        }?;
         let controller_waiting_progress = controller_waiting.made_progress();
         let controller_waiting_more = controller_waiting.more_work();
         for routed in controller_waiting.into_routed() {

@@ -17,11 +17,17 @@ impl Reactor {
         request: Box<dyn ErasedRequest>,
         now: kafka_driver_core::Moment,
     ) -> Result<(), ReactorError> {
+        let Some(legacy) = self.backend.legacy_mut() else {
+            request.fail(RequestError::RouteUnavailable);
+            return Ok(());
+        };
         let Some(resolution) = &mut self.resolution else {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());
         };
-        let resolution_lane = self.brokers.resolution_lane(route, request.traffic_class());
+        let resolution_lane = legacy
+            .brokers
+            .resolution_lane(route, request.traffic_class());
         let permit = if let Some(lane) = resolution_lane {
             let Some(permit) = resolution
                 .try_reserve_broker(lane)
@@ -37,9 +43,9 @@ impl Reactor {
             None
         };
         let effect_id = permit.as_ref().map(ResolutionPermit::effect_id);
-        let dns = self
+        let dns = legacy
             .brokers
-            .submit_route(&self.poller, route, effect_id, request, now);
+            .submit_route(&legacy.poller, route, effect_id, request, now);
         let dns = match dns {
             Ok(dns) => dns,
             Err(error) => {

@@ -1,5 +1,7 @@
 //! Exclusive direct-broker or bootstrap construction target.
 
+use std::net::SocketAddr;
+
 use super::{BootstrapConfig, BrokerConfig, ClientId, SaslConfig};
 
 /// One configured ownership root for initial broker connectivity.
@@ -10,6 +12,13 @@ pub(crate) enum DriverTarget {
 }
 
 impl DriverTarget {
+    pub(crate) fn direct_plaintext(&self) -> Option<(SocketAddr, Option<ClientId>)> {
+        match self {
+            Self::Direct(config) => config.direct_plaintext(),
+            Self::Bootstrap(_) => None,
+        }
+    }
+
     pub(crate) fn with_sasl(self, sasl: Option<SaslConfig>) -> Self {
         match self {
             Self::Direct(config) => Self::Direct(config.with_sasl(sasl)),

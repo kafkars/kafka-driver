@@ -1,9 +1,5 @@
 //! Typed response ownership between frame decoding and public completion.
 
-#[allow(
-    dead_code,
-    reason = "private completion ownership is activated by the first Bornera broker slice"
-)]
 mod context_owner;
 mod delivery;
 mod diagnostic;
@@ -12,10 +8,6 @@ mod error;
 mod local_rejection;
 mod observation;
 mod outcome;
-#[allow(
-    dead_code,
-    reason = "private completion ownership is activated by the first Bornera broker slice"
-)]
 mod public_context;
 mod registry;
 mod slot;

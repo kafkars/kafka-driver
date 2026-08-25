@@ -33,7 +33,7 @@ fn dedicated_shutdown_waits_for_the_in_flight_fifo_response_before_join() {
         .unwrap_or_else(|error| panic!("accept dedicated driver connection: {error}"));
     complete_dedicated_negotiation(&mut peer);
     let response = ApiVersionsResponse::default();
-    let call = admit_ready_call(&driver, &mut peer);
+    let (call, correlation) = admit_ready_call(&driver, &mut peer);
     let shutdown = driver
         .shutdown()
         .unwrap_or_else(|error| panic!("admit dedicated graceful shutdown: {error}"));
@@ -41,7 +41,7 @@ fn dedicated_shutdown_waits_for_the_in_flight_fifo_response_before_join() {
     assert!(!host.is_finished());
 
     // When
-    peer.write_all(&encoded_response(&response))
+    peer.write_all(&encoded_response(&response, correlation))
         .unwrap_or_else(|error| panic!("write dedicated generated response: {error}"));
 
     // Then
@@ -67,13 +67,13 @@ fn assert_post_shutdown_rejection(driver: &Driver) {
 fn admit_ready_call(
     driver: &Driver,
     peer: &mut TcpStream,
-) -> Call<Result<ApiVersionsResponse, RequestError>> {
+) -> (Call<Result<ApiVersionsResponse, RequestError>>, i32) {
     for _ in 0..3 {
         let call = driver
             .call(ApiVersionsRequest::default(), Duration::from_secs(5))
             .unwrap_or_else(|error| panic!("admit dedicated generated call: {error}"));
         match read_frame(peer) {
-            Ok(()) => return call,
+            Ok(correlation) => return (call, correlation),
             Err(error)
                 if matches!(
                     error.kind(),
@@ -94,7 +94,7 @@ fn admit_ready_call(
     panic!("dedicated connection did not become ready within bounded probes")
 }
 
-fn read_frame(peer: &mut TcpStream) -> io::Result<()> {
+fn read_frame(peer: &mut TcpStream) -> io::Result<i32> {
     let mut prefix = [0; size_of::<i32>()];
     peer.read_exact(&mut prefix)?;
     let length = usize::try_from(i32::from_be_bytes(prefix))
@@ -102,18 +102,19 @@ fn read_frame(peer: &mut TcpStream) -> io::Result<()> {
     let mut body = vec![0; length];
     peer.read_exact(&mut body)?;
     assert!(!body.is_empty());
-    Ok(())
+    Ok(request_correlation(&body))
 }
 
 fn complete_dedicated_negotiation(peer: &mut TcpStream) {
     peer.set_read_timeout(Some(Duration::from_secs(1)))
         .unwrap_or_else(|error| panic!("bound dedicated broker read: {error}"));
-    read_frame(peer).unwrap_or_else(|error| panic!("read dedicated negotiation: {error}"));
-    peer.write_all(&negotiation_response())
+    let correlation =
+        read_frame(peer).unwrap_or_else(|error| panic!("read dedicated negotiation: {error}"));
+    peer.write_all(&negotiation_response(correlation))
         .unwrap_or_else(|error| panic!("write dedicated negotiation response: {error}"));
 }
 
-fn negotiation_response() -> Vec<u8> {
+fn negotiation_response(correlation: i32) -> Vec<u8> {
     let mut response = ApiVersionsResponse::default();
     response
         .api_keys
@@ -129,7 +130,7 @@ fn negotiation_response() -> Vec<u8> {
 
     let mut body = BytesMut::new();
     let mut header = ResponseHeader::default();
-    header.correlation_id = 0;
+    header.correlation_id = correlation;
     header
         .encode_into(&mut body, ApiVersion::new(0))
         .unwrap_or_else(|error| panic!("encode dedicated negotiation header: {error}"));
@@ -147,10 +148,10 @@ fn advertisement(api_key: i16, max_version: i16) -> AdvertisedApi {
     api
 }
 
-fn encoded_response(response: &ApiVersionsResponse) -> Vec<u8> {
+fn encoded_response(response: &ApiVersionsResponse, correlation: i32) -> Vec<u8> {
     let mut body = BytesMut::new();
     let mut header = ResponseHeader::default();
-    header.correlation_id = 0;
+    header.correlation_id = correlation;
     let header_version = response_header_version_for::<ApiVersionsRequest>(version()).map_or_else(
         |error| panic!("dedicated response header policy: {error}"),
         ApiVersion::new,
@@ -162,6 +163,17 @@ fn encoded_response(response: &ApiVersionsResponse) -> Vec<u8> {
         .encode_into(&mut body, version())
         .unwrap_or_else(|error| panic!("encode dedicated response body: {error}"));
     frame(&body, "dedicated generated response")
+}
+
+fn request_correlation(body: &[u8]) -> i32 {
+    let bytes = body
+        .get(4..8)
+        .unwrap_or_else(|| panic!("dedicated request header must contain a correlation"));
+    i32::from_be_bytes(
+        bytes
+            .try_into()
+            .unwrap_or_else(|_| panic!("dedicated correlation must be four bytes")),
+    )
 }
 
 fn frame(body: &BytesMut, label: &str) -> Vec<u8> {

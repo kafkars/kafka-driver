@@ -1,9 +1,5 @@
 //! Type-erased generated request ownership before FIFO response registration.
 
-#[allow(
-    dead_code,
-    reason = "private preparation is activated by the first Bornera broker slice"
-)]
 mod bornera;
 mod completion;
 mod construct;
@@ -12,10 +8,6 @@ mod erased;
 mod footprint;
 mod policy;
 mod typed;
-#[allow(
-    dead_code,
-    reason = "private preparation is activated by the first Bornera broker slice"
-)]
 mod typed_bornera;
 mod typed_legacy;
 mod version;

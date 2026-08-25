@@ -56,7 +56,14 @@ impl NegotiationExchange {
         self,
         frame: FrameBody,
     ) -> Result<ApiVersionsResponse, NegotiationExchangeError> {
-        let mut decoder = Decoder::new(frame.into_bytes(), self.decode_limits)?;
+        self.finish_bytes(frame.into_bytes())
+    }
+
+    pub(crate) fn finish_bytes(
+        self,
+        frame: Bytes,
+    ) -> Result<ApiVersionsResponse, NegotiationExchangeError> {
+        let mut decoder = Decoder::new(frame, self.decode_limits)?;
         let header_version = response_header_version_for::<ApiVersionsRequest>(BOOTSTRAP_VERSION)?;
         let header = ResponseHeader::decode(&mut decoder, ApiVersion::new(header_version))?;
         let observed = CorrelationId::from_raw(header.correlation_id);

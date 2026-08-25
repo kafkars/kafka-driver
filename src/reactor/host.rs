@@ -4,7 +4,9 @@ mod address_refresh;
 mod broker;
 mod broker_route;
 mod commands;
+mod construction;
 mod coordinator;
+mod coordinator_routing;
 mod debug;
 mod invalidation;
 mod metadata;
@@ -40,20 +42,14 @@ use std::{sync::Arc, time::Duration};
 use calandria::{Span, WaitOutcome};
 
 use crate::{
-    api::CallIds,
-    completion::{ShutdownCompleter, ShutdownRequester, shutdown_barrier},
-    config::{DriverLimits, DriverTarget},
-    observation::Observation,
+    api::CallIds, completion::ShutdownCompleter, config::DriverLimits, observation::Observation,
 };
 
 use super::{
-    Command, MailboxSender, PollEvent, Poller, ReactorError, WakeHandle,
-    broker::BrokerLimits,
-    broker_set::BrokerSet,
+    Command, ReactorBackend, ReactorError, WakeHandle,
     causality::CausalSequence,
     clock::ReactorClock,
     coordinator::CoordinatorOwner,
-    mailbox,
     mailbox::MailboxReceiver,
     metadata::MetadataOwner,
     resolver::ResolverShutdown,
@@ -71,9 +67,7 @@ pub struct Reactor {
     commands: MailboxReceiver<Command>,
     limits: DriverLimits,
     command_batch: Vec<Command>,
-    poller: Poller,
-    poll_events: Vec<PollEvent>,
-    brokers: BrokerSet,
+    backend: ReactorBackend,
     resolution: Option<NameResolution>,
     resolver_shutdown: Option<ResolverShutdown>,
     broker_dns_outcomes: Vec<BrokerDnsOutcome>,
@@ -91,92 +85,6 @@ pub struct Reactor {
 }
 
 impl Reactor {
-    pub(crate) fn new(
-        limits: &DriverLimits,
-        target: Option<DriverTarget>,
-        call_ids: Arc<CallIds>,
-        observation: Arc<Observation>,
-    ) -> std::io::Result<(MailboxSender<Command>, ShutdownRequester, Self)> {
-        let broker_limits = BrokerLimits::default();
-        let registration_capacity =
-            BrokerSet::poll_registration_capacity(broker_limits, limits.metadata())
-                .map_err(std::io::Error::other)?;
-        let poller =
-            Poller::with_registration_capacity(limits.poll_event_budget(), registration_capacity)?;
-        let (sender, commands) = mailbox(
-            limits.mailbox_capacity(),
-            limits.mailbox_byte_capacity(),
-            Command::retained_bytes,
-            poller.wake_handle(),
-        );
-        let clock = ReactorClock::new();
-        let (shutdown_requester, shutdown) = shutdown_barrier(limits.mailbox_capacity());
-        let now = clock.now().map_err(std::io::Error::other)?;
-        let broker_template = match &target {
-            Some(DriverTarget::Bootstrap(config)) => Some(config.broker_template().clone()),
-            Some(DriverTarget::Direct(_)) | None => None,
-        };
-        let scram_proof = target
-            .as_ref()
-            .filter(|target| target.requires_proof_worker())
-            .map(|_| {
-                ScramProofWorker::spawn(
-                    limits.scram_proof(),
-                    WakeHandle::new(poller.pulse_handle()),
-                )
-            })
-            .transpose()?;
-        let proof_sender = scram_proof.as_ref().map(ScramProofWorker::sender);
-        let mut brokers = BrokerSet::with_scram_proof(
-            broker_limits,
-            limits.metadata(),
-            broker_template,
-            proof_sender,
-        )
-        .map_err(std::io::Error::other)?;
-        let (resolution, metadata, coordinator) = match target {
-            Some(DriverTarget::Direct(config)) => {
-                brokers
-                    .install_seed(config, &poller, now)
-                    .map_err(std::io::Error::other)?;
-                (None, None, None)
-            }
-            Some(DriverTarget::Bootstrap(config)) => (
-                Some(NameResolution::start(
-                    config,
-                    limits.resolver(),
-                    WakeHandle::new(poller.pulse_handle()),
-                )?),
-                Some(MetadataOwner::new(limits.metadata())),
-                Some(CoordinatorOwner::new(limits.coordinator())),
-            ),
-            None => (None, None, None),
-        };
-        let reactor = Self {
-            command_batch: Vec::with_capacity(limits.command_budget().get()),
-            poll_events: Vec::with_capacity(limits.poll_event_budget().get()),
-            commands,
-            limits: *limits,
-            poller,
-            brokers,
-            resolution,
-            resolver_shutdown: None,
-            broker_dns_outcomes: Vec::with_capacity(limits.resolver().outcome_budget().get()),
-            scram_proof,
-            scram_proof_shutdown: None,
-            scram_proof_outcomes: Vec::with_capacity(limits.scram_proof().outcome_budget().get()),
-            metadata,
-            coordinator,
-            call_ids,
-            observation,
-            causality: CausalSequence::new(),
-            clock,
-            state: HostState::Running,
-            shutdown,
-        };
-        Ok((sender, shutdown_requester, reactor))
-    }
-
     /// Drives at most one fairness-bounded turn, waiting up to `max_wait`.
     pub fn turn(&mut self, max_wait: Duration) -> Result<TurnOutcome, ReactorError> {
         if self.state == HostState::Shutdown {
@@ -201,16 +109,7 @@ impl Reactor {
         &mut self,
         maximum: Span,
     ) -> Result<WaitOutcome, ReactorError> {
-        self.poll_events.clear();
-        let observed = self
-            .poller
-            .poll_into(Some(maximum.as_duration()), &mut self.poll_events)
-            .map_err(ReactorError::poll)?;
-        Ok(if observed == 0 {
-            WaitOutcome::Idle
-        } else {
-            WaitOutcome::Notified
-        })
+        self.backend.wait(maximum).map_err(ReactorError::poll)
     }
 
     pub(crate) fn clock(&self) -> ReactorClock {
@@ -218,12 +117,12 @@ impl Reactor {
     }
 
     pub(crate) fn termination_wake(&self) -> calandria::WakeHandle {
-        self.poller.wake_handle()
+        self.backend.wake_handle()
     }
 
     /// Returns a cloneable notification handle for embedded-host integration.
     pub fn wake_handle(&self) -> WakeHandle {
-        WakeHandle::new(self.poller.pulse_handle())
+        self.backend.public_wake()
     }
 
     /// Returns whether shutdown has reached its terminal state.

@@ -75,7 +75,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 `spawn()` owns one dedicated reactor thread. `build_reactor()` returns the same
-driver with a caller-driven `Reactor` for embedding in another event loop. No
+driver with a caller-driven `Reactor` for embedding in another event loop. The
+embedded reactor is thread-affine: construct and drive it on its owner thread. No
 public executor abstraction is required.
 
 ## Routes

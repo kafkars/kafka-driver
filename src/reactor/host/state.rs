@@ -1,6 +1,7 @@
 //! Terminal hosting state and shared shutdown barrier settlement.
 
 use super::{Reactor, ReactorError, TurnOutcome};
+use crate::reactor::direct_plaintext::DirectPlaintextOwner;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum HostState {
@@ -19,7 +20,15 @@ impl Reactor {
         &mut self,
         commands: usize,
     ) -> Result<Option<TurnOutcome>, ReactorError> {
-        if self.state != HostState::Draining || !self.brokers.is_terminal() {
+        let backend_terminal = self.backend.legacy().map_or_else(
+            || {
+                self.backend
+                    .direct()
+                    .is_some_and(DirectPlaintextOwner::is_terminal)
+            },
+            |legacy| legacy.brokers.is_terminal(),
+        );
+        if self.state != HostState::Draining || !backend_terminal {
             return Ok(None);
         }
         self.resolution = None;

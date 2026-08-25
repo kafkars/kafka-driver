@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use kafka_driver_core::Moment;
 
-use crate::reactor::broker::DeadlineProgress;
+use crate::reactor::{broker::DeadlineProgress, direct_plaintext::DirectPlaintextOwner};
 
 use super::{Reactor, ReactorError};
 
@@ -12,21 +12,35 @@ const WORKER_SHUTDOWN_OBSERVATION_INTERVAL: Duration = Duration::from_millis(10)
 
 impl Reactor {
     pub(super) fn observe_poll_events(&mut self, now: Moment) -> Result<bool, ReactorError> {
+        let Some(legacy) = self.backend.legacy_mut() else {
+            return Ok(false);
+        };
+        let mut events = std::mem::take(&mut legacy.poll_events);
         let mut progress = false;
-        for event in self.poll_events.drain(..) {
+        for event in events.drain(..) {
             let observed_at = self.causality.outcome().map_err(ReactorError::causality)?;
-            progress |= self
+            progress |= legacy
                 .brokers
-                .observe(&self.poller, event, now, observed_at)
+                .observe(&legacy.poller, event, now, observed_at)
                 .map_err(ReactorError::broker_set)?;
         }
+        legacy.poll_events = events;
         Ok(progress)
     }
 
     pub(super) fn continue_broker_io(&mut self, now: Moment) -> Result<bool, ReactorError> {
+        if let Some(direct) = self.backend.direct_mut() {
+            return direct
+                .drive(now, &mut self.causality)
+                .map_err(ReactorError::host);
+        }
         let observed_at = self.causality.outcome().map_err(ReactorError::causality)?;
-        self.brokers
-            .continue_io(&self.poller, now, observed_at)
+        let Some(legacy) = self.backend.legacy_mut() else {
+            return Ok(false);
+        };
+        legacy
+            .brokers
+            .continue_io(&legacy.poller, now, observed_at)
             .map_err(ReactorError::broker_set)
     }
 
@@ -34,14 +48,25 @@ impl Reactor {
         &mut self,
         now: Moment,
     ) -> Result<DeadlineProgress, ReactorError> {
-        self.brokers
-            .fire_due(&self.poller, now)
+        let Some(legacy) = self.backend.legacy_mut() else {
+            return Ok(DeadlineProgress::idle());
+        };
+        legacy
+            .brokers
+            .fire_due(&legacy.poller, now)
             .map_err(ReactorError::broker_set)
     }
 
     pub(super) fn next_deadline(&self, now: Moment) -> Option<Moment> {
-        self.brokers
-            .next_deadline()
+        let backend = self.backend.legacy().map_or_else(
+            || {
+                self.backend
+                    .direct()
+                    .and_then(DirectPlaintextOwner::next_deadline)
+            },
+            |legacy| legacy.brokers.next_deadline(),
+        );
+        backend
             .into_iter()
             .chain(
                 self.resolution
@@ -67,6 +92,13 @@ impl Reactor {
     }
 
     pub(super) fn broker_has_local_io(&self) -> bool {
-        self.brokers.has_local_io()
+        self.backend.legacy().map_or_else(
+            || {
+                self.backend
+                    .direct()
+                    .is_some_and(DirectPlaintextOwner::has_local_work)
+            },
+            |legacy| legacy.brokers.has_local_io(),
+        )
     }
 }

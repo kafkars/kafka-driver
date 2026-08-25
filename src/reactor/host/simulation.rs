@@ -6,12 +6,13 @@ use kafka_driver_core::Moment;
 
 use crate::{
     api::CallIds,
+    completion::ShutdownRequester,
     config::{BrokerConfig, DriverLimits},
     observation::Observation,
     reactor::{MailboxSender, PollEvent, Readiness},
 };
 
-use super::{Command, Reactor, ShutdownRequester};
+use super::{Command, Reactor};
 
 impl Reactor {
     pub(super) fn new_simulated(
@@ -23,22 +24,29 @@ impl Reactor {
     ) -> io::Result<(MailboxSender<Command>, ShutdownRequester, Self)> {
         let (commands, shutdown, mut reactor) = Self::new(limits, None, call_ids, observation)?;
         reactor.clock = super::super::clock::ReactorClock::from_origin(origin);
-        reactor
+        let legacy = reactor
+            .backend
+            .legacy_mut()
+            .ok_or_else(|| io::Error::other("simulation requires the legacy backend"))?;
+        legacy
             .brokers
-            .install_simulated_seed(config, &reactor.poller, Moment::ORIGIN)
+            .install_simulated_seed(config, &legacy.poller, Moment::ORIGIN)
             .map_err(io::Error::other)?;
         Ok((commands, shutdown, reactor))
     }
 
     pub(super) fn simulate_connect(&mut self) -> bool {
-        let Some(token) = self
+        let Some(legacy) = self.backend.legacy_mut() else {
+            return false;
+        };
+        let Some(token) = legacy
             .brokers
             .seed_mut()
             .and_then(super::super::broker::SingleBroker::simulate_connect)
         else {
             return false;
         };
-        self.poll_events.push(PollEvent::Resource {
+        legacy.poll_events.push(PollEvent::Resource {
             token,
             readiness: Readiness::WRITABLE,
         });
@@ -46,14 +54,17 @@ impl Reactor {
     }
 
     pub(super) fn simulate_receive(&mut self, bytes: Vec<u8>) -> bool {
-        let Some(token) = self
+        let Some(legacy) = self.backend.legacy_mut() else {
+            return false;
+        };
+        let Some(token) = legacy
             .brokers
             .seed_mut()
             .and_then(|seed| seed.simulate_receive(bytes))
         else {
             return false;
         };
-        self.poll_events.push(PollEvent::Resource {
+        legacy.poll_events.push(PollEvent::Resource {
             token,
             readiness: Readiness::READABLE,
         });
@@ -61,9 +72,11 @@ impl Reactor {
     }
 
     pub(super) fn take_simulated_frames(&mut self) -> Vec<Vec<u8>> {
-        self.brokers.seed_mut().map_or_else(
-            Vec::new,
-            super::super::broker::SingleBroker::take_simulated_frames,
-        )
+        self.backend.legacy_mut().map_or_else(Vec::new, |legacy| {
+            legacy.brokers.seed_mut().map_or_else(
+                Vec::new,
+                super::super::broker::SingleBroker::take_simulated_frames,
+            )
+        })
     }
 }

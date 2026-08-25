@@ -83,6 +83,8 @@ impl DriverBuilder {
     }
 
     /// Builds a driver handle and an embedded, caller-driven reactor.
+    ///
+    /// The reactor is thread-affine: construct and drive it on its owner thread.
     pub fn build_reactor(self) -> Result<(Driver, Reactor), DriverBuildError> {
         let Some(target) = self.target else {
             return Err(DriverBuildError::MissingTarget);

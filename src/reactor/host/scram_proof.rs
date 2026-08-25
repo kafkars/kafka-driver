@@ -4,6 +4,9 @@ use super::{Reactor, ReactorError};
 
 impl Reactor {
     pub(super) fn continue_scram_proofs(&mut self) -> Result<ScramProofTurn, ReactorError> {
+        if self.backend.legacy().is_none() {
+            return Ok(ScramProofTurn::idle());
+        }
         let Some(worker) = &self.scram_proof else {
             return Ok(ScramProofTurn::idle());
         };
@@ -13,9 +16,13 @@ impl Reactor {
             .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
         let mut delivered = 0;
         for outcome in self.scram_proof_outcomes.drain(..) {
+            let Some(legacy) = self.backend.legacy_mut() else {
+                continue;
+            };
             delivered += usize::from(
-                self.brokers
-                    .complete_scram_proof(&self.poller, outcome)
+                legacy
+                    .brokers
+                    .complete_scram_proof(&legacy.poller, outcome)
                     .map_err(ReactorError::broker_set)?,
             );
         }

@@ -19,8 +19,8 @@ pub(crate) fn complete_negotiation(peer: &mut TcpStream, reactor: &mut Reactor) 
         .unwrap_or_else(|error| panic!("bound loopback broker read: {error}"));
     drive(reactor);
     drive(reactor);
-    read_frame(peer);
-    peer.write_all(&negotiation_response())
+    let correlation = read_frame(peer);
+    peer.write_all(&negotiation_response(correlation))
         .unwrap_or_else(|error| panic!("write negotiation response: {error}"));
     drive(reactor);
 }
@@ -31,7 +31,7 @@ fn drive(reactor: &mut Reactor) {
         .unwrap_or_else(|error| panic!("drive negotiation turn: {error}"));
 }
 
-fn negotiation_response() -> Vec<u8> {
+fn negotiation_response(correlation: i32) -> Vec<u8> {
     let mut response = ApiVersionsResponse::default();
     response
         .api_keys
@@ -47,7 +47,7 @@ fn negotiation_response() -> Vec<u8> {
 
     let mut body = BytesMut::new();
     let mut header = ResponseHeader::default();
-    header.correlation_id = 0;
+    header.correlation_id = correlation;
     assert!(header.encode_into(&mut body, ApiVersion::new(0)).is_ok());
     assert!(response.encode_into(&mut body, ApiVersion::new(0)).is_ok());
     let Ok(length) = i32::try_from(body.len()) else {
@@ -66,7 +66,7 @@ fn advertisement(api_key: i16, max_version: i16) -> AdvertisedApi {
     api
 }
 
-fn read_frame(peer: &mut TcpStream) {
+fn read_frame(peer: &mut TcpStream) -> i32 {
     let mut prefix = [0; size_of::<i32>()];
     peer.read_exact(&mut prefix)
         .unwrap_or_else(|error| panic!("read negotiation frame length: {error}"));
@@ -76,4 +76,12 @@ fn read_frame(peer: &mut TcpStream) {
     let mut body = vec![0; length];
     peer.read_exact(&mut body)
         .unwrap_or_else(|error| panic!("read negotiation frame body: {error}"));
+    let correlation = body
+        .get(4..8)
+        .unwrap_or_else(|| panic!("negotiation request header must contain a correlation"));
+    i32::from_be_bytes(
+        correlation
+            .try_into()
+            .unwrap_or_else(|_| panic!("negotiation correlation must be four bytes")),
+    )
 }

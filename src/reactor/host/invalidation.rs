@@ -43,7 +43,11 @@ impl Reactor {
         now: kafka_driver_core::Moment,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
-        let (Some(metadata), Some(seed)) = (&mut self.metadata, self.brokers.seed_mut()) else {
+        let Some(legacy) = self.backend.legacy_mut() else {
+            let _ = completion.complete(InvalidationDisposition::Unavailable);
+            return Ok(());
+        };
+        let (Some(metadata), Some(seed)) = (&mut self.metadata, legacy.brokers.seed_mut()) else {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
@@ -52,7 +56,7 @@ impl Reactor {
             .invalidate_broker_route(
                 RouteInvalidation::new(route, observed_at, completion),
                 seed,
-                &self.poller,
+                &legacy.poller,
                 now,
                 &self.call_ids,
                 evidence,
@@ -67,7 +71,11 @@ impl Reactor {
         now: kafka_driver_core::Moment,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
-        let (Some(metadata), Some(seed)) = (&mut self.metadata, self.brokers.seed_mut()) else {
+        let Some(legacy) = self.backend.legacy_mut() else {
+            let _ = completion.complete(InvalidationDisposition::Unavailable);
+            return Ok(());
+        };
+        let (Some(metadata), Some(seed)) = (&mut self.metadata, legacy.brokers.seed_mut()) else {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
@@ -76,7 +84,7 @@ impl Reactor {
             .invalidate_partition_route(
                 RouteInvalidation::new(route, observed_at, completion),
                 seed,
-                &self.poller,
+                &legacy.poller,
                 now,
                 &self.call_ids,
                 evidence,
@@ -91,7 +99,11 @@ impl Reactor {
         now: kafka_driver_core::Moment,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
-        let (Some(coordinator), Some(seed)) = (&mut self.coordinator, self.brokers.seed_mut())
+        let Some(legacy) = self.backend.legacy_mut() else {
+            let _ = completion.complete(InvalidationDisposition::Unavailable);
+            return Ok(());
+        };
+        let (Some(coordinator), Some(seed)) = (&mut self.coordinator, legacy.brokers.seed_mut())
         else {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
@@ -101,7 +113,7 @@ impl Reactor {
             .invalidate(
                 RouteInvalidation::new(route, observed_at, completion),
                 seed,
-                &self.poller,
+                &legacy.poller,
                 now,
                 &self.call_ids,
                 evidence,

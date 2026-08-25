@@ -53,14 +53,17 @@ impl PublicResponseContext {
         self.call_id
     }
 
+    #[cfg(test)]
     pub(crate) const fn selected_version(&self) -> ApiVersion {
         self.selected_version
     }
 
+    #[cfg(test)]
     pub(crate) const fn header_version(&self) -> ApiVersion {
         self.header_version
     }
 
+    #[cfg(test)]
     pub(crate) const fn expected_correlation(&self) -> Option<CorrelationId> {
         self.expected_correlation
     }

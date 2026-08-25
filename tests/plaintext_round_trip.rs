@@ -1,5 +1,7 @@
 //! Public embedded-host smoke scenario for one generated plaintext broker RPC.
 
+#[path = "support/readable.rs"]
+mod readable;
 mod support;
 
 use std::{
@@ -15,6 +17,7 @@ use kafka_wire::{
 };
 use kafka_wire_core::KafkaEncode;
 
+use readable::drive_until_readable;
 use support::complete_negotiation;
 
 #[test]
@@ -39,13 +42,14 @@ fn generated_call_round_trips_through_the_public_embedded_host() {
 
     // When
     assert_progress(&reactor.turn(Duration::ZERO), 1);
-    read_request_frame(&mut peer);
-    peer.write_all(&encoded_response(&response))
+    drive_until_readable(&peer, &mut reactor);
+    let correlation = read_request_frame(&mut peer);
+    peer.write_all(&encoded_response(&response, correlation))
         .unwrap_or_else(|error| panic!("write generated broker response: {error}"));
-    drive_io_progress(&mut reactor);
+    let result = drive_call(&mut reactor, &call);
 
     // Then
-    assert_eq!(call.wait(), Ok(Ok(response)));
+    assert_eq!(result, Ok(Ok(response)));
 }
 
 fn assert_progress(outcome: &Result<TurnOutcome, kafka_driver::ReactorError>, commands: usize) {
@@ -58,18 +62,25 @@ fn assert_progress(outcome: &Result<TurnOutcome, kafka_driver::ReactorError>, co
     ));
 }
 
-fn drive_io_progress(reactor: &mut kafka_driver::Reactor) {
-    for _ in 0..3 {
-        let outcome = reactor.turn(Duration::from_secs(1));
-        if matches!(outcome, Ok(TurnOutcome::Progress { commands: 0, .. })) {
-            return;
+fn drive_call<T>(
+    reactor: &mut kafka_driver::Reactor,
+    call: &kafka_driver::Call<T>,
+) -> Result<T, kafka_driver::CompletionError> {
+    for _ in 0..4 {
+        if let Some(result) = call.try_result() {
+            return result;
         }
-        assert!(matches!(outcome, Ok(TurnOutcome::Idle)));
+        let outcome = reactor.turn(Duration::from_secs(1));
+        assert!(matches!(
+            outcome,
+            Ok(TurnOutcome::Progress { commands: 0, .. } | TurnOutcome::Idle)
+        ));
     }
-    panic!("response readiness must progress within the bounded drive attempts");
+    call.try_result()
+        .unwrap_or_else(|| panic!("response must settle within bounded drive attempts"))
 }
 
-fn read_request_frame(peer: &mut TcpStream) {
+fn read_request_frame(peer: &mut TcpStream) -> i32 {
     let mut prefix = [0; size_of::<i32>()];
     peer.read_exact(&mut prefix)
         .unwrap_or_else(|error| panic!("read request frame length: {error}"));
@@ -80,12 +91,13 @@ fn read_request_frame(peer: &mut TcpStream) {
     peer.read_exact(&mut body)
         .unwrap_or_else(|error| panic!("read request frame body: {error}"));
     assert!(!body.is_empty(), "generated request body must not be empty");
+    request_correlation(&body)
 }
 
-fn encoded_response(response: &ApiVersionsResponse) -> Vec<u8> {
+fn encoded_response(response: &ApiVersionsResponse, correlation: i32) -> Vec<u8> {
     let mut body = BytesMut::new();
     let mut header = ResponseHeader::default();
-    header.correlation_id = 0;
+    header.correlation_id = correlation;
     let Ok(header_version) = response_header_version_for::<ApiVersionsRequest>(version()) else {
         panic!("supported test response must have header policy");
     };
@@ -98,6 +110,17 @@ fn encoded_response(response: &ApiVersionsResponse) -> Vec<u8> {
     let mut frame = length.to_be_bytes().to_vec();
     frame.extend_from_slice(&body);
     frame
+}
+
+fn request_correlation(body: &[u8]) -> i32 {
+    let bytes = body
+        .get(4..8)
+        .unwrap_or_else(|| panic!("request header must contain a correlation"));
+    i32::from_be_bytes(
+        bytes
+            .try_into()
+            .unwrap_or_else(|_| panic!("request correlation must be four bytes")),
+    )
 }
 
 const fn version() -> ApiVersion {

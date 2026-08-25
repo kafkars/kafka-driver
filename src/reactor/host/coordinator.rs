@@ -10,14 +10,20 @@ impl Reactor {
         if self.state != HostState::Running {
             return Ok(false);
         }
+        if self.backend.legacy().is_none() {
+            return Ok(false);
+        }
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
         let (progress, waiting) = {
             let Some(coordinator) = &mut self.coordinator else {
                 return Ok(false);
             };
-            let progress = if let Some(seed) = self.brokers.seed_mut() {
+            let Some(legacy) = self.backend.legacy_mut() else {
+                return Ok(false);
+            };
+            let progress = if let Some(seed) = legacy.brokers.seed_mut() {
                 coordinator
-                    .drive(seed, &self.poller, now, &self.call_ids, evidence)
+                    .drive(seed, &legacy.poller, now, &self.call_ids, evidence)
                     .map_err(ReactorError::coordinator)?
             } else {
                 false

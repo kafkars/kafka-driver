@@ -18,6 +18,10 @@ impl Reactor {
         result_capacity_bytes: usize,
         completion: CompletionSender<Result<TopicView, TopicViewError>>,
     ) -> Result<(), ReactorError> {
+        let Some(legacy) = self.backend.legacy_mut() else {
+            let _ = completion.complete(Err(TopicViewError::Unavailable));
+            return Ok(());
+        };
         let deadline = self
             .clock
             .moment_at(deadline)
@@ -57,8 +61,8 @@ impl Reactor {
                     result_capacity_bytes,
                     completion,
                 ),
-                self.brokers.seed_mut(),
-                &self.poller,
+                legacy.brokers.seed_mut(),
+                &legacy.poller,
                 now,
                 &self.call_ids,
                 evidence,

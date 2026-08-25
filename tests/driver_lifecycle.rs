@@ -1,5 +1,7 @@
 //! Public scenarios for bounded shutdown, wake, and terminal reactor ownership.
 
+#[path = "support/idle.rs"]
+mod idle;
 mod support;
 
 use std::{
@@ -7,7 +9,7 @@ use std::{
     net::TcpListener,
     num::NonZeroUsize,
     pin::Pin,
-    sync::{Arc, Barrier},
+    sync::{Arc, Barrier, mpsc::sync_channel},
     task::{Context, Poll, Wake, Waker},
     thread,
     time::Duration,
@@ -19,6 +21,7 @@ use kafka_driver::{
 use kafka_driver_core::CallFailure;
 use kafka_wire::ApiVersionsRequest;
 
+use idle::settle_to_idle;
 use support::complete_negotiation;
 
 #[test]
@@ -124,24 +127,57 @@ fn full_request_mailbox_cannot_reject_or_delay_shutdown() {
 
 #[test]
 fn cross_thread_admission_wakes_a_blocked_reactor_turn() {
-    let (driver, mut reactor, listener) = build_reactor(&DriverLimits::default());
-    let (mut peer, _) = listener
-        .accept()
-        .unwrap_or_else(|error| panic!("accept lifecycle connection: {error}"));
-    complete_negotiation(&mut peer, &mut reactor);
-    let owner = thread::spawn(move || reactor.turn(Duration::from_secs(30)));
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind lifecycle broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read lifecycle broker address: {error}"));
+    let (ready, driver) = sync_channel(1);
+    let owner = thread::spawn(move || {
+        let Ok((driver, mut reactor)) = Driver::builder().broker(address).build_reactor() else {
+            panic!("build owner-local lifecycle reactor");
+        };
+        let (mut peer, _) = listener
+            .accept()
+            .unwrap_or_else(|error| panic!("accept lifecycle connection: {error}"));
+        complete_negotiation(&mut peer, &mut reactor);
+        settle_to_idle(&mut reactor);
+        ready
+            .send(driver)
+            .unwrap_or_else(|error| panic!("publish lifecycle driver: {error}"));
+        let first = reactor
+            .turn(Duration::from_secs(30))
+            .unwrap_or_else(|error| panic!("drive woken shutdown turn: {error}"));
+        let mut terminal = first;
+        for _ in 0..32 {
+            if matches!(terminal, TurnOutcome::Shutdown { .. }) {
+                return (first, terminal);
+            }
+            terminal = reactor
+                .turn(Duration::from_millis(100))
+                .unwrap_or_else(|error| panic!("finish bounded shutdown: {error}"));
+        }
+        (first, terminal)
+    });
+    let driver = driver
+        .recv()
+        .unwrap_or_else(|error| panic!("receive lifecycle driver: {error}"));
 
     let call = driver.shutdown();
 
     assert!(call.is_ok());
+    let (first, terminal) = owner
+        .join()
+        .unwrap_or_else(|_| panic!("join woken lifecycle owner"));
     assert!(matches!(
-        owner.join(),
-        Ok(Ok(TurnOutcome::Shutdown { commands: 1 }))
+        first,
+        TurnOutcome::Progress { commands: 1, .. } | TurnOutcome::Shutdown { commands: 1 }
     ));
+    assert!(matches!(terminal, TurnOutcome::Shutdown { .. }));
 }
 
 #[test]
-fn explicit_wake_releases_an_idle_embedded_turn() {
+fn explicit_wake_releases_a_blocked_embedded_turn_as_progress() {
     let (_driver, mut reactor, listener) = build_reactor(&DriverLimits::default());
     let (mut peer, _) = listener
         .accept()
@@ -154,13 +190,30 @@ fn explicit_wake_releases_an_idle_embedded_turn() {
         panic!("reactor turn must succeed");
     };
 
-    assert_eq!(outcome, TurnOutcome::Idle);
+    assert_eq!(
+        outcome,
+        TurnOutcome::Progress {
+            commands: 0,
+            more_work: false,
+        }
+    );
 }
 
 #[test]
 fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
-    let (driver, mut reactor, _listener) = build_reactor(&DriverLimits::default());
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind lifecycle broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read lifecycle broker address: {error}"));
+    let (ready, driver) = sync_channel(1);
     let owner = thread::spawn(move || {
+        let Ok((driver, mut reactor)) = Driver::builder().broker(address).build_reactor() else {
+            panic!("build owner-local lifecycle reactor");
+        };
+        ready
+            .send(driver)
+            .unwrap_or_else(|error| panic!("publish lifecycle driver: {error}"));
         loop {
             let outcome = reactor
                 .turn(Duration::from_secs(30))
@@ -170,8 +223,12 @@ fn dropping_the_last_driver_handle_wakes_and_closes_the_reactor() {
             }
         }
     });
+    let driver = driver
+        .recv()
+        .unwrap_or_else(|error| panic!("receive lifecycle driver: {error}"));
 
     drop(driver);
+    drop(listener);
 
     assert!(matches!(
         owner.join(),
@@ -224,7 +281,7 @@ fn generated_call_reaches_a_ready_configured_broker_owner() {
         admitted,
         TurnOutcome::Progress {
             commands: 1,
-            more_work: false,
+            more_work: true,
         }
     );
     let waker = Waker::from(Arc::new(NoopWake));
