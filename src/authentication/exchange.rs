@@ -70,7 +70,14 @@ impl AuthenticateExchange {
         self,
         frame: FrameBody,
     ) -> Result<SaslAuthenticateResponse, AuthenticationExchangeError> {
-        let mut decoder = Decoder::new(frame.into_bytes(), self.decode_limits)?;
+        self.finish_bytes(frame.into_bytes())
+    }
+
+    pub(crate) fn finish_bytes(
+        self,
+        bytes: Bytes,
+    ) -> Result<SaslAuthenticateResponse, AuthenticationExchangeError> {
+        let mut decoder = Decoder::new(bytes, self.decode_limits)?;
         let header_version = response_header_version_for::<SaslAuthenticateRequest>(self.version)?;
         let header = ResponseHeader::decode(&mut decoder, ApiVersion::new(header_version))?;
         let observed = CorrelationId::from_raw(header.correlation_id);

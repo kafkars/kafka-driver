@@ -13,6 +13,8 @@ mod start_error;
 mod framing_test;
 #[cfg(test)]
 mod plain_test;
+#[cfg(test)]
+mod response_bytes_test;
 
 pub(crate) use error::AuthenticationExchangeError;
 pub(crate) use exchange::AuthenticateExchange;
