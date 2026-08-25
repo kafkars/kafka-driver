@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::{
     api::CallIds,
     completion::{ShutdownRequester, shutdown_barrier},
-    config::{DriverLimits, DriverTarget},
+    config::{DirectTargetSelection, DriverLimits, DriverTarget},
     observation::Observation,
 };
 
@@ -13,7 +13,7 @@ use super::{CoordinatorOwner, HostState, MetadataOwner, NameResolution, Reactor}
 use crate::reactor::{
     Command, LegacyBackend, MailboxSender, Poller, ReactorBackend, ReactorClock, WakeHandle,
     broker::BrokerLimits, broker_set::BrokerSet, causality::CausalSequence,
-    direct_plaintext::DirectPlaintextOwner, mailbox, scram_proof::ScramProofWorker,
+    direct_plaintext::DirectBackend, mailbox, scram_proof::ScramProofWorker,
 };
 
 impl Reactor {
@@ -26,11 +26,13 @@ impl Reactor {
         let clock = ReactorClock::new();
         let now = clock.now().map_err(std::io::Error::other)?;
         let construction = match target {
-            Some(target) => match target.direct_plaintext() {
-                Some((address, client_id)) => Construction::direct(DirectPlaintextOwner::new(
-                    limits, address, client_id, now,
-                )?),
-                None => Construction::legacy(limits, Some(target), now)?,
+            Some(target) => match target.select_direct() {
+                DirectTargetSelection::Direct(config) => {
+                    Construction::direct(DirectBackend::new(limits, config, now)?)
+                }
+                DirectTargetSelection::Legacy(target) => {
+                    Construction::legacy(limits, Some(target), now)?
+                }
             },
             None => Construction::legacy(limits, None, now)?,
         };
@@ -74,9 +76,9 @@ struct Construction {
 }
 
 impl Construction {
-    fn direct(owner: DirectPlaintextOwner) -> Self {
+    fn direct(owner: DirectBackend) -> Self {
         Self {
-            backend: ReactorBackend::DirectPlaintext(Box::new(owner)),
+            backend: ReactorBackend::Direct(Box::new(owner)),
             resolution: None,
             scram_proof: None,
             metadata: None,

@@ -111,15 +111,32 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             ) => {
                 let observed = causality.outcome().map_err(message)?;
                 let delivery = driver_delivery(delivery);
-                let translated =
-                    if matches!(failure, bornera_core::OperationFailure::ConnectionClosed(_)) {
-                        self.last_close_reason.map_or_else(
-                            || operation(failure, delivery),
+                let translated = match failure {
+                    bornera_core::OperationFailure::ConnectionClosed(reason) => {
+                        let effective = self.last_close_reason.or_else(|| {
+                            self.set
+                                .connection_snapshot(self.connection)
+                                .ok()
+                                .and_then(|snapshot| snapshot.transport_diagnostic)
+                                .map(|diagnostic| {
+                                    super::failure_translation::connection_close_reason(
+                                        reason,
+                                        Some(diagnostic),
+                                    )
+                                })
+                        });
+                        effective.map_or_else(
+                            || {
+                                operation(
+                                    bornera_core::OperationFailure::ConnectionClosed(reason),
+                                    delivery,
+                                )
+                            },
                             |reason| recovery(reason, delivery),
                         )
-                    } else {
-                        operation(failure, delivery)
-                    };
+                    }
+                    failure => operation(failure, delivery),
+                };
                 let _ = context.fail_observed(translated, observed);
             }
             (DirectOperationContext::Public(context), OperationOutcome::Cancelled { delivery }) => {

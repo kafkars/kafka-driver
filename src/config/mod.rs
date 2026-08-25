@@ -16,6 +16,8 @@ mod target;
 mod tls;
 
 #[cfg(test)]
+mod broker_selection_test;
+#[cfg(test)]
 mod client_id_test;
 #[cfg(test)]
 mod coordinator_test;
@@ -43,9 +45,12 @@ pub use scram_proof::ScramProofLimits;
 pub use tls::{TlsClientConfig, TlsClientPolicy};
 
 pub(crate) use bootstrap::BootstrapConfig;
-pub(crate) use broker::{BrokerAddresses, BrokerConfig, BrokerSecurity, BrokerTemplate};
+pub(crate) use broker::{
+    BrokerAddresses, BrokerConfig, BrokerSecurity, BrokerTemplate, DirectBrokerConfig,
+    DirectBrokerSelection,
+};
 pub(crate) use client_id::{ClientId, ClientIdError};
 pub(crate) use scram_policy::{ScramClientConfigError, kafka_scram_client_config};
-pub(crate) use target::DriverTarget;
+pub(crate) use target::{DirectTargetSelection, DriverTarget};
 #[cfg(feature = "tls-rustls")]
 pub(crate) use tls::{TlsConnectionConfig, TlsSessionError};

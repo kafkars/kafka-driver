@@ -2,16 +2,23 @@
 
 use std::{io, num::NonZeroUsize};
 
+#[cfg(feature = "tls-rustls")]
+use bornera::TransportPressure;
 use bornera::{
     ConnectionSetLimits, ConnectionSlotLimits, DecoderLimits, IoLimits, PublicationLimits,
     TransportLimits,
 };
 use bornera_core::{ConnectionLimits, MatchKeySpace};
+#[cfg(feature = "tls-rustls")]
+use bornera_rustls::RustlsTransportLimits;
 use calandria::RetainedBytes;
 
 use crate::config::DriverLimits;
 
-use super::super::{bornera::KafkaFrameDecoder, broker::BrokerLimits};
+use super::{
+    super::{bornera::KafkaFrameDecoder, broker::BrokerLimits},
+    decoder_gate::{DecoderGate, DirectFrameDecoder},
+};
 
 // One fixed epoch can publish each of Bornera's four lifecycle edges once.
 const LIFECYCLE_EVENTS: NonZeroUsize = nonzero(4);
@@ -29,11 +36,16 @@ pub(super) fn set_limits(limits: &DriverLimits) -> ConnectionSetLimits {
 pub(super) fn slot_limits(
     driver: &DriverLimits,
     broker: BrokerLimits,
-) -> io::Result<(KafkaFrameDecoder, ConnectionSlotLimits)> {
+    transport_limits: TransportLimits,
+    decoder_gate: Option<DecoderGate>,
+) -> io::Result<(DirectFrameDecoder, ConnectionSlotLimits)> {
     let transport = broker.transport();
     let frame = transport.frame();
     let chunk = transport.read_chunk_bytes();
-    let decoder = KafkaFrameDecoder::new(frame, chunk).map_err(message)?;
+    let decoder = DirectFrameDecoder::new(
+        KafkaFrameDecoder::new(frame, chunk).map_err(message)?,
+        decoder_gate,
+    );
     let response_capacity = broker.response_capacity();
     let semantic_bytes = retained(driver.mailbox_byte_capacity().get())?;
     let write = transport.write();
@@ -69,11 +81,31 @@ pub(super) fn slot_limits(
         core,
         decoder_limits,
         IoLimits::new(io_operations, chunk),
-        TransportLimits::new(RetainedBytes::ZERO),
+        transport_limits,
         PublicationLimits::new(LIFECYCLE_EVENTS),
     )
     .map_err(message)?;
     Ok((decoder, slot))
+}
+
+#[cfg(feature = "tls-rustls")]
+pub(super) fn rustls_transport_limits() -> io::Result<RustlsTransportLimits> {
+    let kib = |value: u64| RetainedBytes::new(value * 1_024);
+    let pressure =
+        TransportPressure::new(kib(128), kib(128), kib(192), kib(128)).map_err(message)?;
+    let limits = RustlsTransportLimits::new(
+        nonzero(64 * 1_024),
+        nonzero(128 * 1_024),
+        nonzero(128 * 1_024),
+        pressure,
+    )
+    .map_err(message)?;
+    if limits.transport_limits().retained_bytes() != kib(576) {
+        return Err(io::Error::other(
+            "direct rustls profile must charge exactly 576 KiB",
+        ));
+    }
+    Ok(limits)
 }
 
 fn retained(bytes: usize) -> io::Result<RetainedBytes> {
@@ -87,6 +119,6 @@ fn message(error: impl std::fmt::Display) -> io::Error {
 const fn nonzero(value: usize) -> NonZeroUsize {
     match NonZeroUsize::new(value) {
         Some(value) => value,
-        None => panic!("direct plaintext limits must be nonzero"),
+        None => panic!("direct broker limits must be nonzero"),
     }
 }

@@ -59,12 +59,33 @@ impl BrokerConfig {
         (self.addresses, self.security, self.sasl, self.client_id)
     }
 
-    pub(crate) fn direct_plaintext(&self) -> Option<(SocketAddr, Option<ClientId>)> {
-        match (&self.addresses, &self.security, &self.sasl) {
+    pub(crate) fn select_direct(self) -> DirectBrokerSelection {
+        let Self {
+            addresses,
+            security,
+            sasl,
+            client_id,
+        } = self;
+        match (addresses, security, sasl) {
             (BrokerAddresses::Direct(address), BrokerSecurity::Plaintext, None) => {
-                Some((*address, self.client_id.clone()))
+                DirectBrokerSelection::Direct(DirectBrokerConfig::Plaintext { address, client_id })
             }
-            _ => None,
+            #[cfg(feature = "tls-rustls")]
+            (
+                BrokerAddresses::Direct(address),
+                BrokerSecurity::Rustls(TlsConnectionConfig::Configured(tls)),
+                None,
+            ) => DirectBrokerSelection::Direct(DirectBrokerConfig::Rustls {
+                address,
+                tls,
+                client_id,
+            }),
+            (addresses, security, sasl) => DirectBrokerSelection::Legacy(Self {
+                addresses,
+                security,
+                sasl,
+                client_id,
+            }),
         }
     }
 
@@ -77,6 +98,25 @@ impl BrokerConfig {
             .as_ref()
             .is_some_and(SaslConfig::requires_proof_worker)
     }
+}
+
+/// One direct numeric target without Kafka SASL supported by the Bornera backend.
+pub(crate) enum DirectBrokerConfig {
+    Plaintext {
+        address: SocketAddr,
+        client_id: Option<ClientId>,
+    },
+    #[cfg(feature = "tls-rustls")]
+    Rustls {
+        address: SocketAddr,
+        tls: TlsClientConfig,
+        client_id: Option<ClientId>,
+    },
+}
+
+pub(crate) enum DirectBrokerSelection {
+    Direct(DirectBrokerConfig),
+    Legacy(BrokerConfig),
 }
 
 /// Reusable transport and authentication policy applied after address selection.

@@ -1,38 +1,25 @@
-//! Capacity-one direct plaintext broker state and sole-selector hosting surface.
+//! Capacity-one direct broker state and sole-selector hosting surface.
 
-use std::{io, net::SocketAddr, time::Duration};
+use std::{io, time::Duration};
 
-use bornera::{
-    ConnectionConfig, ConnectionIdentity, ConnectionSet, ConnectionSetConfig, ConnectionToken,
-    RegisteredTransport, TcpTransport,
-};
-use bornera_core::{ConnectionEpoch, ConnectionId, EndpointId, LaneId};
-use calandria::{
-    Deadline, Next, ResourceOwnerId, Span, TimerOwnerId, Turn, WaitOutcome, WorkCount,
-};
-use kafka_driver_core::{CallFailure, Delivery, KafkaSessionLimits, KafkaSessionMachine, Moment};
+#[cfg(test)]
+use bornera::TcpTransport;
+use bornera::{ConnectionSet, ConnectionToken, RegisteredTransport};
+use calandria::{Next, Span, Turn, WaitOutcome, WorkCount};
+use kafka_driver_core::{CallFailure, Delivery, KafkaSessionMachine, Moment};
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::DecodeLimits;
 
-use crate::{
-    RequestError,
-    config::{ClientId, DriverLimits},
-    request::ErasedRequest,
-};
+use crate::{RequestError, config::ClientId, request::ErasedRequest};
 
-use super::{
-    limits::{set_limits, slot_limits},
-    operation_owner::DirectOperationContext,
-    pending::PendingRequests,
-};
-use crate::reactor::{
-    bornera::{KafkaFrame, KafkaFrameDecoder, KafkaReplyClassifier, OperationContexts},
-    broker::BrokerLimits,
-};
+use super::{operation_owner::DirectOperationContext, pending::PendingRequests};
+use crate::reactor::bornera::{KafkaFrame, KafkaReplyClassifier, OperationContexts};
 
-pub(super) type DirectSet<T> = ConnectionSet<KafkaFrameDecoder, KafkaReplyClassifier, T>;
+use super::decoder_gate::DirectFrameDecoder;
 
-const ID: u64 = 1;
+pub(super) type DirectSet<T> = ConnectionSet<DirectFrameDecoder, KafkaReplyClassifier, T>;
+
+pub(super) const ID: u64 = 1;
 
 pub(in crate::reactor) struct DirectOwner<T: RegisteredTransport> {
     pub(super) set: DirectSet<T>,
@@ -59,77 +46,8 @@ pub(in crate::reactor) struct DirectOwner<T: RegisteredTransport> {
     pub(super) pending_recovery: Option<DirectRecovery>,
 }
 
+#[cfg(test)]
 pub(in crate::reactor) type DirectPlaintextOwner = DirectOwner<TcpTransport>;
-
-impl DirectOwner<TcpTransport> {
-    pub(in crate::reactor) fn new(
-        driver: &DriverLimits,
-        address: SocketAddr,
-        client_id: Option<ClientId>,
-        now: Moment,
-    ) -> io::Result<Self> {
-        let broker = BrokerLimits::default();
-        let (decoder, slot) = slot_limits(driver, broker)?;
-        let mut set = DirectSet::<TcpTransport>::new(
-            ConnectionSetConfig::new(ResourceOwnerId::new(ID)),
-            set_limits(driver),
-        )
-        .map_err(message)?;
-        let connect_deadline = now
-            .checked_add(broker.connect_timeout())
-            .ok_or_else(|| io::Error::other("direct connect deadline overflowed"))?;
-        let lane =
-            u32::try_from(ID).map_err(|_| io::Error::other("direct lane identity exceeds u32"))?;
-        let identity = ConnectionIdentity::new(
-            EndpointId::new(ID),
-            LaneId::new(lane),
-            ConnectionId::new(ID),
-            ConnectionEpoch::new(ID),
-        );
-        let connection = set
-            .connect(
-                ConnectionConfig::new(
-                    identity,
-                    address,
-                    Deadline::at(calandria_moment(connect_deadline)),
-                    TimerOwnerId::new(ID),
-                ),
-                slot,
-                decoder,
-                KafkaReplyClassifier,
-            )
-            .map_err(message)?;
-        let retained = calandria::RetainedBytes::try_from(driver.mailbox_byte_capacity().get())
-            .map_err(message)?;
-        Ok(Self {
-            set,
-            connection,
-            session: KafkaSessionMachine::new(KafkaSessionLimits::default()),
-            contexts: OperationContexts::new(broker.response_capacity(), retained),
-            pending: PendingRequests::new(
-                driver.mailbox_capacity(),
-                driver.mailbox_byte_capacity(),
-            ),
-            client_id,
-            outbound_limits: broker.outbound_frame(),
-            decode_limits: DecodeLimits::default(),
-            negotiation_limits: broker.negotiation(),
-            negotiation_timeout: broker.negotiation_timeout(),
-            response_capacity: broker.response_capacity().get(),
-            write_frame_capacity: broker.transport().write().max_queued_frames(),
-            write_byte_capacity: broker.transport().write().max_buffered_bytes(),
-            write_frame_rejections: 0,
-            write_byte_rejections: 0,
-            last_close_reason: None,
-            retired_seed: None,
-            submission_budget: driver.command_budget(),
-            last_turn: Turn::waiting(),
-            admission_open: false,
-            terminal: false,
-            pending_recovery: None,
-        })
-    }
-}
 
 impl<T: RegisteredTransport> DirectOwner<T> {
     pub(in crate::reactor) fn submit(
@@ -203,7 +121,7 @@ pub(super) fn message(error: impl std::fmt::Display) -> io::Error {
 
 pub(super) fn add(now: Moment, duration: Duration) -> io::Result<Moment> {
     now.checked_add(duration)
-        .ok_or_else(|| io::Error::other("direct plaintext deadline overflowed"))
+        .ok_or_else(|| io::Error::other("direct broker deadline overflowed"))
 }
 
 pub(super) type DirectRecovery = bornera::RecoveryReport<bornera::OutboundFrame, KafkaFrame>;

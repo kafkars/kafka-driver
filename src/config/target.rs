@@ -1,8 +1,8 @@
 //! Exclusive direct-broker or bootstrap construction target.
 
-use std::net::SocketAddr;
-
-use super::{BootstrapConfig, BrokerConfig, ClientId, SaslConfig};
+use super::{
+    BootstrapConfig, BrokerConfig, ClientId, DirectBrokerConfig, DirectBrokerSelection, SaslConfig,
+};
 
 /// One configured ownership root for initial broker connectivity.
 #[derive(Clone, Debug)]
@@ -12,10 +12,15 @@ pub(crate) enum DriverTarget {
 }
 
 impl DriverTarget {
-    pub(crate) fn direct_plaintext(&self) -> Option<(SocketAddr, Option<ClientId>)> {
+    pub(crate) fn select_direct(self) -> DirectTargetSelection {
         match self {
-            Self::Direct(config) => config.direct_plaintext(),
-            Self::Bootstrap(_) => None,
+            Self::Direct(config) => match config.select_direct() {
+                DirectBrokerSelection::Direct(config) => DirectTargetSelection::Direct(config),
+                DirectBrokerSelection::Legacy(config) => {
+                    DirectTargetSelection::Legacy(Self::Direct(config))
+                }
+            },
+            target @ Self::Bootstrap(_) => DirectTargetSelection::Legacy(target),
         }
     }
 
@@ -39,4 +44,9 @@ impl DriverTarget {
             Self::Bootstrap(config) => config.requires_proof_worker(),
         }
     }
+}
+
+pub(crate) enum DirectTargetSelection {
+    Direct(DirectBrokerConfig),
+    Legacy(DriverTarget),
 }

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use kafka_driver_core::Moment;
 
-use crate::reactor::{broker::DeadlineProgress, direct_plaintext::DirectPlaintextOwner};
+use crate::reactor::{broker::DeadlineProgress, direct_plaintext::DirectBackend};
 
 use super::{Reactor, ReactorError};
 
@@ -59,11 +59,7 @@ impl Reactor {
 
     pub(super) fn next_deadline(&self, now: Moment) -> Option<Moment> {
         let backend = self.backend.legacy().map_or_else(
-            || {
-                self.backend
-                    .direct()
-                    .and_then(DirectPlaintextOwner::next_deadline)
-            },
+            || self.backend.direct().and_then(DirectBackend::next_deadline),
             |legacy| legacy.brokers.next_deadline(),
         );
         backend
@@ -96,7 +92,7 @@ impl Reactor {
             || {
                 self.backend
                     .direct()
-                    .is_some_and(DirectPlaintextOwner::has_local_work)
+                    .is_some_and(DirectBackend::has_local_work)
             },
             |legacy| legacy.brokers.has_local_io(),
         )

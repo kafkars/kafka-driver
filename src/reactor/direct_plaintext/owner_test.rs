@@ -18,7 +18,7 @@ use kafka_wire_core::{ApiVersion, KafkaEncode};
 
 use crate::{DriverLimits, RequestError, request::erased_request};
 
-use super::owner::DirectPlaintextOwner;
+use super::{backend::DirectBackend, owner::DirectPlaintextOwner};
 use crate::reactor::{ReactorBackend, causality::CausalSequence};
 
 #[test]
@@ -32,11 +32,14 @@ fn loopback_session_round_trip_releases_every_semantic_context() {
     let now = Moment::from_nanos(1);
     let owner = DirectPlaintextOwner::new(&DriverLimits::default(), address, None, now)
         .unwrap_or_else(|error| panic!("construct direct owner: {error}"));
-    let mut backend = ReactorBackend::DirectPlaintext(Box::new(owner));
+    let mut backend = ReactorBackend::Direct(Box::new(DirectBackend::Plaintext(Box::new(owner))));
     assert_eq!(backend.selector_count(), 1);
-    let owner = backend
-        .direct_mut()
-        .unwrap_or_else(|| panic!("direct construction must own only Bornera"));
+    let owner = match backend.direct_mut() {
+        Some(DirectBackend::Plaintext(owner)) => owner.as_mut(),
+        #[cfg(feature = "tls-rustls")]
+        Some(DirectBackend::Rustls(_)) => panic!("plaintext test constructed a rustls owner"),
+        None => panic!("direct construction must own only Bornera"),
+    };
     assert_eq!(owner.selector_registrations(), 1);
     let mut causality = CausalSequence::new();
 

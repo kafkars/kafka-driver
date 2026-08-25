@@ -157,14 +157,22 @@ pub(super) fn diagnostic_close_reason(
 }
 
 fn transport_failure(diagnostic: TransportDiagnostic) -> TransportFailure {
+    if diagnostic.failure == TransportFailureKind::Truncated {
+        return TransportFailure::Reset;
+    }
     match (diagnostic.failure, diagnostic.kind) {
         (TransportFailureKind::TimedOut, _) | (_, std::io::ErrorKind::TimedOut) => {
             TransportFailure::TimedOut
         }
         (_, std::io::ErrorKind::ConnectionRefused) => TransportFailure::Refused,
-        (_, std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted) => {
-            TransportFailure::Reset
-        }
+        (
+            _,
+            std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::NotConnected
+            | std::io::ErrorKind::UnexpectedEof,
+        ) => TransportFailure::Reset,
         _ => TransportFailure::Other,
     }
 }

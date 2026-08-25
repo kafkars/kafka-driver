@@ -62,6 +62,13 @@ impl TlsClientConfig {
     fn start_connection(&self) -> Result<ClientConnection, rustls::Error> {
         ClientConnection::new(Arc::clone(&self.policy.client), self.server_name.clone())
     }
+
+    pub(crate) fn into_bornera(
+        self,
+        limits: bornera_rustls::RustlsTransportLimits,
+    ) -> bornera_rustls::RustlsTransportConfig {
+        bornera_rustls::RustlsTransportConfig::new(self.policy.client, self.server_name, limits)
+    }
 }
 
 impl fmt::Debug for TlsClientConfig {

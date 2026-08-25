@@ -13,7 +13,7 @@ impl Reactor {
             .or_else(|| {
                 self.backend
                     .direct()
-                    .and_then(super::super::direct_plaintext::DirectPlaintextOwner::seed_snapshot)
+                    .and_then(super::super::direct_plaintext::DirectBackend::seed_snapshot)
             });
         let bootstrap = BootstrapSnapshot::new(
             self.resolution
