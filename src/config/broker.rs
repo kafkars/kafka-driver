@@ -2,7 +2,7 @@
 
 use std::net::SocketAddr;
 
-use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet, SaslMechanism};
+use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
 
 #[cfg(feature = "tls-rustls")]
 use super::{TlsClientConfig, TlsClientPolicy, TlsConnectionConfig};
@@ -66,11 +66,8 @@ impl BrokerConfig {
             sasl,
             client_id,
         } = self;
-        let direct_sasl = sasl
-            .as_ref()
-            .is_none_or(|config| config.mechanism() == SaslMechanism::Plain);
         match (addresses, security) {
-            (BrokerAddresses::Direct(address), BrokerSecurity::Plaintext) if direct_sasl => {
+            (BrokerAddresses::Direct(address), BrokerSecurity::Plaintext) => {
                 DirectBrokerSelection::Direct(DirectBrokerConfig::Plaintext {
                     address,
                     sasl,
@@ -81,7 +78,7 @@ impl BrokerConfig {
             (
                 BrokerAddresses::Direct(address),
                 BrokerSecurity::Rustls(TlsConnectionConfig::Configured(tls)),
-            ) if direct_sasl => DirectBrokerSelection::Direct(DirectBrokerConfig::Rustls {
+            ) => DirectBrokerSelection::Direct(DirectBrokerConfig::Rustls {
                 address,
                 tls,
                 sasl,
@@ -107,7 +104,7 @@ impl BrokerConfig {
     }
 }
 
-/// One direct numeric target supported by the Bornera backend.
+/// One fixed numeric owner supported by the Bornera backend without reconnect parity.
 pub(crate) enum DirectBrokerConfig {
     Plaintext {
         address: SocketAddr,
@@ -121,6 +118,20 @@ pub(crate) enum DirectBrokerConfig {
         sasl: Option<SaslConfig>,
         client_id: Option<ClientId>,
     },
+}
+
+impl DirectBrokerConfig {
+    pub(crate) fn requires_proof_worker(&self) -> bool {
+        match self {
+            Self::Plaintext { sasl, .. } => {
+                sasl.as_ref().is_some_and(SaslConfig::requires_proof_worker)
+            }
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls { sasl, .. } => {
+                sasl.as_ref().is_some_and(SaslConfig::requires_proof_worker)
+            }
+        }
+    }
 }
 
 pub(crate) enum DirectBrokerSelection {

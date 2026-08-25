@@ -27,6 +27,8 @@ mod turn;
 #[cfg(test)]
 mod resolution_test;
 #[cfg(test)]
+mod scram_proof_test;
+#[cfg(test)]
 mod shutdown_test;
 #[cfg(test)]
 mod simulation_model_test;

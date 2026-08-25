@@ -1,12 +1,16 @@
 //! Fair delivery of completed SCRAM proofs to exact broker connection owners.
 
+use kafka_driver_core::Moment;
+
+use crate::reactor::scram_proof::ScramProofTarget;
+
 use super::{Reactor, ReactorError};
 
 impl Reactor {
-    pub(super) fn continue_scram_proofs(&mut self) -> Result<ScramProofTurn, ReactorError> {
-        if self.backend.legacy().is_none() {
-            return Ok(ScramProofTurn::idle());
-        }
+    pub(super) fn continue_scram_proofs(
+        &mut self,
+        now: Moment,
+    ) -> Result<ScramProofTurn, ReactorError> {
         let Some(worker) = &self.scram_proof else {
             return Ok(ScramProofTurn::idle());
         };
@@ -16,15 +20,26 @@ impl Reactor {
             .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
         let mut delivered = 0;
         for outcome in self.scram_proof_outcomes.drain(..) {
-            let Some(legacy) = self.backend.legacy_mut() else {
-                continue;
+            let settled = match outcome.fence().target() {
+                ScramProofTarget::Legacy { .. } => {
+                    let Some(legacy) = self.backend.legacy_mut() else {
+                        continue;
+                    };
+                    legacy
+                        .brokers
+                        .complete_scram_proof(&legacy.poller, outcome)
+                        .map_err(ReactorError::broker_set)?
+                }
+                ScramProofTarget::Direct { .. } => {
+                    let Some(direct) = self.backend.direct_mut() else {
+                        continue;
+                    };
+                    direct
+                        .complete_scram_proof(outcome, now)
+                        .map_err(ReactorError::host)?
+                }
             };
-            delivered += usize::from(
-                legacy
-                    .brokers
-                    .complete_scram_proof(&legacy.poller, outcome)
-                    .map_err(ReactorError::broker_set)?,
-            );
+            delivered += usize::from(settled);
         }
         Ok(ScramProofTurn {
             outcomes: progress.outcomes(),

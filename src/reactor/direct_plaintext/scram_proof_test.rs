@@ -113,19 +113,29 @@ fn authentication_deadline_wins_over_an_exact_late_proof() {
 #[test]
 fn shutdown_during_derivation_clears_proof_and_authentication_ownership() {
     let mut fixture = ScramOwnerFixture::new();
-    let (worker, _requests, _outcomes) = ScramProofWorker::isolated(limits(1));
+    let (worker, requests, _outcomes) = ScramProofWorker::isolated(limits(1));
     fixture.owner.scram_proof_sender = Some(worker.sender());
     let pending = fixture.arm_first_proof();
     fixture
         .owner
         .dispatch_scram_proof(EFFECT, first_round(), pending, NOW)
         .unwrap_or_else(|error| panic!("dispatch shutdown-held direct proof: {error}"));
+    let held = requests
+        .try_recv()
+        .unwrap_or_else(|error| panic!("receive shutdown-held direct proof: {error}"));
 
     fixture
         .owner
         .begin_session_drain(NOW)
         .unwrap_or_else(|error| panic!("drain authenticating direct owner: {error}"));
 
+    assert_authentication_closed(&fixture, KafkaSessionCloseReason::Requested);
+    assert!(
+        !fixture
+            .owner
+            .complete_scram_proof(held.finish(), NOW)
+            .unwrap_or_else(|error| panic!("reject proof after direct shutdown: {error}"))
+    );
     assert_authentication_closed(&fixture, KafkaSessionCloseReason::Requested);
 }
 

@@ -48,18 +48,14 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         }
     }
 
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "host delivery is activated by the numeric SCRAM routing slice"
-        )
-    )]
     pub(in crate::reactor) fn complete_scram_proof(
         &mut self,
         proof: ScramProofOutcome,
         now: Moment,
     ) -> io::Result<bool> {
+        if self.terminal {
+            return Ok(false);
+        }
         if self
             .session_deadline
             .is_some_and(|deadline| deadline <= now)
@@ -100,13 +96,13 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         self.scram_proof_sender = None;
     }
 
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "host delivery is activated by the numeric SCRAM routing slice"
-        )
-    )]
+    pub(super) fn install_scram_proof_sender(
+        &mut self,
+        sender: crate::reactor::scram_proof::ScramProofSender,
+    ) {
+        self.scram_proof_sender = Some(sender);
+    }
+
     fn scram_round_is_active(&self, expected: AuthenticationRound) -> bool {
         matches!(
             self.session.state(),

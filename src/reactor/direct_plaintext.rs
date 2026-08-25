@@ -42,7 +42,7 @@ mod pending_test;
 #[cfg(test)]
 mod recovery_test;
 #[cfg(test)]
-mod scram_fixture_test;
+pub(in crate::reactor) mod scram_fixture_test;
 #[cfg(test)]
 mod scram_proof_test;
 

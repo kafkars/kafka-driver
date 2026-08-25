@@ -9,8 +9,8 @@ use std::{
 use bornera::TransportState;
 use calandria::Span;
 use kafka_driver_core::{
-    AuthenticationRound, KafkaSessionAuthenticationState, KafkaSessionDeadline, KafkaSessionInput,
-    KafkaSessionState, Moment, NegotiatedApi, NegotiatedCapabilities,
+    AuthenticationRound, EffectId, KafkaSessionAuthenticationState, KafkaSessionDeadline,
+    KafkaSessionInput, KafkaSessionState, Moment, NegotiatedApi, NegotiatedCapabilities,
 };
 use kafka_wire::{ApiVersionsRequest, KafkaRequest, SaslAuthenticateRequest, SaslHandshakeRequest};
 use kafka_wire_core::ApiVersion;
@@ -19,11 +19,15 @@ use sasl_scram::PendingDerivation;
 use crate::{
     DriverLimits, SaslConfig,
     authentication::{AuthenticationReceive, AuthenticationSession},
+    reactor::scram_proof::ScramProofFence,
 };
 
-use super::owner::{DirectPlaintextOwner, calandria_moment};
+use super::{
+    backend::DirectBackend,
+    owner::{DirectPlaintextOwner, calandria_moment},
+};
 
-pub(super) const NOW: Moment = Moment::from_nanos(1);
+pub(in crate::reactor) const NOW: Moment = Moment::from_nanos(1);
 pub(super) const DEADLINE: Moment = Moment::from_nanos(10_000_000_001);
 
 pub(super) struct ScramOwnerFixture {
@@ -49,41 +53,93 @@ impl ScramOwnerFixture {
     }
 
     pub(super) fn arm_first_proof(&mut self) -> PendingDerivation {
-        drop(
-            self.owner
-                .session
-                .apply(KafkaSessionInput::TransportOpened {
-                    deadline: KafkaSessionDeadline::new(NOW, DEADLINE),
-                }),
-        );
-        drop(
-            self.owner
-                .session
-                .apply(KafkaSessionInput::ApiVersionsSucceededWithAuthentication {
-                    capabilities: capabilities(),
-                    deadline: KafkaSessionDeadline::new(NOW, DEADLINE),
-                }),
-        );
-        drop(
-            self.owner
-                .session
-                .apply(KafkaSessionInput::AuthenticationHandshakeSucceeded),
-        );
-        self.owner.session_deadline = Some(DEADLINE);
-        assert!(matches!(
-            self.owner.session.state(),
+        arm_first_proof(&mut self.owner)
+    }
+}
+
+impl DirectBackend {
+    pub(in crate::reactor) fn arm_scram_proof_for_test(
+        &mut self,
+        effect_id: EffectId,
+    ) -> ScramProofFence {
+        let owner = match self {
+            Self::Plaintext(owner) => owner.as_mut(),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(_) => panic!("host SCRAM fixture requires plaintext"),
+        };
+        open_transport(owner);
+        let pending = arm_first_proof(owner);
+        owner
+            .dispatch_scram_proof(effect_id, first_round(), pending, NOW)
+            .unwrap_or_else(|error| panic!("dispatch hosted direct proof: {error}"));
+        owner
+            .pending_scram_proof
+            .unwrap_or_else(|| panic!("hosted direct proof fence missing"))
+    }
+
+    pub(in crate::reactor) fn has_scram_sender_for_test(&self) -> bool {
+        match self {
+            Self::Plaintext(owner) => owner.scram_proof_sender.is_some(),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(owner) => owner.scram_proof_sender.is_some(),
+        }
+    }
+
+    pub(in crate::reactor) fn has_pending_scram_proof_for_test(&self) -> bool {
+        match self {
+            Self::Plaintext(owner) => owner.pending_scram_proof.is_some(),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(owner) => owner.pending_scram_proof.is_some(),
+        }
+    }
+
+    pub(in crate::reactor) fn scram_round_for_test(&self) -> Option<AuthenticationRound> {
+        let state = match self {
+            Self::Plaintext(owner) => owner.session.state(),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(owner) => owner.session.state(),
+        };
+        match state {
             KafkaSessionState::Authenticating {
                 authentication: KafkaSessionAuthenticationState::Exchanging { round, .. },
                 ..
-            } if round == first_round()
-        ));
-        pending(
-            self.owner
-                .authentication_session
-                .as_mut()
-                .unwrap_or_else(|| panic!("direct SCRAM session must remain owned")),
-        )
+            } => Some(round),
+            _ => None,
+        }
     }
+}
+
+fn arm_first_proof(owner: &mut DirectPlaintextOwner) -> PendingDerivation {
+    drop(owner.session.apply(KafkaSessionInput::TransportOpened {
+        deadline: KafkaSessionDeadline::new(NOW, DEADLINE),
+    }));
+    drop(
+        owner
+            .session
+            .apply(KafkaSessionInput::ApiVersionsSucceededWithAuthentication {
+                capabilities: capabilities(),
+                deadline: KafkaSessionDeadline::new(NOW, DEADLINE),
+            }),
+    );
+    drop(
+        owner
+            .session
+            .apply(KafkaSessionInput::AuthenticationHandshakeSucceeded),
+    );
+    owner.session_deadline = Some(DEADLINE);
+    assert!(matches!(
+        owner.session.state(),
+        KafkaSessionState::Authenticating {
+            authentication: KafkaSessionAuthenticationState::Exchanging { round, .. },
+            ..
+        } if round == first_round()
+    ));
+    pending(
+        owner
+            .authentication_session
+            .as_mut()
+            .unwrap_or_else(|| panic!("direct SCRAM session must remain owned")),
+    )
 }
 
 pub(super) fn independent_pending() -> PendingDerivation {

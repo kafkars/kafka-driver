@@ -16,6 +16,7 @@ use super::owner::DirectOwner;
 #[cfg(feature = "tls-rustls")]
 use super::rustls_transport::DirectRustlsTransport;
 use crate::reactor::causality::CausalSequence;
+use crate::reactor::scram_proof::{ScramProofOutcome, ScramProofSender};
 
 /// Exclusive direct owner for exactly one configured transport family.
 pub(in crate::reactor) enum DirectBackend {
@@ -125,6 +126,34 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.fire_due_session_deadline(now),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.fire_due_session_deadline(now),
+        }
+    }
+
+    pub(in crate::reactor) fn install_scram_proof_sender(&mut self, sender: ScramProofSender) {
+        match self {
+            Self::Plaintext(owner) => owner.install_scram_proof_sender(sender),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(owner) => owner.install_scram_proof_sender(sender),
+        }
+    }
+
+    pub(in crate::reactor) fn release_scram_proof_sender(&mut self) {
+        match self {
+            Self::Plaintext(owner) => owner.release_scram_proof_sender(),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(owner) => owner.release_scram_proof_sender(),
+        }
+    }
+
+    pub(in crate::reactor) fn complete_scram_proof(
+        &mut self,
+        outcome: ScramProofOutcome,
+        now: Moment,
+    ) -> io::Result<bool> {
+        match self {
+            Self::Plaintext(owner) => owner.complete_scram_proof(outcome, now),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(owner) => owner.complete_scram_proof(outcome, now),
         }
     }
 

@@ -79,6 +79,10 @@ driver with a caller-driven `Reactor` for embedding in another event loop. The
 embedded reactor is thread-affine: construct and drive it on its owner thread. No
 public executor abstraction is required.
 
+During the Bornera cutover, direct numeric targets configured with `broker()` or
+`rustls_broker()` own one connection generation and do not reconnect after a
+terminal connection failure. Bootstrap targets retain reconnect ownership.
+
 ## Routes
 
 Requests name Kafka semantics instead of sockets:

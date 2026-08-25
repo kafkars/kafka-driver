@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::{
     api::CallIds,
     completion::{ShutdownRequester, shutdown_barrier},
-    config::{DirectTargetSelection, DriverLimits, DriverTarget},
+    config::{DirectBrokerConfig, DirectTargetSelection, DriverLimits, DriverTarget},
     observation::Observation,
 };
 
@@ -27,9 +27,7 @@ impl Reactor {
         let now = clock.now().map_err(std::io::Error::other)?;
         let construction = match target {
             Some(target) => match target.select_direct() {
-                DirectTargetSelection::Direct(config) => {
-                    Construction::direct(DirectBackend::new(limits, config, now)?)
-                }
+                DirectTargetSelection::Direct(config) => Construction::direct(limits, config, now)?,
                 DirectTargetSelection::Legacy(target) => {
                     Construction::legacy(limits, Some(target), now)?
                 }
@@ -76,14 +74,31 @@ struct Construction {
 }
 
 impl Construction {
-    fn direct(owner: DirectBackend) -> Self {
-        Self {
-            backend: ReactorBackend::Direct(Box::new(owner)),
+    fn direct(
+        limits: &DriverLimits,
+        config: DirectBrokerConfig,
+        now: kafka_driver_core::Moment,
+    ) -> std::io::Result<Self> {
+        let requires_proof_worker = config.requires_proof_worker();
+        let mut backend = DirectBackend::new(limits, config, now)?;
+        let scram_proof = requires_proof_worker
+            .then(|| {
+                ScramProofWorker::spawn(
+                    limits.scram_proof(),
+                    WakeHandle::bornera(backend.pulse_handle()),
+                )
+            })
+            .transpose()?;
+        if let Some(worker) = &scram_proof {
+            backend.install_scram_proof_sender(worker.sender());
+        }
+        Ok(Self {
+            backend: ReactorBackend::Direct(Box::new(backend)),
             resolution: None,
-            scram_proof: None,
+            scram_proof,
             metadata: None,
             coordinator: None,
-        }
+        })
     }
 
     fn legacy(

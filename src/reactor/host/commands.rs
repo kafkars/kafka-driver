@@ -95,6 +95,9 @@ impl Reactor {
         if let Some(legacy) = self.backend.legacy_mut() {
             legacy.brokers.release_scram_proof_senders();
         }
+        if let Some(direct) = self.backend.direct_mut() {
+            direct.release_scram_proof_sender();
+        }
         if let Some(worker) = self.scram_proof.take() {
             self.scram_proof_shutdown = Some(worker.begin_shutdown());
         }

@@ -11,16 +11,17 @@ use std::{
     time::Duration,
 };
 
-use bytes::BytesMut;
 use kafka_driver::{ApiVersion, Reactor};
 use kafka_wire::{
-    API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, KafkaRequest,
-    RequestHeader, ResponseHeader, SASL_AUTHENTICATE_API_DESCRIPTOR, SASL_HANDSHAKE_API_DESCRIPTOR,
-    SaslAuthenticateRequest, SaslAuthenticateResponse, SaslHandshakeRequest, SaslHandshakeResponse,
-    api_versions_response::ApiVersion as AdvertisedApi, request_header_version,
-    response_header_version_for,
+    API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse,
+    SASL_AUTHENTICATE_API_DESCRIPTOR, SASL_HANDSHAKE_API_DESCRIPTOR, SaslAuthenticateRequest,
+    SaslAuthenticateResponse, SaslHandshakeRequest, SaslHandshakeResponse,
 };
-use kafka_wire_core::{Bytes, DecodeLimits, Decoder, KafkaDecode, KafkaEncode, StrBytes};
+use kafka_wire_core::{Bytes, StrBytes};
+
+#[path = "sasl_broker/codec.rs"]
+mod codec;
+use codec::{advertised, read_request, write_response};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HandshakeReply {
@@ -72,9 +73,12 @@ impl<S: Read + Write> SaslPeer<S> {
         Self { stream }
     }
 
+    pub(crate) const fn stream_mut(&mut self) -> &mut S {
+        &mut self.stream
+    }
+
     pub(crate) fn expect_negotiation(&mut self) -> i32 {
-        self.read_request::<ApiVersionsRequest>(ApiVersion::new(0))
-            .correlation
+        read_request::<ApiVersionsRequest>(&mut self.stream, ApiVersion::new(0)).correlation
     }
 
     pub(crate) fn respond_to_negotiation(&mut self, correlation: i32) {
@@ -84,28 +88,60 @@ impl<S: Read + Write> SaslPeer<S> {
             advertised(&SASL_HANDSHAKE_API_DESCRIPTOR, 1),
             advertised(&SASL_AUTHENTICATE_API_DESCRIPTOR, 1),
         ];
-        self.write_response::<ApiVersionsRequest, _>(correlation, &response, ApiVersion::new(0));
+        write_response::<ApiVersionsRequest, _, _>(
+            &mut self.stream,
+            correlation,
+            &response,
+            ApiVersion::new(0),
+        );
     }
 
     pub(crate) fn expect_plain_handshake(&mut self) -> i32 {
-        let observed = self.read_request::<SaslHandshakeRequest>(ApiVersion::new(1));
-        assert_eq!(observed.request.mechanism.as_ref(), "PLAIN");
+        self.expect_handshake("PLAIN")
+    }
+
+    pub(crate) fn expect_handshake(&mut self, mechanism: &str) -> i32 {
+        let observed = read_request::<SaslHandshakeRequest>(&mut self.stream, ApiVersion::new(1));
+        assert_eq!(observed.request.mechanism.as_ref(), mechanism);
         observed.correlation
     }
 
     pub(crate) fn respond_to_handshake(&mut self, correlation: i32, reply: HandshakeReply) {
+        self.respond_to_handshake_for(correlation, "PLAIN", reply);
+    }
+
+    pub(crate) fn respond_to_handshake_for(
+        &mut self,
+        correlation: i32,
+        mechanism: &'static str,
+        reply: HandshakeReply,
+    ) {
         let mut response = SaslHandshakeResponse::default();
         match reply {
-            HandshakeReply::Accepted => response.mechanisms.push(StrBytes::from("PLAIN")),
+            HandshakeReply::Accepted => response.mechanisms.push(StrBytes::from(mechanism)),
             HandshakeReply::Unsupported => response.error_code = 33,
         }
-        self.write_response::<SaslHandshakeRequest, _>(correlation, &response, ApiVersion::new(1));
+        write_response::<SaslHandshakeRequest, _, _>(
+            &mut self.stream,
+            correlation,
+            &response,
+            ApiVersion::new(1),
+        );
     }
 
     pub(crate) fn expect_plain_authentication(&mut self, expected: &[u8]) -> i32 {
-        let observed = self.read_request::<SaslAuthenticateRequest>(ApiVersion::new(1));
-        assert_eq!(observed.request.auth_bytes.as_ref(), expected);
+        let observed = self.expect_authentication();
+        assert_eq!(observed.auth_bytes.as_ref(), expected);
         observed.correlation
+    }
+
+    pub(crate) fn expect_authentication(&mut self) -> ObservedAuthentication {
+        let observed =
+            read_request::<SaslAuthenticateRequest>(&mut self.stream, ApiVersion::new(1));
+        ObservedAuthentication {
+            correlation: observed.correlation,
+            auth_bytes: observed.request.auth_bytes,
+        }
     }
 
     pub(crate) fn respond_to_authentication(
@@ -113,11 +149,22 @@ impl<S: Read + Write> SaslPeer<S> {
         correlation: i32,
         reply: AuthenticationReply,
     ) {
+        self.respond_to_authentication_with(correlation, reply, Bytes::new());
+    }
+
+    pub(crate) fn respond_to_authentication_with(
+        &mut self,
+        correlation: i32,
+        reply: AuthenticationReply,
+        auth_bytes: Bytes,
+    ) {
         let mut response = SaslAuthenticateResponse::default();
+        response.auth_bytes = auth_bytes;
         if reply == AuthenticationReply::Rejected {
             response.error_code = 58;
         }
-        self.write_response::<SaslAuthenticateRequest, _>(
+        write_response::<SaslAuthenticateRequest, _, _>(
+            &mut self.stream,
             correlation,
             &response,
             ApiVersion::new(1),
@@ -125,63 +172,16 @@ impl<S: Read + Write> SaslPeer<S> {
     }
 
     pub(crate) fn expect_generated_call(&mut self) -> i32 {
-        self.read_request::<ApiVersionsRequest>(ApiVersion::new(0))
-            .correlation
+        read_request::<ApiVersionsRequest>(&mut self.stream, ApiVersion::new(0)).correlation
     }
 
     pub(crate) fn respond_to_generated_call(&mut self, correlation: i32) {
-        self.write_response::<ApiVersionsRequest, _>(
+        write_response::<ApiVersionsRequest, _, _>(
+            &mut self.stream,
             correlation,
             &ApiVersionsResponse::default(),
             ApiVersion::new(0),
         );
-    }
-
-    fn read_request<R>(&mut self, version: ApiVersion) -> ObservedRequest<R>
-    where
-        R: KafkaRequest + KafkaDecode,
-    {
-        let bytes = read_frame(&mut self.stream);
-        let mut decoder = Decoder::new(bytes, DecodeLimits::default())
-            .unwrap_or_else(|error| panic!("start SASL request decoder: {error}"));
-        let header_version = ApiVersion::new(request_header_version(R::is_flexible(version)));
-        let header = RequestHeader::decode(&mut decoder, header_version)
-            .unwrap_or_else(|error| panic!("decode SASL request header: {error}"));
-        assert_eq!(header.request_api_key, R::API_KEY.value());
-        assert_eq!(header.request_api_version, version.value());
-        let request = R::decode(&mut decoder, version)
-            .unwrap_or_else(|error| panic!("decode SASL request body: {error}"));
-        decoder
-            .finish()
-            .unwrap_or_else(|error| panic!("finish SASL request decoder: {error}"));
-        ObservedRequest {
-            correlation: header.correlation_id,
-            request,
-        }
-    }
-
-    fn write_response<Q, R>(&mut self, correlation: i32, response: &R, version: ApiVersion)
-    where
-        Q: KafkaRequest,
-        R: KafkaEncode,
-    {
-        let mut body = BytesMut::new();
-        let mut header = ResponseHeader::default();
-        header.correlation_id = correlation;
-        let header_version = response_header_version_for::<Q>(version)
-            .unwrap_or_else(|error| panic!("select SASL response header: {error}"));
-        header
-            .encode_into(&mut body, ApiVersion::new(header_version))
-            .unwrap_or_else(|error| panic!("encode SASL response header: {error}"));
-        response
-            .encode_into(&mut body, version)
-            .unwrap_or_else(|error| panic!("encode SASL response body: {error}"));
-        let length = i32::try_from(body.len())
-            .unwrap_or_else(|error| panic!("bound SASL response frame: {error}"));
-        self.stream
-            .write_all(&length.to_be_bytes())
-            .and_then(|()| self.stream.write_all(&body))
-            .unwrap_or_else(|error| panic!("write SASL broker response: {error}"));
     }
 }
 
@@ -235,29 +235,7 @@ impl SaslPeer<TcpStream> {
     }
 }
 
-struct ObservedRequest<R> {
-    correlation: i32,
-    request: R,
-}
-
-fn advertised(descriptor: &kafka_wire::ApiDescriptor, maximum: i16) -> AdvertisedApi {
-    let mut api = AdvertisedApi::default();
-    api.api_key = descriptor.api_key.value();
-    api.min_version = 0;
-    api.max_version = maximum;
-    api
-}
-
-fn read_frame(stream: &mut impl Read) -> Bytes {
-    let mut prefix = [0; size_of::<i32>()];
-    stream
-        .read_exact(&mut prefix)
-        .unwrap_or_else(|error| panic!("read SASL frame length: {error}"));
-    let length = usize::try_from(i32::from_be_bytes(prefix))
-        .unwrap_or_else(|error| panic!("validate SASL frame length: {error}"));
-    let mut body = vec![0; length];
-    stream
-        .read_exact(&mut body)
-        .unwrap_or_else(|error| panic!("read SASL frame body: {error}"));
-    Bytes::from(body)
+pub(crate) struct ObservedAuthentication {
+    pub(crate) correlation: i32,
+    pub(crate) auth_bytes: Bytes,
 }

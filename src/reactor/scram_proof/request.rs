@@ -41,13 +41,6 @@ impl ScramProofTarget {
         }
     }
 
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "direct host proof delivery is activated by the numeric SCRAM routing slice"
-        )
-    )]
     pub(in crate::reactor) const fn direct_connection(self) -> Option<ConnectionToken> {
         match self {
             Self::Direct { connection } => Some(connection),

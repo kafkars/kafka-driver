@@ -1,10 +1,13 @@
 //! Backend-selection proofs for direct numeric broker configurations.
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, num::NonZeroU16};
 
-use kafka_driver_core::SaslMechanism;
+use kafka_driver_core::{BootstrapLimits, BootstrapSet, BrokerEndpoint, HostName, SaslMechanism};
 
-use super::{BrokerConfig, DirectBrokerConfig, DirectBrokerSelection, SaslConfig};
+use super::{
+    BootstrapConfig, BrokerConfig, DirectBrokerConfig, DirectBrokerSelection,
+    DirectTargetSelection, DriverTarget, SaslConfig,
+};
 
 #[test]
 fn numeric_plaintext_without_sasl_selects_the_direct_backend() {
@@ -43,7 +46,7 @@ fn numeric_plaintext_with_plain_selects_the_direct_backend() {
 }
 
 #[test]
-fn numeric_plaintext_with_scram_stays_on_the_legacy_backend() {
+fn numeric_plaintext_with_scram_selects_direct_and_requires_one_proof_worker() {
     let sasl = SaslConfig::scram_sha_256("alice", "secret")
         .unwrap_or_else(|error| panic!("construct test SCRAM config: {error}"));
 
@@ -51,7 +54,10 @@ fn numeric_plaintext_with_scram_stays_on_the_legacy_backend() {
         .with_sasl(Some(sasl))
         .select_direct();
 
-    assert!(matches!(selected, DirectBrokerSelection::Legacy(_)));
+    assert!(matches!(
+        selected,
+        DirectBrokerSelection::Direct(config) if config.requires_proof_worker()
+    ));
 }
 
 #[cfg(feature = "tls-rustls")]
@@ -96,7 +102,7 @@ fn configured_numeric_rustls_with_plain_selects_the_direct_backend() {
 
 #[cfg(feature = "tls-rustls")]
 #[test]
-fn configured_numeric_rustls_with_scram_stays_on_the_legacy_backend() {
+fn configured_numeric_rustls_with_scram_selects_direct_and_requires_one_proof_worker() {
     let sasl = SaslConfig::scram_sha_512("alice", "secret")
         .unwrap_or_else(|error| panic!("construct test SCRAM config: {error}"));
 
@@ -104,7 +110,28 @@ fn configured_numeric_rustls_with_scram_stays_on_the_legacy_backend() {
         .with_sasl(Some(sasl))
         .select_direct();
 
-    assert!(matches!(selected, DirectBrokerSelection::Legacy(_)));
+    assert!(matches!(
+        selected,
+        DirectBrokerSelection::Direct(config) if config.requires_proof_worker()
+    ));
+}
+
+#[test]
+fn bootstrap_scram_remains_on_the_legacy_backend() {
+    let host = HostName::new("broker.test")
+        .unwrap_or_else(|error| panic!("construct bootstrap host: {error}"));
+    let endpoint = BrokerEndpoint::new(host, NonZeroU16::new(9_092).unwrap_or(NonZeroU16::MIN));
+    let endpoints = BootstrapSet::try_from_iter([endpoint], BootstrapLimits::default())
+        .unwrap_or_else(|error| panic!("construct bootstrap set: {error}"));
+    let sasl = SaslConfig::scram_sha_256("alice", "secret")
+        .unwrap_or_else(|error| panic!("construct bootstrap SCRAM config: {error}"));
+    let target =
+        DriverTarget::Bootstrap(BootstrapConfig::plaintext(endpoints).with_sasl(Some(sasl)));
+
+    assert!(matches!(
+        target.select_direct(),
+        DirectTargetSelection::Legacy(DriverTarget::Bootstrap(_))
+    ));
 }
 
 fn address() -> SocketAddr {
