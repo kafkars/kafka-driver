@@ -29,6 +29,8 @@ mod settlement;
 #[cfg(test)]
 mod authentication_fixture_test;
 #[cfg(test)]
+mod authentication_publication_test;
+#[cfg(test)]
 mod authentication_test;
 #[cfg(test)]
 #[cfg(feature = "tls-rustls")]
