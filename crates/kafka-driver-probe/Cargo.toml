@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 kafka-driver.workspace = true
 kafka-wire.workspace = true
+kafka-wire-core.workspace = true
 rustls.workspace = true
 
 [lints]

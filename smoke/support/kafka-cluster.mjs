@@ -29,8 +29,8 @@ export async function awaitBroker(t, docker, stack, composeFile, env, broker) {
   }
 }
 
-export async function stopBroker(t, docker, stack, composeFile, env, broker) {
-  await composeCommand(t, docker, stack, composeFile, env, ["stop", "--timeout", "1", broker]);
+export async function stopBroker(t, docker, stack, composeFile, env, broker, timeout = "1") {
+  await composeCommand(t, docker, stack, composeFile, env, ["stop", "--timeout", timeout, broker]);
 }
 
 export async function startBroker(t, docker, stack, composeFile, env, broker) {

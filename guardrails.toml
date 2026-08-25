@@ -39,7 +39,7 @@ bornera_rustls_version = "=0.0.1-rc.3"
 bornera_rustls_checksum = "51d5c22e456b51a2f135f7050c7415aa1dd8359e0e2749db3263541f613a07a9"
 driver_allowed = ["bornera", "bornera-core", "bornera-rustls", "bytes", "calandria", "calandria-mio", "kafka-driver-core", "kafka-driver-transport", "kafka-wire", "kafka-wire-core", "mio", "ring", "rustls", "sasl-scram", "zeroize"]
 core_allowed = ["kafka-wire-core"]
-probe_allowed = ["kafka-driver", "kafka-wire", "rustls"]
+probe_allowed = ["kafka-driver", "kafka-wire", "kafka-wire-core", "rustls"]
 transport_allowed = ["bytes", "kafka-driver-core", "kafka-wire-core"]
 
 [[capabilities]]
