@@ -27,10 +27,10 @@ banned = [
   "tokio-rustls",
   "tokio-util",
 ]
-kafka_wire_path = "../kafka-protocol/crates/kafka-wire"
-kafka_wire_core_path = "../kafka-protocol/crates/kafka-wire-core"
-kafka_wire_repository = "kafkars/kafka-wire"
-kafka_wire_revision = "59bc58425749386a1dc4a0c09ac1b67edf5b65af"
+kafka_wire_version = "=0.1.0-rc.3"
+kafka_wire_checksum = "ef04e07a7f2f73a4d00e3341b60504e0f2baf91491ce55e023f2bdfa5ea60b32"
+kafka_wire_core_version = "=0.1.0-rc.3"
+kafka_wire_core_checksum = "ac4f6d455c6371e95044818fbbdc816d35fa0fff3f5bbc7669ce8c83ccf1c6a4"
 driver_allowed = ["bytes", "calandria", "calandria-mio", "kafka-driver-core", "kafka-driver-transport", "kafka-wire", "kafka-wire-core", "mio", "ring", "rustls", "sasl-scram", "zeroize"]
 core_allowed = ["kafka-wire-core"]
 probe_allowed = ["kafka-driver", "kafka-wire", "rustls"]

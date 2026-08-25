@@ -1,5 +1,3 @@
-import { resolve } from "node:path";
-
 import { expect, smoke } from "smoque";
 
 import {
@@ -20,17 +18,15 @@ smoke.suite(
     t.redact(KEYSTORE_PASSWORD);
     const root = t.repoRoot();
     const composeFile = root.path("smoke", "kafka-secure-cluster.compose.yml");
-    const protocol = resolve(root.toString(), "..", "kafka-protocol");
     const coordination = await t.tempDir("kafka-driver-secure-rolling");
     const probeTarget = await t.tempDir("kafka-driver-secure-target");
     const probeCargoHome = await t.tempDir("kafka-driver-secure-cargo-home");
     const docker = await t.tools.docker();
 
-    await t.step("required tools and sibling protocol are available", async () => {
+    await t.step("required tools are available", async () => {
       await t.tools.node({ minVersion: "22.18.0" });
       await t.cmd("openssl", ["version"], { cwd: root, timeout: "10s" });
       await t.compose.check({ docker: docker.command, cwd: root, timeout: "10s" });
-      await expect.file(resolve(protocol, "crates", "kafka-wire", "Cargo.toml")).toExist();
     });
 
     const tls = await t.step("create one exclusive identity per advertised broker", async () => {
@@ -41,7 +37,6 @@ smoke.suite(
       KAFKA_2_SSL_SECRETS: tls.identities.get("kafka-2").toString(),
       KAFKA_3_SSL_SECRETS: tls.identities.get("kafka-3").toString(),
       KAFKA_DRIVER_SOURCE: root.toString(),
-      KAFKA_PROTOCOL_SOURCE: protocol,
       KAFKA_PROBE_TARGET: probeTarget.toString(),
       KAFKA_PROBE_CARGO_HOME: probeCargoHome.toString(),
       KAFKA_COORDINATION: coordination.toString(),

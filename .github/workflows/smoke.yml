@@ -31,13 +31,6 @@ jobs:
         with:
           path: kafka-driver
 
-      - name: Check out verified protocol source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: kafkars/kafka-wire
-          ref: 59bc58425749386a1dc4a0c09ac1b67edf5b65af
-          path: kafka-protocol
-
       - name: Install pinned Rust toolchain
         run: |
           rustup toolchain install 1.88.0 --profile minimal

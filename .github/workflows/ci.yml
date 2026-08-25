@@ -30,19 +30,10 @@ jobs:
         shell: bash
         working-directory: kafka-driver
     steps:
-      # Joint development tests the exact reviewed kafka-wire source revision;
-      # packaged builds resolve the same declared version from crates.io.
       - name: Check out kafka-driver
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: kafka-driver
-
-      - name: Check out kafka-wire protocol source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: kafkars/kafka-wire
-          ref: 59bc58425749386a1dc4a0c09ac1b67edf5b65af
-          path: kafka-protocol
 
       - name: Set up zrail
         uses: zactionsz/setup-zrail@e6f8b7b742b94d4d42ed1133df500f75eb465aa2

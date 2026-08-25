@@ -5,6 +5,7 @@ mod dependency;
 mod facade;
 mod file_size;
 mod module_contract;
+mod protocol_provenance;
 mod qualification;
 mod release_metadata;
 mod support;

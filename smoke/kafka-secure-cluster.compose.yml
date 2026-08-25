@@ -74,7 +74,6 @@ services:
       CARGO_TERM_COLOR: never
     volumes:
       - ${KAFKA_DRIVER_SOURCE}:/workspace/kafka-driver:ro
-      - ${KAFKA_PROTOCOL_SOURCE}:/workspace/kafka-protocol:ro
       - ${KAFKA_PROBE_TARGET}:/workspace/kafka-driver/target
       - ${KAFKA_PROBE_CARGO_HOME}:/cargo-home
       - ${KAFKA_COORDINATION}:/coordination

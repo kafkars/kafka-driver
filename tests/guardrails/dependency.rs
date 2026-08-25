@@ -35,23 +35,27 @@ fn dependency_graph_contains_no_async_runtime() {
 }
 
 #[test]
-fn kafka_wire_remains_the_local_protocol_authority() {
+fn kafka_wire_uses_the_exact_registry_release() {
     let root = workspace_root();
     let guardrails = load_guardrails(&root);
     let value = parse_manifest(&root.join("Cargo.toml"));
-    let path = value["dependencies"]["kafka-wire"]["path"]
-        .as_str()
-        .unwrap_or_else(|| panic!("kafka-wire must be a path dependency"));
-    let core_path = value["workspace"]["dependencies"]["kafka-wire-core"]["path"]
-        .as_str()
-        .unwrap_or_else(|| panic!("kafka-wire-core must be a workspace path dependency"));
 
-    assert_eq!(path, guardrails.dependencies.kafka_wire_path);
-    assert_eq!(core_path, guardrails.dependencies.kafka_wire_core_path);
+    assert_eq!(
+        value["workspace"]["dependencies"]["kafka-wire"].as_str(),
+        Some(guardrails.dependencies.kafka_wire_version.as_str())
+    );
+    assert_eq!(
+        value["workspace"]["dependencies"]["kafka-wire-core"].as_str(),
+        Some(guardrails.dependencies.kafka_wire_core_version.as_str())
+    );
+    assert_eq!(
+        value["dependencies"]["kafka-wire"]["workspace"].as_bool(),
+        Some(true)
+    );
 }
 
 #[test]
-fn local_path_dependencies_carry_the_release_version() {
+fn local_and_registry_dependencies_carry_the_release_version() {
     let root = workspace_root();
     let manifest = parse_manifest(&root.join("Cargo.toml"));
     for package in [
@@ -66,12 +70,12 @@ fn local_path_dependencies_carry_the_release_version() {
         );
     }
     assert_eq!(
-        manifest["workspace"]["dependencies"]["kafka-wire-core"]["version"].as_str(),
-        Some("0.1.0-rc.2")
+        manifest["workspace"]["dependencies"]["kafka-wire-core"].as_str(),
+        Some("=0.1.0-rc.3")
     );
     assert_eq!(
-        manifest["dependencies"]["kafka-wire"]["version"].as_str(),
-        Some("0.1.0-rc.2")
+        manifest["workspace"]["dependencies"]["kafka-wire"].as_str(),
+        Some("=0.1.0-rc.3")
     );
     assert_eq!(
         manifest["workspace"]["dependencies"]["kafka-driver-sim"]
@@ -81,8 +85,8 @@ fn local_path_dependencies_carry_the_release_version() {
     );
     let probe = parse_manifest(&root.join("crates/kafka-driver-probe/Cargo.toml"));
     assert_eq!(
-        probe["dependencies"]["kafka-wire"]["version"].as_str(),
-        Some("0.1.0-rc.2")
+        probe["dependencies"]["kafka-wire"]["workspace"].as_bool(),
+        Some(true)
     );
 }
 

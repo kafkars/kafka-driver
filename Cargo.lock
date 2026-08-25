@@ -232,7 +232,9 @@ dependencies = [
 
 [[package]]
 name = "kafka-wire"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef04e07a7f2f73a4d00e3341b60504e0f2baf91491ce55e023f2bdfa5ea60b32"
 dependencies = [
  "bytes",
  "kafka-wire-core",
@@ -240,7 +242,9 @@ dependencies = [
 
 [[package]]
 name = "kafka-wire-core"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac4f6d455c6371e95044818fbbdc816d35fa0fff3f5bbc7669ce8c83ccf1c6a4"
 dependencies = [
  "bytes",
  "thiserror",

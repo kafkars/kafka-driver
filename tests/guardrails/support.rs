@@ -35,10 +35,10 @@ pub(crate) struct Dependencies {
     pub(crate) driver_allowed: Vec<String>,
     pub(crate) probe_allowed: Vec<String>,
     pub(crate) transport_allowed: Vec<String>,
-    pub(crate) kafka_wire_path: String,
-    pub(crate) kafka_wire_core_path: String,
-    pub(crate) kafka_wire_repository: String,
-    pub(crate) kafka_wire_revision: String,
+    pub(crate) kafka_wire_version: String,
+    pub(crate) kafka_wire_checksum: String,
+    pub(crate) kafka_wire_core_version: String,
+    pub(crate) kafka_wire_core_checksum: String,
 }
 
 #[derive(Debug, Deserialize)]

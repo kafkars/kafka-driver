@@ -1,6 +1,6 @@
 //! Release qualification is locked, offline, archive-based, and immutable.
 
-use super::support::{load_guardrails, read, workspace_root};
+use super::support::{read, workspace_root};
 
 const KAFKA_IMAGE: &str =
     "apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837";
@@ -30,20 +30,14 @@ fn ci_prefetches_before_running_the_gate_offline() {
 #[test]
 fn functional_smoke_runs_on_pull_requests_and_main_without_performance() {
     let root = workspace_root();
-    let guardrails = load_guardrails(&root);
     let workflow = read(&root.join(".github/workflows/smoke.yml"));
     let manifest = read(&root.join("package.json"));
-    let repository = format!(
-        "repository: {}",
-        guardrails.dependencies.kafka_wire_repository
-    );
-    let revision = format!("ref: {}", guardrails.dependencies.kafka_wire_revision);
 
     assert!(workflow.contains("pull_request:"));
     assert!(workflow.contains("branches: [main]"));
     assert!(workflow.contains("contents: read"));
-    assert!(workflow.contains(&repository));
-    assert!(workflow.contains(&revision));
+    assert!(!workflow.contains("kafka-protocol"));
+    assert!(!workflow.contains("repository: kafkars/kafka-wire"));
     assert!(workflow.contains("run: npm run qualify:real-kafka-functional"));
     assert!(!workflow.contains("run: npm run qualify:real-kafka\n"));
     assert!(!workflow.contains("run: npm run measure:real-kafka"));
@@ -96,18 +90,13 @@ fn release_qualification_runs_the_canonical_gate_before_packaging() {
 }
 
 #[test]
-fn ci_pins_the_verified_public_kafka_wire_source() {
+fn ci_uses_the_locked_registry_protocol_without_a_sibling_checkout() {
     let root = workspace_root();
-    let guardrails = load_guardrails(&root);
     let workflow = read(&root.join(".github/workflows/ci.yml"));
-    let repository = format!(
-        "repository: {}",
-        guardrails.dependencies.kafka_wire_repository
-    );
-    let revision = format!("ref: {}", guardrails.dependencies.kafka_wire_revision);
 
-    assert!(workflow.contains(&repository));
-    assert!(workflow.contains(&revision));
+    assert!(workflow.contains("run: cargo fetch --locked"));
+    assert!(!workflow.contains("kafka-protocol"));
+    assert!(!workflow.contains("repository: kafkars/kafka-wire"));
     assert!(!workflow.contains("KAFKA_PROTOCOL_SSH_KEY"));
     assert!(!workflow.contains("KAFKA_PROTOCOL_TOKEN"));
 }
@@ -123,8 +112,8 @@ fn release_qualification_builds_normalized_public_archives() {
     assert!(workflow.contains("run: scripts/qualify-packages"));
     assert!(workflow.contains("run: cargo fetch --locked"));
     assert!(workflow.contains("CARGO_NET_OFFLINE: \"true\""));
-    assert!(prefetch.contains("kafka-wire = \"=0.1.0-rc.2\""));
-    assert!(prefetch.contains("kafka-wire-core = \"=0.1.0-rc.2\""));
+    assert!(prefetch.contains("kafka-wire = \"=0.1.0-rc.3\""));
+    assert!(prefetch.contains("kafka-wire-core = \"=0.1.0-rc.3\""));
     assert!(prefetch.contains("cargo fetch --locked"));
     assert!(script.contains("cargo package"));
     assert!(script.contains("--no-verify"));
@@ -163,20 +152,14 @@ fn release_qualification_resolves_latest_compatible_from_a_clean_registry() {
 }
 
 #[test]
-fn release_qualification_is_scheduled_and_pins_the_protocol() {
+fn release_qualification_is_scheduled_and_uses_the_registry_protocol() {
     let root = workspace_root();
-    let guardrails = load_guardrails(&root);
     let workflow = read(&root.join(".github/workflows/qualification.yml"));
-    let repository = format!(
-        "repository: {}",
-        guardrails.dependencies.kafka_wire_repository
-    );
-    let revision = format!("ref: {}", guardrails.dependencies.kafka_wire_revision);
 
     assert!(workflow.contains("schedule:"));
     assert!(workflow.contains("tags: [\"v*\"]"));
-    assert!(workflow.contains(&repository));
-    assert!(workflow.contains(&revision));
+    assert!(!workflow.contains("kafka-protocol"));
+    assert!(!workflow.contains("repository: kafkars/kafka-wire"));
     assert!(!workflow.contains("KAFKA_PROTOCOL_SSH_KEY"));
     assert!(!workflow.contains("KAFKA_PROTOCOL_TOKEN"));
     assert!(workflow.contains("run: npm run qualify:real-kafka"));
@@ -201,6 +184,10 @@ fn secure_cluster_qualification_binds_each_advertised_host_to_its_identity() {
     }
     assert!(identities.contains("DNS.1 = ${brokerName}"));
     assert!(scenario.contains("\"kafka-1:9092,kafka-2:9092\""));
+    assert!(!scenario.contains("KAFKA_PROTOCOL_SOURCE"));
+    assert!(!compose.contains("KAFKA_PROTOCOL_SOURCE"));
+    assert!(!scenario.contains("kafka-protocol"));
+    assert!(!compose.contains("kafka-protocol"));
     assert!(scenario.contains("RECOVERED TLS broker failover 1"));
     assert!(scenario.contains("PASS TLS broker failover 2"));
 }

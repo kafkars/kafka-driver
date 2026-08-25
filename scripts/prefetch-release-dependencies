@@ -14,8 +14,8 @@ printf '%s\n' \
   'publish = false' \
   '' \
   '[dependencies]' \
-  'kafka-wire = "=0.1.0-rc.2"' \
-  'kafka-wire-core = "=0.1.0-rc.2"' \
+  'kafka-wire = "=0.1.0-rc.3"' \
+  'kafka-wire-core = "=0.1.0-rc.3"' \
   '' \
   '[workspace]' \
   >"$manifest"
