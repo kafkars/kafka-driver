@@ -75,7 +75,7 @@ pub(in crate::reactor) fn request(raw: u64) -> ScramProofRequest {
     let AuthenticationReceive::Derive(pending) = session.receive(challenge.as_bytes()) else {
         panic!("worker challenge must request derivation");
     };
-    ScramProofRequest::new(
+    ScramProofRequest::legacy(
         ResourceToken::new(
             calandria::ResourceOwnerId::new(raw),
             calandria::ResourceSlotId::new(0),

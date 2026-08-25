@@ -57,7 +57,8 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                 Ok(())
             }
             KafkaSessionEffect::SessionReady => {
-                self.authentication_session = None;
+                self.clear_authentication_ownership();
+                self.release_scram_proof_sender();
                 self.session_deadline = None;
                 self.set.open_admission(self.connection).map_err(message)?;
                 self.mark_runnable();
@@ -74,7 +75,8 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             }
             KafkaSessionEffect::CloseSession { reason } => {
                 self.admission_open = false;
-                self.authentication_session = None;
+                self.clear_authentication_ownership();
+                self.release_scram_proof_sender();
                 self.session_deadline = None;
                 self.record_session_close(reason);
                 self.set

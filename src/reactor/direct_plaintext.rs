@@ -21,6 +21,7 @@ mod publication;
 mod recovery_settlement;
 #[cfg(feature = "tls-rustls")]
 mod rustls_transport;
+mod scram_proof;
 mod session_close;
 mod session_progress;
 mod settlement;
@@ -38,5 +39,9 @@ mod owner_test;
 mod pending_test;
 #[cfg(test)]
 mod recovery_test;
+#[cfg(test)]
+mod scram_fixture_test;
+#[cfg(test)]
+mod scram_proof_test;
 
 pub(in crate::reactor) use backend::DirectBackend;

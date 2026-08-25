@@ -11,7 +11,11 @@ use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::DecodeLimits;
 
 use crate::{
-    RequestError, authentication::AuthenticationSession, config::ClientId, request::ErasedRequest,
+    RequestError,
+    authentication::AuthenticationSession,
+    config::ClientId,
+    reactor::scram_proof::{ScramProofFence, ScramProofSender},
+    request::ErasedRequest,
 };
 
 use super::{operation_owner::DirectOperationContext, pending::PendingRequests};
@@ -28,6 +32,8 @@ pub(in crate::reactor) struct DirectOwner<T: RegisteredTransport> {
     pub(super) connection: ConnectionToken,
     pub(super) session: KafkaSessionMachine,
     pub(super) authentication_session: Option<AuthenticationSession>,
+    pub(super) scram_proof_sender: Option<ScramProofSender>,
+    pub(super) pending_scram_proof: Option<ScramProofFence>,
     pub(super) session_deadline: Option<Moment>,
     pub(super) contexts: OperationContexts<DirectOperationContext>,
     pub(super) pending: PendingRequests,

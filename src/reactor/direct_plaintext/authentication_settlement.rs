@@ -43,6 +43,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                 }
             }
             AuthenticationExchange::Authenticate(exchange) => {
+                let effect_id = exchange.effect_id();
                 let round = exchange.round();
                 let response = match exchange.finish_bytes(frame.into_bytes()) {
                     Ok(response) => response,
@@ -74,12 +75,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                         now,
                     ),
                     AuthenticationReceive::Derive(pending) => {
-                        drop(pending);
-                        self.fail_authentication_stage(
-                            AuthenticationStageOwner::Exchange(round),
-                            AuthenticationFailure::Protocol,
-                            now,
-                        )
+                        self.dispatch_scram_proof(effect_id, round, pending, now)
                     }
                 }
             }

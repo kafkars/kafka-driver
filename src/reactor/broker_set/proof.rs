@@ -25,7 +25,10 @@ impl BrokerSet {
         poller: &Poller,
         proof: ScramProofOutcome,
     ) -> Result<bool, BrokerSetError> {
-        let Some(owner) = self.resource_owner(proof.token()) else {
+        let Some((token, _)) = proof.fence().target().legacy_identity() else {
+            return Ok(false);
+        };
+        let Some(owner) = self.resource_owner(token) else {
             return Ok(false);
         };
         if owner == 0 {

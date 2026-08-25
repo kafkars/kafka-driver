@@ -8,9 +8,7 @@ use bornera::{
 };
 use bornera_core::{ConnectionEpoch, ConnectionId, EndpointId, LaneId};
 use calandria::{Deadline, ResourceOwnerId, RetainedBytes, TimerOwnerId, Turn};
-use kafka_driver_core::{
-    AuthenticationPolicy, KafkaSessionLimits, KafkaSessionMachine, Moment, SaslMechanism,
-};
+use kafka_driver_core::{AuthenticationPolicy, KafkaSessionLimits, KafkaSessionMachine, Moment};
 use kafka_wire::{KafkaRequest, SaslAuthenticateRequest, SaslHandshakeRequest};
 use kafka_wire_core::DecodeLimits;
 
@@ -152,6 +150,8 @@ fn finish<T: RegisteredTransport>(
         connection,
         session: session.machine,
         authentication_session: session.authentication,
+        scram_proof_sender: None,
+        pending_scram_proof: None,
         session_deadline: None,
         contexts: OperationContexts::<DirectOperationContext>::new(
             broker.response_capacity(),
@@ -194,11 +194,6 @@ fn session_ownership(
             authentication: None,
         });
     };
-    if sasl.mechanism() != SaslMechanism::Plain {
-        return Err(io::Error::other(
-            "direct Bornera authentication currently supports SASL PLAIN only",
-        ));
-    }
     let policy = AuthenticationPolicy::new(
         sasl.mechanism(),
         SaslHandshakeRequest::API_KEY,

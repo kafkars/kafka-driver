@@ -11,12 +11,15 @@ use super::{failure_translation::not_sent, owner::DirectOwner};
 impl<T: RegisteredTransport> DirectOwner<T> {
     pub(in crate::reactor) fn begin_session_drain(&mut self, now: Moment) -> std::io::Result<()> {
         self.admission_open = false;
+        self.clear_authentication_ownership();
+        self.release_scram_proof_sender();
         self.fail_pending(&not_sent(CallFailure::Draining), None)?;
         self.apply_session(KafkaSessionInput::BeginDrain, now)
     }
 
     pub(super) fn session_closed(&mut self, now: Moment) -> std::io::Result<()> {
-        self.authentication_session = None;
+        self.clear_authentication_ownership();
+        self.release_scram_proof_sender();
         self.session_deadline = None;
         self.apply_session(KafkaSessionInput::Closed, now)?;
         if let KafkaSessionState::Closed { reason } = self.session.state()

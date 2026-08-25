@@ -31,7 +31,7 @@ impl SingleBroker {
             return Err(BrokerError::ScramProofWorkerLost);
         };
         let token = self.resource_token.ok_or(BrokerError::MissingEffect)?;
-        let request = ScramProofRequest::new(token, identity, effect_id, round, pending);
+        let request = ScramProofRequest::legacy(token, identity, effect_id, round, pending);
         match sender.submit(request) {
             Ok(()) => Ok(()),
             Err(ScramProofSubmitError::Full(_request)) => {
@@ -53,10 +53,12 @@ impl SingleBroker {
         poller: &Poller,
         proof: ScramProofOutcome,
     ) -> Result<bool, BrokerError> {
-        let token = proof.token();
-        let identity = proof.identity();
-        let effect_id = proof.effect_id();
-        let round = proof.round();
+        let fence = proof.fence();
+        let Some((token, identity)) = fence.target().legacy_identity() else {
+            return Ok(false);
+        };
+        let effect_id = fence.effect_id();
+        let round = fence.round();
         let identity_matches = self
             .resources
             .get_mut(token)
