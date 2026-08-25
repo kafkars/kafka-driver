@@ -28,6 +28,14 @@ impl AuthenticationAttempt {
             deadline,
         }
     }
+
+    pub(crate) const fn now(self) -> Moment {
+        self.now
+    }
+
+    pub(crate) const fn deadline(self) -> Moment {
+        self.deadline
+    }
 }
 
 /// Sanitized result of one mechanism exchange response.

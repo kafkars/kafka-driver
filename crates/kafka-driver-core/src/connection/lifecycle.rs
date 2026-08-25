@@ -4,14 +4,36 @@ use crate::AuthenticationEffect;
 
 use super::{
     ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, Decision,
-    KafkaSessionMachine, StateData,
+    KafkaSessionInput, StateData,
 };
 
 impl ConnectionMachine {
     pub(super) fn begin_drain(&mut self) -> Decision {
-        match &mut self.session.state {
+        let session_drain = matches!(
+            &self.state,
+            StateData::Negotiating { .. }
+                | StateData::Authenticating { .. }
+                | StateData::Active {
+                    mode: ActiveMode::Ready,
+                    ..
+                }
+        );
+        let immediately_drained = matches!(
+            &self.state,
+            StateData::Active {
+                mode: ActiveMode::Ready,
+                connection,
+            } if connection.pending.is_empty()
+        );
+        if session_drain {
+            let _ = self.session.apply(KafkaSessionInput::BeginDrain);
+            if immediately_drained {
+                let _ = self.session.apply(KafkaSessionInput::Drained);
+            }
+        }
+        match &mut self.state {
             StateData::Dormant { epoch } => {
-                self.session.state = StateData::Closed {
+                self.state = StateData::Closed {
                     epoch: *epoch,
                     reason: CloseReason::Requested,
                 };
@@ -22,59 +44,8 @@ impl ConnectionMachine {
                 transport_id,
                 deadline_timer,
                 ..
-            } => {
-                let epoch = *epoch;
-                let transport_id = *transport_id;
-                let deadline_timer = *deadline_timer;
-                self.session.state = StateData::Closing {
-                    epoch,
-                    transport_id,
-                    reason: CloseReason::Requested,
-                };
-                Decision::applied(vec![
-                    ConnectionEffect::CloseTransport {
-                        epoch,
-                        transport_id,
-                        reason: CloseReason::Requested,
-                    },
-                    ConnectionEffect::CancelDeadline {
-                        timer_id: deadline_timer,
-                    },
-                ])
             }
-            StateData::Negotiating { .. }
-            | StateData::Authenticating { .. }
-            | StateData::Active { .. }
-            | StateData::Closing { .. }
-            | StateData::Closed { .. } => self.session.begin_drain(),
-        }
-    }
-
-    pub(super) fn failure_for_closed_state(&self) -> CallFailure {
-        match &self.session.state {
-            StateData::Active {
-                mode: ActiveMode::Draining,
-                ..
-            } => CallFailure::Draining,
-            StateData::Dormant { .. }
-            | StateData::Opening { .. }
-            | StateData::Negotiating { .. }
-            | StateData::Authenticating { .. }
-            | StateData::Active {
-                mode: ActiveMode::Ready,
-                ..
-            } => CallFailure::NotReady,
-            StateData::Closing { reason, .. } | StateData::Closed { reason, .. } => {
-                CallFailure::ConnectionClosed { reason: *reason }
-            }
-        }
-    }
-}
-
-impl KafkaSessionMachine {
-    pub(super) fn begin_drain(&mut self) -> Decision {
-        match &mut self.state {
-            StateData::Negotiating {
+            | StateData::Negotiating {
                 epoch,
                 transport_id,
                 deadline_timer,
@@ -121,7 +92,6 @@ impl KafkaSessionMachine {
                 *mode = ActiveMode::Draining;
                 Decision::applied(Vec::new())
             }
-            StateData::Dormant { .. } | StateData::Opening { .. } => Decision::stale(),
             StateData::Active { .. } | StateData::Closing { .. } | StateData::Closed { .. } => {
                 Decision::ignored()
             }
@@ -157,5 +127,25 @@ impl KafkaSessionMachine {
             });
         }
         Decision::applied(effects)
+    }
+
+    pub(super) fn failure_for_closed_state(&self) -> CallFailure {
+        match &self.state {
+            StateData::Active {
+                mode: ActiveMode::Draining,
+                ..
+            } => CallFailure::Draining,
+            StateData::Dormant { .. }
+            | StateData::Opening { .. }
+            | StateData::Negotiating { .. }
+            | StateData::Authenticating { .. }
+            | StateData::Active {
+                mode: ActiveMode::Ready,
+                ..
+            } => CallFailure::NotReady,
+            StateData::Closing { reason, .. } | StateData::Closed { reason, .. } => {
+                CallFailure::ConnectionClosed { reason: *reason }
+            }
+        }
     }
 }

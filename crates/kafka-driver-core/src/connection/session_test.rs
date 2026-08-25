@@ -1,50 +1,44 @@
-//! Focused ownership scenarios for the extracted Kafka session policy.
+//! Plaintext session ownership scenarios without transport or operation identities.
 
 use crate::Moment;
 
-use super::scenario_support_test::{
-    EPOCH, NEGOTIATION_EFFECT, NEGOTIATION_TIMER, TRANSPORT, capabilities,
-};
+use super::scenario_support_test::capabilities;
 use super::{
-    CloseReason, ConnectionEffect, ConnectionLimits, ConnectionPhase, KafkaSessionMachine,
-    NegotiationAttempt,
+    KafkaSessionCloseReason, KafkaSessionDeadline, KafkaSessionEffect, KafkaSessionInput,
+    KafkaSessionLimits, KafkaSessionMachine, KafkaSessionPhase,
 };
 
 #[test]
-fn session_machine_owns_negotiation_readiness_and_empty_drain() {
-    let mut session = KafkaSessionMachine::new(EPOCH, ConnectionLimits::default());
-    let attempt = NegotiationAttempt::new(
-        NEGOTIATION_EFFECT,
-        NEGOTIATION_TIMER,
-        Moment::ORIGIN,
-        Moment::from_nanos(100),
+fn transport_open_negotiates_then_exposes_ready_and_drain_signals() {
+    let mut session = KafkaSessionMachine::new(KafkaSessionLimits::default());
+    let deadline = Moment::from_nanos(100);
+
+    let negotiation = session.apply(KafkaSessionInput::TransportOpened {
+        deadline: KafkaSessionDeadline::new(Moment::ORIGIN, deadline),
+    });
+    let ready = session.apply(KafkaSessionInput::ApiVersionsSucceeded {
+        capabilities: capabilities(),
+    });
+    let drain = session.apply(KafkaSessionInput::BeginDrain);
+    let drained = session.apply(KafkaSessionInput::Drained);
+
+    assert_eq!(
+        negotiation.effects(),
+        [KafkaSessionEffect::StartApiVersions { deadline }]
     );
-
-    let negotiation = session.begin_negotiation(EPOCH, TRANSPORT, attempt);
-    let ready =
-        session.api_versions_negotiated(EPOCH, TRANSPORT, NEGOTIATION_EFFECT, capabilities());
-    let drain = session.begin_drain();
-
-    assert!(matches!(
-        negotiation.effects.as_slice(),
+    assert_eq!(
+        ready.effects(),
         [
-            ConnectionEffect::ScheduleNegotiationDeadline { .. },
-            ConnectionEffect::NegotiateApiVersions { .. }
+            KafkaSessionEffect::CancelDeadline,
+            KafkaSessionEffect::SessionReady,
         ]
-    ));
+    );
+    assert_eq!(drain.effects(), [KafkaSessionEffect::BeginDrain]);
     assert_eq!(
-        ready.effects,
-        vec![ConnectionEffect::CancelDeadline {
-            timer_id: NEGOTIATION_TIMER,
+        drained.effects(),
+        [KafkaSessionEffect::CloseSession {
+            reason: KafkaSessionCloseReason::Drained,
         }]
     );
-    assert_eq!(session.phase(), ConnectionPhase::Closing);
-    assert_eq!(
-        drain.effects,
-        vec![ConnectionEffect::CloseTransport {
-            epoch: EPOCH,
-            transport_id: TRANSPORT,
-            reason: CloseReason::Drained,
-        }]
-    );
+    assert_eq!(session.state().phase(), KafkaSessionPhase::Closing);
 }

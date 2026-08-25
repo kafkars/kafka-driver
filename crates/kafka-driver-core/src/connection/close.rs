@@ -12,9 +12,9 @@ impl ConnectionMachine {
         reason: CloseReason,
         specific_failure: Option<(CallId, CallFailure)>,
     ) -> Vec<ConnectionEffect> {
-        let epoch = self.session.state.epoch();
+        let epoch = self.state.epoch();
         let placeholder = StateData::Closed { epoch, reason };
-        let previous = mem::replace(&mut self.session.state, placeholder);
+        let previous = mem::replace(&mut self.state, placeholder);
         let StateData::Active { mut connection, .. } = previous else {
             return Vec::new();
         };
@@ -26,7 +26,7 @@ impl ConnectionMachine {
             reason,
         });
         append_failures(&mut effects, &mut connection, reason, specific_failure);
-        self.session.state = StateData::Closing {
+        self.state = StateData::Closing {
             epoch,
             transport_id,
             reason,
@@ -39,9 +39,9 @@ impl ConnectionMachine {
         reason: CloseReason,
         specific_failure: Option<(CallId, CallFailure)>,
     ) -> Vec<ConnectionEffect> {
-        let epoch = self.session.state.epoch();
+        let epoch = self.state.epoch();
         let placeholder = StateData::Closed { epoch, reason };
-        let previous = mem::replace(&mut self.session.state, placeholder);
+        let previous = mem::replace(&mut self.state, placeholder);
         let StateData::Active { mut connection, .. } = previous else {
             return Vec::new();
         };

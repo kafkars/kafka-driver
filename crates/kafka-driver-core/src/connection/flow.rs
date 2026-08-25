@@ -4,8 +4,8 @@ use crate::{CallId, ConnectionEpoch, Delivery, EffectId, Moment, TimerId, Transp
 
 use super::{
     ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine,
-    ConnectionMachineError, Decision, IdentityKind, PendingCall, PendingPhase, StateData,
-    TransportFailure,
+    ConnectionMachineError, Decision, IdentityKind, KafkaSessionInput, PendingCall, PendingPhase,
+    StateData, TransportFailure,
 };
 
 impl ConnectionMachine {
@@ -20,7 +20,7 @@ impl ConnectionMachine {
         let StateData::Active {
             mode: ActiveMode::Ready,
             connection,
-        } = &mut self.session.state
+        } = &mut self.state
         else {
             let failure = self.failure_for_closed_state();
             return Ok(reject(call_id, failure));
@@ -32,7 +32,7 @@ impl ConnectionMachine {
             return Ok(reject(
                 call_id,
                 CallFailure::CapacityReached {
-                    limit: self.session.limits.max_in_flight().get(),
+                    limit: self.limits.max_in_flight().get(),
                 },
             ));
         }
@@ -91,7 +91,7 @@ impl ConnectionMachine {
         transport_id: TransportId,
         effect_id: EffectId,
     ) -> Decision {
-        let StateData::Active { connection, .. } = &mut self.session.state else {
+        let StateData::Active { connection, .. } = &mut self.state else {
             return Decision::stale();
         };
         if epoch != connection.epoch || transport_id != connection.transport_id {
@@ -114,7 +114,7 @@ impl ConnectionMachine {
         call_id: CallId,
         effect_id: EffectId,
     ) -> Decision {
-        let StateData::Active { mode, connection } = &mut self.session.state else {
+        let StateData::Active { mode, connection } = &mut self.state else {
             return Decision::stale();
         };
         if epoch != connection.epoch || transport_id != connection.transport_id {
@@ -134,7 +134,8 @@ impl ConnectionMachine {
             },
         ];
         if *mode == ActiveMode::Draining && connection.pending.is_empty() {
-            self.session.state = StateData::Closing {
+            let _ = self.session.apply(KafkaSessionInput::Drained);
+            self.state = StateData::Closing {
                 epoch,
                 transport_id,
                 reason: CloseReason::Drained,
@@ -155,7 +156,7 @@ impl ConnectionMachine {
         effect_id: EffectId,
         failure: TransportFailure,
     ) -> Decision {
-        let StateData::Active { connection, .. } = &self.session.state else {
+        let StateData::Active { connection, .. } = &self.state else {
             return Decision::stale();
         };
         if epoch != connection.epoch

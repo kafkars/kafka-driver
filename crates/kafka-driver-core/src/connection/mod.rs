@@ -4,6 +4,7 @@ mod active;
 mod authentication;
 mod close;
 mod correlation;
+mod debug;
 mod effect;
 mod failure;
 mod flow;
@@ -45,6 +46,10 @@ mod response_test;
 #[cfg(test)]
 mod scenario_support_test;
 #[cfg(test)]
+mod session_authentication_test;
+#[cfg(test)]
+mod session_deadline_test;
+#[cfg(test)]
 mod session_test;
 #[cfg(test)]
 mod shutdown_test;
@@ -62,6 +67,12 @@ pub use limits::ConnectionLimits;
 pub use machine::ConnectionMachine;
 pub use negotiation::NegotiationAttempt;
 pub use pending::{PendingCall, PendingPhase};
+pub use session::{
+    KafkaSessionAuthenticationState, KafkaSessionCloseReason, KafkaSessionDeadline,
+    KafkaSessionDisposition, KafkaSessionEffect, KafkaSessionInput, KafkaSessionLimits,
+    KafkaSessionMachine, KafkaSessionPhase, KafkaSessionProtocolFailure, KafkaSessionState,
+    KafkaSessionTransition,
+};
 pub use state::{ConnectionPhase, ConnectionState};
 pub use trace::{TransitionDisposition, TransitionRecord, TransitionSequence};
 pub use transition::ConnectionTransition;
@@ -69,7 +80,6 @@ pub use transition::ConnectionTransition;
 use active::{ActiveConnection, ActiveMode};
 use correlation::CorrelationAllocator;
 use pending::PendingQueue;
-use session::KafkaSessionMachine;
 use state_data::StateData;
 use trace::TransitionTrace;
 use transition::Decision;

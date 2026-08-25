@@ -15,10 +15,10 @@ impl ConnectionMachine {
         deadline_timer: TimerId,
         deadline: Moment,
     ) -> Decision {
-        let StateData::Dormant { epoch } = self.session.state else {
+        let StateData::Dormant { epoch } = self.state else {
             return Decision::ignored();
         };
-        self.session.state = StateData::Opening {
+        self.state = StateData::Opening {
             epoch,
             effect_id,
             transport_id,
@@ -52,7 +52,7 @@ impl ConnectionMachine {
             transport_id: expected_transport,
             deadline_timer,
             ..
-        } = self.session.state
+        } = self.state
         else {
             return Decision::stale();
         };
@@ -62,9 +62,7 @@ impl ConnectionMachine {
         {
             return Decision::stale();
         }
-        let mut decision = self
-            .session
-            .begin_negotiation(epoch, transport_id, negotiation);
+        let mut decision = self.begin_negotiation(epoch, transport_id, negotiation);
         decision.effects.insert(
             0,
             ConnectionEffect::CancelDeadline {
@@ -87,7 +85,7 @@ impl ConnectionMachine {
             transport_id: expected_transport,
             deadline_timer,
             ..
-        } = self.session.state
+        } = self.state
         else {
             return Decision::stale();
         };
@@ -97,7 +95,7 @@ impl ConnectionMachine {
         {
             return Decision::stale();
         }
-        self.session.state = StateData::Closed {
+        self.state = StateData::Closed {
             epoch,
             reason: CloseReason::OpenFailed(failure),
         };

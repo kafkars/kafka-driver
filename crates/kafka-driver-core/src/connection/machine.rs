@@ -1,19 +1,20 @@
 //! Single-owner dispatcher and observation surface for one connection epoch.
 
-use std::fmt;
-
 use crate::{AuthenticationPolicy, CallId, ConnectionEpoch};
 use kafka_wire_core::{ApiKey, ApiVersion};
 
 use super::{
     ConnectionInput, ConnectionLimits, ConnectionMachineError, ConnectionState,
-    ConnectionTransition, Decision, KafkaSessionMachine, PendingCall, TransitionRecord,
-    TransitionTrace,
+    ConnectionTransition, Decision, KafkaSessionLimits, KafkaSessionMachine, PendingCall,
+    StateData, TransitionRecord, TransitionTrace,
 };
 
 /// Deterministic policy owner for exactly one Kafka connection epoch.
 #[must_use]
 pub struct ConnectionMachine {
+    pub(super) state: StateData,
+    pub(super) limits: ConnectionLimits,
+    pub(super) authentication: Option<AuthenticationPolicy>,
     pub(super) session: KafkaSessionMachine,
     trace: TransitionTrace,
     next_sequence: Option<u64>,
@@ -23,7 +24,10 @@ impl ConnectionMachine {
     /// Creates a dormant machine for a new connection epoch.
     pub fn new(epoch: ConnectionEpoch, limits: ConnectionLimits) -> Self {
         Self {
-            session: KafkaSessionMachine::new(epoch, limits),
+            state: StateData::Dormant { epoch },
+            limits,
+            authentication: None,
+            session: KafkaSessionMachine::new(KafkaSessionLimits::new(limits.max_capabilities())),
             trace: TransitionTrace::new(limits.max_trace_records()),
             next_sequence: Some(0),
         }
@@ -36,7 +40,13 @@ impl ConnectionMachine {
         authentication: AuthenticationPolicy,
     ) -> Self {
         Self {
-            session: KafkaSessionMachine::new_authenticated(epoch, limits, authentication),
+            state: StateData::Dormant { epoch },
+            limits,
+            authentication: Some(authentication),
+            session: KafkaSessionMachine::new_authenticated(
+                KafkaSessionLimits::new(limits.max_capabilities()),
+                authentication,
+            ),
             trace: TransitionTrace::new(limits.max_trace_records()),
             next_sequence: Some(0),
         }
@@ -51,15 +61,15 @@ impl ConnectionMachine {
         let Some(sequence) = self.next_sequence else {
             return Err(ConnectionMachineError::TransitionSequenceExhausted);
         };
-        let from = self.session.phase();
+        let from = self.state.phase();
         let input_kind = input.kind();
         let decision = self.dispatch(input)?;
         let record = TransitionRecord::new(
             sequence,
-            self.session.epoch(),
+            self.state.epoch(),
             from,
             input_kind,
-            self.session.phase(),
+            self.state.phase(),
             decision.disposition,
             decision.effects.len(),
         );
@@ -70,12 +80,12 @@ impl ConnectionMachine {
 
     /// Returns an immutable snapshot of current lifecycle state.
     pub fn state(&self) -> ConnectionState {
-        self.session.state()
+        self.state.snapshot()
     }
 
     /// Returns the connection epoch permanently owned by this machine.
     pub const fn epoch(&self) -> ConnectionEpoch {
-        self.session.epoch()
+        self.state.epoch()
     }
 
     /// Returns the number of FIFO response obligations currently pending.
@@ -102,12 +112,14 @@ impl ConnectionMachine {
 
     /// Returns the selected API version for the active epoch, if negotiated.
     pub fn negotiated_version(&self, api_key: ApiKey) -> Option<ApiVersion> {
-        self.session.negotiated_version(api_key)
+        self.active()
+            .and_then(|_| self.session.negotiated_version(api_key))
     }
 
     /// Returns the usable API version overlap for the active epoch, if negotiated.
     pub fn negotiated_api(&self, api_key: ApiKey) -> Option<crate::NegotiatedApi> {
-        self.session.negotiated_api(api_key)
+        self.active()
+            .and_then(|_| self.session.negotiated_api(api_key))
     }
 
     /// Iterates retained transition records from oldest to newest.
@@ -140,19 +152,14 @@ impl ConnectionMachine {
                 transport_id,
                 effect_id,
                 capabilities,
-            } => Ok(self.session.api_versions_negotiated(
-                epoch,
-                transport_id,
-                effect_id,
-                capabilities,
-            )),
+            } => Ok(self.api_versions_negotiated(epoch, transport_id, effect_id, capabilities)),
             ConnectionInput::ApiVersionsNegotiatedWithAuthentication {
                 epoch,
                 transport_id,
                 effect_id,
                 capabilities,
                 authentication,
-            } => Ok(self.session.begin_authentication(
+            } => Ok(self.begin_authentication(
                 epoch,
                 transport_id,
                 effect_id,
@@ -164,12 +171,8 @@ impl ConnectionMachine {
                 transport_id,
                 effect_id,
                 failure,
-            } => Ok(self
-                .session
-                .api_versions_failed(epoch, transport_id, effect_id, failure)),
-            ConnectionInput::Authentication { input } => {
-                Ok(self.session.authentication_input(input))
-            }
+            } => Ok(self.api_versions_failed(epoch, transport_id, effect_id, failure)),
+            ConnectionInput::Authentication { input } => Ok(self.authentication_input(input)),
             ConnectionInput::Submit {
                 call_id,
                 write_effect,
@@ -219,16 +222,9 @@ impl ConnectionMachine {
     }
 
     pub(super) fn active(&self) -> Option<&super::ActiveConnection> {
-        self.session.active()
-    }
-}
-
-impl fmt::Debug for ConnectionMachine {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ConnectionMachine")
-            .field("state", &self.state())
-            .field("pending_count", &self.pending_count())
-            .finish_non_exhaustive()
+        match &self.state {
+            StateData::Active { connection, .. } => Some(connection),
+            _ => None,
+        }
     }
 }

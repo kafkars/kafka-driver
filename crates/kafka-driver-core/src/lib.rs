@@ -51,9 +51,12 @@ pub use capability::{CapabilityError, NegotiatedApi, NegotiatedCapabilities};
 pub use connection::{
     CallFailure, CloseReason, ConnectionEffect, ConnectionInput, ConnectionInputKind,
     ConnectionLimits, ConnectionMachine, ConnectionMachineError, ConnectionPhase, ConnectionState,
-    ConnectionTransition, CorrelationId, IdentityKind, NegotiationAttempt, NegotiationFailure,
-    PendingCall, PendingPhase, ResponseFault, TransitionDisposition, TransitionRecord,
-    TransitionSequence, TransportFailure,
+    ConnectionTransition, CorrelationId, IdentityKind, KafkaSessionAuthenticationState,
+    KafkaSessionCloseReason, KafkaSessionDeadline, KafkaSessionDisposition, KafkaSessionEffect,
+    KafkaSessionInput, KafkaSessionLimits, KafkaSessionMachine, KafkaSessionPhase,
+    KafkaSessionProtocolFailure, KafkaSessionState, KafkaSessionTransition, NegotiationAttempt,
+    NegotiationFailure, PendingCall, PendingPhase, ResponseFault, TransitionDisposition,
+    TransitionRecord, TransitionSequence, TransportFailure,
 };
 pub use coordinator::{
     CoordinatorDisposition, CoordinatorEffect, CoordinatorFollowup, CoordinatorInput,

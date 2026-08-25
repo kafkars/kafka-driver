@@ -1,8 +1,6 @@
 //! Mutable state owned exclusively by one negotiated connection epoch.
 
-use kafka_wire_core::{ApiKey, ApiVersion};
-
-use crate::{ConnectionEpoch, NegotiatedApi, NegotiatedCapabilities, TransportId};
+use crate::{ConnectionEpoch, NegotiatedCapabilities, TransportId};
 
 use super::{ConnectionLimits, CorrelationAllocator, PendingCall, PendingQueue};
 
@@ -38,13 +36,5 @@ impl ActiveConnection {
 
     pub(super) fn pending_calls(&self) -> impl ExactSizeIterator<Item = &PendingCall> {
         self.pending.iter()
-    }
-
-    pub(super) fn negotiated_version(&self, api_key: ApiKey) -> Option<ApiVersion> {
-        self.capabilities.version(api_key)
-    }
-
-    pub(super) fn negotiated_api(&self, api_key: ApiKey) -> Option<NegotiatedApi> {
-        self.capabilities.api(api_key)
     }
 }

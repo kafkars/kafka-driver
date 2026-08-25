@@ -4,7 +4,8 @@ use crate::{AuthenticationInput, ConnectionEpoch, Moment, TimerId, TransportId};
 
 use super::{
     ActiveMode, CallFailure, CloseReason, ConnectionEffect, ConnectionMachine, CorrelationId,
-    Decision, NegotiationFailure, PendingPhase, ResponseFault, StateData,
+    Decision, KafkaSessionDisposition, KafkaSessionInput, KafkaSessionProtocolFailure,
+    NegotiationFailure, PendingPhase, ResponseFault, StateData,
 };
 
 impl ConnectionMachine {
@@ -14,7 +15,7 @@ impl ConnectionMachine {
         transport_id: TransportId,
         fault: ResponseFault,
     ) -> Decision {
-        let StateData::Active { connection, .. } = &self.session.state else {
+        let StateData::Active { connection, .. } = &self.state else {
             return Decision::stale();
         };
         if epoch != connection.epoch || transport_id != connection.transport_id {
@@ -24,6 +25,10 @@ impl ConnectionMachine {
             ResponseFault::Unexpected => CloseReason::UnexpectedResponse,
             ResponseFault::Malformed => CloseReason::MalformedResponse,
         };
+        self.fail_session_protocol(match fault {
+            ResponseFault::Unexpected => KafkaSessionProtocolFailure::Unexpected,
+            ResponseFault::Malformed => KafkaSessionProtocolFailure::Malformed,
+        });
         let effects = self.begin_active_close(reason, None);
         Decision::fault(effects)
     }
@@ -34,21 +39,24 @@ impl ConnectionMachine {
         transport_id: TransportId,
         received: CorrelationId,
     ) -> Decision {
-        let StateData::Active { connection, .. } = &self.session.state else {
+        let StateData::Active { connection, .. } = &self.state else {
             return Decision::stale();
         };
         if epoch != connection.epoch || transport_id != connection.transport_id {
             return Decision::stale();
         }
         let Some(front) = connection.pending.front().copied() else {
+            self.fail_session_protocol(KafkaSessionProtocolFailure::Unexpected);
             let effects = self.begin_active_close(CloseReason::UnexpectedResponse, None);
             return Decision::fault(effects);
         };
         if front.phase() != PendingPhase::AwaitingResponse {
+            self.fail_session_protocol(KafkaSessionProtocolFailure::Unexpected);
             let effects = self.begin_active_close(CloseReason::UnexpectedResponse, None);
             return Decision::fault(effects);
         }
         if front.correlation_id() != received {
+            self.fail_session_protocol(KafkaSessionProtocolFailure::Unexpected);
             let reason = CloseReason::CorrelationMismatch {
                 expected: front.correlation_id(),
                 received,
@@ -61,7 +69,7 @@ impl ConnectionMachine {
             return Decision::fault(effects);
         }
 
-        let StateData::Active { mode, connection } = &mut self.session.state else {
+        let StateData::Active { mode, connection } = &mut self.state else {
             return Decision::stale();
         };
         let Some(completed) = connection.pending.pop_front() else {
@@ -77,9 +85,10 @@ impl ConnectionMachine {
             },
         ];
         if *mode == ActiveMode::Draining && connection.pending.is_empty() {
+            let _ = self.session.apply(KafkaSessionInput::Drained);
             let epoch = connection.epoch;
             let transport_id = connection.transport_id;
-            self.session.state = StateData::Closing {
+            self.state = StateData::Closing {
                 epoch,
                 transport_id,
                 reason: CloseReason::Drained,
@@ -91,6 +100,12 @@ impl ConnectionMachine {
             });
         }
         Decision::applied(effects)
+    }
+
+    fn fail_session_protocol(&mut self, failure: KafkaSessionProtocolFailure) {
+        let _ = self
+            .session
+            .apply(KafkaSessionInput::ProtocolFailed { failure });
     }
 
     pub(super) fn deadline_elapsed(
@@ -105,7 +120,7 @@ impl ConnectionMachine {
             deadline_timer,
             deadline,
             ..
-        } = self.session.state
+        } = self.state
         {
             if epoch != expected_epoch || timer_id != deadline_timer {
                 return Decision::stale();
@@ -118,7 +133,7 @@ impl ConnectionMachine {
                 }]);
             }
             let reason = CloseReason::OpenFailed(super::TransportFailure::TimedOut);
-            self.session.state = StateData::Closing {
+            self.state = StateData::Closing {
                 epoch,
                 transport_id,
                 reason,
@@ -129,14 +144,12 @@ impl ConnectionMachine {
                 reason,
             }]);
         }
-        if matches!(&self.session.state, StateData::Authenticating { .. }) {
-            return self
-                .session
-                .authentication_input(AuthenticationInput::DeadlineElapsed {
-                    epoch,
-                    timer_id,
-                    now,
-                });
+        if matches!(&self.state, StateData::Authenticating { .. }) {
+            return self.authentication_input(AuthenticationInput::DeadlineElapsed {
+                epoch,
+                timer_id,
+                now,
+            });
         }
         if let StateData::Negotiating {
             epoch: expected_epoch,
@@ -144,9 +157,15 @@ impl ConnectionMachine {
             deadline_timer,
             deadline,
             ..
-        } = self.session.state
+        } = self.state
         {
             if epoch != expected_epoch || timer_id != deadline_timer {
+                return Decision::stale();
+            }
+            let session = self
+                .session
+                .apply(KafkaSessionInput::DeadlineElapsed { now });
+            if session.disposition() == KafkaSessionDisposition::IgnoredStale {
                 return Decision::stale();
             }
             if now < deadline {
@@ -157,7 +176,7 @@ impl ConnectionMachine {
                 }]);
             }
             let reason = CloseReason::NegotiationFailed(NegotiationFailure::Timeout);
-            self.session.state = StateData::Closing {
+            self.state = StateData::Closing {
                 epoch,
                 transport_id,
                 reason,
@@ -168,7 +187,7 @@ impl ConnectionMachine {
                 reason,
             }]);
         }
-        let StateData::Active { connection, .. } = &self.session.state else {
+        let StateData::Active { connection, .. } = &self.state else {
             return Decision::stale();
         };
         if epoch != connection.epoch {

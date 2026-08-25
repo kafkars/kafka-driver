@@ -6,8 +6,9 @@ use crate::{
 };
 
 use super::{
-    ActiveConnection, ActiveMode, CloseReason, ConnectionEffect, Decision, KafkaSessionMachine,
-    NegotiationFailure, StateData,
+    ActiveConnection, ActiveMode, CloseReason, ConnectionEffect, ConnectionMachine, Decision,
+    KafkaSessionDeadline, KafkaSessionDisposition, KafkaSessionInput, NegotiationFailure,
+    StateData,
 };
 
 const NEGOTIATION_CORRELATION: super::CorrelationId = super::CorrelationId::from_raw(0);
@@ -38,13 +39,19 @@ impl NegotiationAttempt {
     }
 }
 
-impl KafkaSessionMachine {
+impl ConnectionMachine {
     pub(super) fn begin_negotiation(
         &mut self,
         epoch: ConnectionEpoch,
         transport_id: TransportId,
         attempt: NegotiationAttempt,
     ) -> Decision {
+        let session = self.session.apply(KafkaSessionInput::TransportOpened {
+            deadline: KafkaSessionDeadline::new(attempt.now, attempt.deadline),
+        });
+        if session.disposition() == KafkaSessionDisposition::IgnoredStale {
+            return Decision::stale();
+        }
         if attempt.deadline <= attempt.now {
             let reason = CloseReason::NegotiationFailed(NegotiationFailure::Timeout);
             self.state = StateData::Closing {
@@ -104,6 +111,12 @@ impl KafkaSessionMachine {
             return Decision::stale();
         }
         let deadline_timer = *deadline_timer;
+        let session = self.session.apply(KafkaSessionInput::ApiVersionsSucceeded {
+            capabilities: capabilities.clone(),
+        });
+        if session.disposition() == KafkaSessionDisposition::IgnoredStale {
+            return Decision::stale();
+        }
         if capabilities.len() > self.limits.max_capabilities().get() {
             return self.finish_negotiation_failure(NegotiationFailure::Capacity);
         }
@@ -139,6 +152,12 @@ impl KafkaSessionMachine {
             || transport_id != expected_transport
             || effect_id != expected_effect
         {
+            return Decision::stale();
+        }
+        let session = self
+            .session
+            .apply(KafkaSessionInput::ApiVersionsFailed { failure });
+        if session.disposition() == KafkaSessionDisposition::IgnoredStale {
             return Decision::stale();
         }
         self.finish_negotiation_failure(failure)

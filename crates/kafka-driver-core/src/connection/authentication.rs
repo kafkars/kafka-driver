@@ -8,11 +8,11 @@ use crate::{
 };
 
 use super::{
-    ActiveConnection, ActiveMode, CloseReason, ConnectionEffect, Decision, KafkaSessionMachine,
-    StateData,
+    ActiveConnection, ActiveMode, CloseReason, ConnectionEffect, ConnectionMachine, Decision,
+    KafkaSessionDeadline, KafkaSessionDisposition, KafkaSessionInput, StateData,
 };
 
-impl KafkaSessionMachine {
+impl ConnectionMachine {
     pub(super) fn begin_authentication(
         &mut self,
         epoch: crate::ConnectionEpoch,
@@ -24,6 +24,15 @@ impl KafkaSessionMachine {
         let Some(deadline_timer) = self.matching_negotiation(epoch, transport_id, effect_id) else {
             return Decision::stale();
         };
+        let session =
+            self.session
+                .apply(KafkaSessionInput::ApiVersionsSucceededWithAuthentication {
+                    capabilities: capabilities.clone(),
+                    deadline: KafkaSessionDeadline::new(attempt.now(), attempt.deadline()),
+                });
+        if session.disposition() == KafkaSessionDisposition::IgnoredStale {
+            return Decision::stale();
+        }
         if capabilities.len() > self.limits.max_capabilities().get() {
             return self.finish_negotiation_failure(super::NegotiationFailure::Capacity);
         }
@@ -65,6 +74,14 @@ impl KafkaSessionMachine {
         let transition = authentication.apply(input);
         if transition.disposition() == AuthenticationDisposition::IgnoredStale {
             return Decision::stale();
+        }
+        if let Some(input) = session_authentication_input(input) {
+            let session = self.session.apply(input);
+            debug_assert_ne!(
+                session.disposition(),
+                KafkaSessionDisposition::IgnoredStale,
+                "legacy authentication accepted an input rejected by session policy"
+            );
         }
         match authentication.state() {
             AuthenticationState::Succeeded => self.finish_authentication_success(transition),
@@ -190,6 +207,24 @@ impl KafkaSessionMachine {
         }];
         effects.extend(wrap_effects(transition.into_effects()));
         Decision::applied(effects)
+    }
+}
+
+fn session_authentication_input(input: AuthenticationInput) -> Option<KafkaSessionInput> {
+    match input {
+        AuthenticationInput::Start { .. } => None,
+        AuthenticationInput::HandshakeAccepted { .. } => {
+            Some(KafkaSessionInput::AuthenticationHandshakeSucceeded)
+        }
+        AuthenticationInput::HandshakeFailed { failure, .. } => {
+            Some(KafkaSessionInput::AuthenticationHandshakeFailed { failure })
+        }
+        AuthenticationInput::ExchangeCompleted { round, outcome, .. } => {
+            Some(KafkaSessionInput::AuthenticationExchangeCompleted { round, outcome })
+        }
+        AuthenticationInput::DeadlineElapsed { now, .. } => {
+            Some(KafkaSessionInput::DeadlineElapsed { now })
+        }
     }
 }
 

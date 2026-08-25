@@ -12,7 +12,7 @@ use super::AuthenticationFailure;
 pub struct AuthenticationRound(NonZeroU8);
 
 impl AuthenticationRound {
-    pub(super) const FIRST: Self = Self(NonZeroU8::MIN);
+    pub(crate) const FIRST: Self = Self(NonZeroU8::MIN);
 
     /// Creates a one-based round identity.
     pub const fn new(value: NonZeroU8) -> Self {
@@ -24,7 +24,7 @@ impl AuthenticationRound {
         self.0.get()
     }
 
-    pub(super) fn next(self) -> Option<Self> {
+    pub(crate) fn next(self) -> Option<Self> {
         self.0
             .get()
             .checked_add(1)

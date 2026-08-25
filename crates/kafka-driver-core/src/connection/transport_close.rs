@@ -3,7 +3,8 @@
 use crate::{AuthenticationEffect, ConnectionEpoch, TransportId};
 
 use super::{
-    CloseReason, ConnectionEffect, ConnectionMachine, Decision, StateData, TransportFailure,
+    CloseReason, ConnectionEffect, ConnectionMachine, Decision, KafkaSessionInput, StateData,
+    TransportFailure,
 };
 
 impl ConnectionMachine {
@@ -13,17 +14,18 @@ impl ConnectionMachine {
         transport_id: TransportId,
         failure: TransportFailure,
     ) -> Decision {
-        if epoch != self.session.state.epoch() {
+        if epoch != self.state.epoch() {
             return Decision::stale();
         }
-        match &self.session.state {
+        match &self.state {
             StateData::Opening {
                 transport_id: expected,
                 deadline_timer,
                 ..
             } if *expected == transport_id => {
+                let _ = self.session.apply(KafkaSessionInput::Closed);
                 let deadline_timer = *deadline_timer;
-                self.session.state = StateData::Closed {
+                self.state = StateData::Closed {
                     epoch,
                     reason: CloseReason::TransportLost(failure),
                 };
@@ -36,8 +38,9 @@ impl ConnectionMachine {
                 deadline_timer,
                 ..
             } if *expected == transport_id => {
+                let _ = self.session.apply(KafkaSessionInput::Closed);
                 let deadline_timer = *deadline_timer;
-                self.session.state = StateData::Closed {
+                self.state = StateData::Closed {
                     epoch,
                     reason: CloseReason::TransportLost(failure),
                 };
@@ -50,8 +53,9 @@ impl ConnectionMachine {
                 authentication,
                 ..
             } if *expected == transport_id => {
+                let _ = self.session.apply(KafkaSessionInput::Closed);
                 let deadline_timer = authentication.deadline_timer();
-                self.session.state = StateData::Closed {
+                self.state = StateData::Closed {
                     epoch,
                     reason: CloseReason::TransportLost(failure),
                 };
@@ -64,6 +68,7 @@ impl ConnectionMachine {
                 Decision::applied(effects.collect())
             }
             StateData::Active { connection, .. } if connection.transport_id == transport_id => {
+                let _ = self.session.apply(KafkaSessionInput::Closed);
                 let reason = CloseReason::TransportLost(failure);
                 let effects = self.finish_active_close(reason, None);
                 Decision::applied(effects)
@@ -73,8 +78,9 @@ impl ConnectionMachine {
                 reason,
                 ..
             } if *expected == transport_id => {
+                let _ = self.session.apply(KafkaSessionInput::Closed);
                 let reason = *reason;
-                self.session.state = StateData::Closed { epoch, reason };
+                self.state = StateData::Closed { epoch, reason };
                 Decision::applied(Vec::new())
             }
             StateData::Dormant { .. }
