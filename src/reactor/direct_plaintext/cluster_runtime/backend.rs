@@ -9,12 +9,14 @@ use std::io;
 
 use bornera::TcpTransport;
 use calandria::{Span, WaitOutcome};
-use kafka_driver_core::Moment;
+use kafka_driver_core::{BrokerRoute, Moment};
 
 use crate::{
-    DriverLimits,
+    DriverLimits, TrafficClass,
     config::BrokerTemplate,
-    reactor::{bootstrap::ResolvedSeed, broker::BrokerLimits, causality::CausalSequence},
+    reactor::{
+        BrokerRpc, bootstrap::ResolvedSeed, broker::BrokerLimits, causality::CausalSequence,
+    },
 };
 
 #[cfg(feature = "tls-rustls")]
@@ -25,7 +27,7 @@ use crate::reactor::direct_plaintext::lane_plan::factory::{
 #[cfg(feature = "tls-rustls")]
 use crate::reactor::direct_plaintext::rustls_transport::DirectRustlsTransport;
 
-use super::{ClusterRuntime, seed::ResolvedSeedReplacement};
+use super::{ClusterRuntime, rpc_access::ClusterRpcAccessError, seed::ResolvedSeedReplacement};
 
 /// One transport family chosen before its sole Bornera selector is constructed.
 pub(in crate::reactor::direct_plaintext) enum ClusterBackend {
@@ -148,6 +150,36 @@ impl ClusterBackend {
             Self::Plaintext { runtime, .. } => runtime.has_local_work(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls { runtime, .. } => runtime.has_local_work(),
+        }
+    }
+
+    pub(in crate::reactor::direct_plaintext) fn with_seed_rpc<R, E>(
+        &mut self,
+        causality: &mut CausalSequence,
+        use_rpc: impl FnOnce(Option<&mut dyn BrokerRpc>) -> Result<R, E>,
+    ) -> Result<R, ClusterRpcAccessError<E>> {
+        match self {
+            Self::Plaintext { runtime, .. } => runtime.with_seed_rpc(causality, use_rpc),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls { runtime, .. } => runtime.with_seed_rpc(causality, use_rpc),
+        }
+    }
+
+    pub(in crate::reactor::direct_plaintext) fn with_route_rpc<R, E>(
+        &mut self,
+        route: BrokerRoute,
+        traffic: TrafficClass,
+        causality: &mut CausalSequence,
+        use_rpc: impl FnOnce(Option<&mut dyn BrokerRpc>) -> Result<R, E>,
+    ) -> Result<R, ClusterRpcAccessError<E>> {
+        match self {
+            Self::Plaintext { runtime, .. } => {
+                runtime.with_route_rpc(route, traffic, causality, use_rpc)
+            }
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls { runtime, .. } => {
+                runtime.with_route_rpc(route, traffic, causality, use_rpc)
+            }
         }
     }
 }

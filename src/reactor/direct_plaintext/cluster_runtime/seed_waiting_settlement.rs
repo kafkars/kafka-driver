@@ -111,13 +111,17 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         match result {
             Ok(value) => Ok(value),
             Err(error) => {
-                self.pending_resolved_seed = None;
-                let _ = self.capture_seed_terminal_failure();
-                self.totalize_seed_waiting_after_host_failure();
-                self.totalize_route_waiting_after_host_failure();
+                self.totalize_after_host_failure();
                 Err(error)
             }
         }
+    }
+
+    pub(super) fn totalize_after_host_failure(&mut self) {
+        self.pending_resolved_seed = None;
+        let _ = self.capture_seed_terminal_failure();
+        self.totalize_seed_waiting_after_host_failure();
+        self.totalize_route_waiting_after_host_failure();
     }
 
     pub(super) fn seed_waiting_is_closed(&self) -> bool {

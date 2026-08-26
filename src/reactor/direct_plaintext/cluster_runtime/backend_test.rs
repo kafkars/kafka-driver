@@ -56,6 +56,10 @@ fn plaintext_facade_owns_one_typed_runtime_and_retained_factory() {
     backend
         .install_resolved_seed(seed(3, "seed.kafka.test", address), NOW)
         .unwrap_or_else(|error| panic!("install plaintext seed: {error}"));
+    let rpc_present = backend
+        .with_seed_rpc(&mut CausalSequence::new(), |rpc| Ok::<_, ()>(rpc.is_some()))
+        .unwrap_or_else(|error| panic!("lend erased seed RPC: {error:?}"));
+    assert!(rpc_present);
 
     let runtime = match &backend {
         ClusterBackend::Plaintext { runtime, .. } => runtime,

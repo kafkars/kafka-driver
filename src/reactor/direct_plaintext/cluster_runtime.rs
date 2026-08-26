@@ -42,6 +42,7 @@ mod route_state;
 #[cfg(test)]
 mod route_test_support;
 mod route_turn;
+mod rpc_access;
 pub(super) mod seed;
 mod seed_rotation;
 #[cfg(test)]
