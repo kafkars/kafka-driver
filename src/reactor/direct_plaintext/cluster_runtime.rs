@@ -29,6 +29,7 @@ mod family_removal;
 mod family_state;
 mod lifecycle;
 pub(super) use lifecycle::reclaimable;
+mod observation;
 mod route_admission;
 mod route_directory;
 mod route_failure;
