@@ -17,10 +17,11 @@
 <br />
 
 `kafka-driver` owns the work between generated [`kafka-wire`](https://github.com/kafkars/kafka-wire)
-messages and Kafka brokers: DNS, connect, TLS and SASL, API negotiation, FIFO
-correlation, metadata and coordinator routing, deadlines, reconnects, and
-semantic connection lanes. It has no async-runtime dependency and is not a
-high-level producer or consumer client.
+messages and Kafka brokers: DNS, SASL, API negotiation, correlation, metadata
+and coordinator routing, deadlines, reconnect policy, and semantic connection
+lanes. Bornera owns the selector, connections, socket and TLS transports, and
+bounded I/O beneath those policies. The driver has no async-runtime dependency
+and is not a high-level producer or consumer client.
 
 ## Model
 
@@ -33,7 +34,8 @@ kafka-driver      bounded admission, completion, embedded or dedicated host
       ├── core     State + Input -> Transition<State, Effect>
       ├── transport
       │            sans-I/O frame decoding and ordered write progress
-      └── reactor  sockets, DNS, TLS, SASL, timers, and effect interpretation
+      ├── reactor  DNS, SASL, timers, topology, and effect interpretation
+      └── Bornera  selector, connection lifecycle, socket/TLS I/O, and limits
       │
 Kafka brokers
 ```
@@ -129,18 +131,19 @@ fixed-seed frame fuzzing, loopback transport and TLS integration, bounded
 concurrency and shutdown tests, and separate real-broker qualification against
 Kafka 4.3.1. CI runs the same canonical gate on Linux, macOS, and Windows.
 
-Local development expects the public wire repository at the pinned sibling
-path:
+The locked graph resolves the audited `kafka-wire` and Bornera releases from
+the public registry; no sibling checkout is required:
 
 ```sh
-git clone https://github.com/kafkars/kafka-wire ../kafka-protocol
+cargo fetch --locked
 scripts/check
 ```
 
 ## Status
 
-`kafka-driver` 0.1.0-rc.2 is the second release candidate. Its protocol authority
-is `kafka-wire` 0.1.0-rc.2. Public APIs may still change before 0.1.0.
+`kafka-driver` 0.1.0-rc.2 is the second release candidate. This source consumes
+`kafka-wire` 0.1.0-rc.3 and the Bornera 0.0.1-rc.3 family from the public
+registry. Public APIs may still change before 0.1.0.
 
 ## License
 
