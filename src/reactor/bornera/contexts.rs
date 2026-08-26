@@ -82,6 +82,7 @@ impl<C> OperationContexts<C> {
     }
 
     /// Transfers at most `limit` published contexts in deterministic key order.
+    #[cfg(test)]
     pub(in crate::reactor) fn drain(&self, limit: NonZeroUsize) -> Vec<(OperationContextKey, C)> {
         let mut state = self.state.borrow_mut();
         let count = limit.get().min(state.published.len());

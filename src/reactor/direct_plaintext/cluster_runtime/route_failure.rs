@@ -3,9 +3,9 @@
 use std::io;
 
 use bornera::RegisteredTransport;
-use kafka_driver_core::{BrokerRoute, BrokerState, ConnectionEpoch, DnsFailure};
 #[cfg(test)]
 use kafka_driver_core::OutcomeStamp;
+use kafka_driver_core::{BrokerRoute, BrokerState, ConnectionEpoch, DnsFailure};
 
 use crate::{RequestError, reactor::BrokerLane};
 

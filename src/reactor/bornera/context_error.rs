@@ -79,6 +79,7 @@ impl<C> ContextPublishError<C> {
         Self::new(ContextPublishFailure::OwnerDropped, context)
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn failure(&self) -> ContextPublishFailure {
         self.failure
     }

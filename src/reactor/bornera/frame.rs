@@ -53,6 +53,7 @@ impl Retained for KafkaFrame {
 /// Bornera decoder backed by the driver's canonical Kafka framing rules.
 #[derive(Debug)]
 pub(in crate::reactor) struct KafkaFrameDecoder {
+    #[cfg(test)]
     configured_max_buffered_bytes: usize,
     coalesced_limits: FrameLimits,
     max_input_bytes: NonZeroUsize,
@@ -115,6 +116,7 @@ impl KafkaFrameDecoder {
             });
         };
         Ok(Self {
+            #[cfg(test)]
             configured_max_buffered_bytes,
             coalesced_limits,
             max_input_bytes,
