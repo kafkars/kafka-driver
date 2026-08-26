@@ -64,7 +64,6 @@ pub(in crate::reactor) struct KafkaFrameDecoder {
 
 impl KafkaFrameDecoder {
     /// Configures honest `Vec` retention and bounded coalescing/read headroom.
-    ///
     /// `FrameLimits::max_buffered_bytes` remains the configured logical buffer.
     /// The adapter may temporarily coalesce one complete input quantum beyond
     /// it so a chunk that completes one frame can retain the next frame's prefix.
