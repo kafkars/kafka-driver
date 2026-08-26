@@ -36,6 +36,14 @@ impl TlsClientPolicy {
         let server_name = ServerName::try_from(endpoint.host().as_str().to_owned())?;
         Ok(self.for_server(server_name))
     }
+
+    pub(crate) fn bind_endpoint(
+        &self,
+        endpoint: &BrokerEndpoint,
+    ) -> Result<TlsClientConfig, TlsSessionError> {
+        self.for_endpoint(endpoint)
+            .map_err(TlsSessionError::ServerIdentity)
+    }
 }
 
 impl fmt::Debug for TlsClientPolicy {

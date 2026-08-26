@@ -46,8 +46,8 @@ pub use tls::{TlsClientConfig, TlsClientPolicy};
 
 pub(crate) use bootstrap::BootstrapConfig;
 pub(crate) use broker::{
-    BrokerAddresses, BrokerConfig, BrokerSecurity, BrokerTemplate, DirectBrokerConfig,
-    DirectBrokerSelection,
+    BrokerAddresses, BrokerConfig, BrokerSecurity, BrokerTemplate, BrokerTemplateParts,
+    DirectBrokerConfig, DirectBrokerSelection,
 };
 pub(crate) use client_id::{ClientId, ClientIdError};
 pub(crate) use scram_policy::{ScramClientConfigError, kafka_scram_client_config};

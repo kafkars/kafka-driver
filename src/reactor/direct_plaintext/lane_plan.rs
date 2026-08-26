@@ -16,6 +16,12 @@ use super::attempt::{DirectConnectionAttempt, PlaintextAttempt};
 #[cfg(feature = "tls-rustls")]
 use super::{attempt::RustlsAttempt, rustls_transport::DirectRustlsTransport};
 
+#[allow(
+    dead_code,
+    reason = "consumed by the upcoming cluster runtime installation slice"
+)]
+pub(super) mod factory;
+
 /// Complete replayable policy consumed when a lane joins one shared set.
 pub(in crate::reactor) struct BorneraLanePlan<T: RegisteredTransport> {
     pub(super) addresses: BrokerAddresses,
