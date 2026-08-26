@@ -3,9 +3,9 @@
 use std::io;
 
 use kafka_driver_core::{
-    AuthenticationFailureDisposition, BackoffPolicy, BrokerDisposition, BrokerEffect, BrokerInput,
-    BrokerMachine, BrokerPhase, BrokerState, CloseReason, ConnectionEpoch, Moment,
-    ReconnectSchedule, TimerId,
+    AddressRefreshState, AuthenticationFailureDisposition, BackoffPolicy, BrokerDisposition,
+    BrokerEffect, BrokerInput, BrokerMachine, BrokerPhase, BrokerState, CloseReason,
+    ConnectionEpoch, EndpointRefreshSchedule, Moment, ReconnectSchedule, TimerId,
 };
 
 use crate::reactor::entropy::JitterEntropy;
@@ -14,7 +14,7 @@ use super::owner::ID;
 
 #[derive(Debug)]
 pub(super) struct DirectLifecycle {
-    broker: BrokerMachine,
+    pub(super) broker: BrokerMachine,
     next_timer: Option<u64>,
     entropy: JitterEntropy,
 }
@@ -98,10 +98,7 @@ impl DirectLifecycle {
         self.apply(input)
     }
 
-    #[allow(
-        dead_code,
-        reason = "endpoint-refresh ownership is consumed by the pending bootstrap cutover"
-    )]
+    #[allow(dead_code, reason = "used by the pending resolver-host cutover")]
     pub(super) fn begin_endpoint_refresh(
         &mut self,
         failed_epoch: ConnectionEpoch,
@@ -129,40 +126,67 @@ impl DirectLifecycle {
         self.apply(BrokerInput::ConnectionDrained { epoch })
     }
 
-    pub(super) fn fire_due(&mut self, now: Moment) -> io::Result<Vec<BrokerEffect>> {
-        let BrokerState::Backoff {
-            failed_epoch,
-            timer_id,
-            deadline,
-            ..
-        } = self.state()
-        else {
-            return Ok(Vec::new());
+    pub(super) fn fire_due(&mut self, now: Moment) -> io::Result<Option<Vec<BrokerEffect>>> {
+        let (deadline, input) = match self.state() {
+            BrokerState::Backoff {
+                failed_epoch,
+                timer_id,
+                deadline,
+                ..
+            } => (
+                deadline,
+                BrokerInput::ReconnectElapsed {
+                    failed_epoch,
+                    timer_id,
+                    now,
+                },
+            ),
+            BrokerState::Refreshing {
+                failed_epoch,
+                refresh:
+                    AddressRefreshState::Backoff {
+                        timer_id, deadline, ..
+                    },
+                ..
+            } => (
+                deadline,
+                BrokerInput::EndpointRefreshRetryElapsed {
+                    failed_epoch,
+                    timer_id,
+                    now,
+                },
+            ),
+            _ => return Ok(None),
         };
         if deadline > now {
-            return Ok(Vec::new());
+            return Ok(None);
         }
-        self.apply(BrokerInput::ReconnectElapsed {
-            failed_epoch,
-            timer_id,
-            now,
-        })
-    }
-
-    pub(super) fn begin_drain(&mut self) -> io::Result<Vec<BrokerEffect>> {
-        let transition = self.broker.apply(BrokerInput::BeginDrain);
-        match transition.disposition() {
-            BrokerDisposition::Applied => Ok(transition.into_effects()),
-            BrokerDisposition::Ignored => Ok(Vec::new()),
-            BrokerDisposition::IgnoredStale => Err(invariant("direct drain was rejected as stale")),
-        }
+        self.apply(input).map(Some)
     }
 
     pub(super) const fn next_deadline(&self) -> Option<Moment> {
         match self.state() {
-            BrokerState::Backoff { deadline, .. } => Some(deadline),
+            BrokerState::Backoff { deadline, .. }
+            | BrokerState::Refreshing {
+                refresh: AddressRefreshState::Backoff { deadline, .. },
+                ..
+            } => Some(deadline),
             _ => None,
         }
+    }
+
+    #[allow(dead_code, reason = "used by the pending resolver-host cutover")]
+    pub(super) fn reserve_endpoint_refresh(
+        &mut self,
+        now: Moment,
+    ) -> Option<EndpointRefreshSchedule> {
+        let raw = self.next_timer?;
+        self.next_timer = raw.checked_add(1);
+        Some(EndpointRefreshSchedule::new(
+            TimerId::from_raw(raw),
+            now,
+            self.entropy.next_sample(),
+        ))
     }
 
     fn reserve_reconnect(&mut self, now: Moment) -> io::Result<ReconnectSchedule> {
@@ -177,7 +201,7 @@ impl DirectLifecycle {
         ))
     }
 
-    fn apply(&mut self, input: BrokerInput) -> io::Result<Vec<BrokerEffect>> {
+    pub(super) fn apply(&mut self, input: BrokerInput) -> io::Result<Vec<BrokerEffect>> {
         let transition = self.broker.apply(input);
         if transition.disposition() != BrokerDisposition::Applied {
             return Err(invariant("direct lifecycle rejected a current transition"));
@@ -196,6 +220,6 @@ impl DirectLifecycle {
     }
 }
 
-fn invariant(message: &'static str) -> io::Error {
+pub(super) fn invariant(message: &'static str) -> io::Error {
     io::Error::other(message)
 }

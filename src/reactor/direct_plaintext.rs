@@ -10,16 +10,15 @@ mod backend;
 mod construction;
 mod decoder_gate;
 mod drive;
-#[allow(
-    dead_code,
-    reason = "endpoint-refresh ownership is consumed by the pending bootstrap cutover"
-)]
-mod endpoint_refresh;
+pub(in crate::reactor) mod endpoint_refresh;
+mod endpoint_refresh_completion;
 mod failure_translation;
 mod generation;
 mod invariant_failure;
 mod lane_construction;
 mod lifecycle;
+mod lifecycle_drain;
+mod lifecycle_refresh;
 mod limits;
 mod negotiation;
 mod observation;
@@ -60,6 +59,8 @@ mod drive_test;
 #[cfg(test)]
 mod endpoint_failure_policy_test;
 #[cfg(test)]
+mod endpoint_refresh_test;
+#[cfg(test)]
 mod endpoint_selection_test;
 #[cfg(test)]
 mod lifecycle_test;
@@ -95,5 +96,4 @@ mod shared_set_fixture_test;
 mod shared_set_test;
 
 pub(in crate::reactor) use backend::DirectBackend;
-pub(in crate::reactor) use endpoint_refresh::DirectEndpointRefresh;
 pub(in crate::reactor) use rpc::DirectBrokerRpc;

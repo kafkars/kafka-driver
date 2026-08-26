@@ -1,30 +1,67 @@
 //! One-shot DNS ownership after a resolved address pass is exhausted.
 
+#![allow(
+    dead_code,
+    reason = "the resolver host consumes this seam in the next bounded cutover"
+)]
+
 use std::io;
 
 use bornera::RegisteredTransport;
+use bornera_core::{EndpointId, LaneId};
 use kafka_driver_core::{
     AddressRefreshState, AuthenticationFailureDisposition, BrokerEndpoint, BrokerState,
-    CloseReason, ConnectionEpoch,
+    CloseReason, ConnectionEpoch, DnsRequest, EffectId,
 };
 
 use crate::reactor::address_rotation::AddressRotation;
 
 use super::owner::DirectLane;
 
+/// Stable shared-set lane identity for endpoint-resolution ownership.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(in crate::reactor) struct DirectRefreshOwner {
+    endpoint: EndpointId,
+    lane: LaneId,
+}
+
+impl DirectRefreshOwner {
+    pub(super) const fn new(endpoint: EndpointId, lane: LaneId) -> Self {
+        Self { endpoint, lane }
+    }
+
+    pub(in crate::reactor) const fn endpoint(self) -> EndpointId {
+        self.endpoint
+    }
+
+    pub(in crate::reactor) const fn lane(self) -> LaneId {
+        self.lane
+    }
+}
+
 /// Identity fence for one logical endpoint refresh request.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::reactor) struct DirectEndpointRefresh {
+    owner: DirectRefreshOwner,
     endpoint: BrokerEndpoint,
     failed_epoch: ConnectionEpoch,
 }
 
 impl DirectEndpointRefresh {
-    pub(super) const fn new(endpoint: BrokerEndpoint, failed_epoch: ConnectionEpoch) -> Self {
+    pub(super) const fn new(
+        owner: DirectRefreshOwner,
+        endpoint: BrokerEndpoint,
+        failed_epoch: ConnectionEpoch,
+    ) -> Self {
         Self {
+            owner,
             endpoint,
             failed_epoch,
         }
+    }
+
+    pub(in crate::reactor) const fn owner(&self) -> DirectRefreshOwner {
+        self.owner
     }
 
     pub(in crate::reactor) const fn endpoint(&self) -> &BrokerEndpoint {
@@ -35,7 +72,12 @@ impl DirectEndpointRefresh {
         self.failed_epoch
     }
 
+    pub(in crate::reactor) fn request(&self, effect_id: EffectId) -> DnsRequest {
+        DnsRequest::new(self.failed_epoch, effect_id, self.endpoint.clone())
+    }
+
     pub(super) fn after_failure(
+        owner: DirectRefreshOwner,
         endpoint: Option<BrokerEndpoint>,
         state: BrokerState,
         failed_epoch: ConnectionEpoch,
@@ -48,7 +90,7 @@ impl DirectEndpointRefresh {
                 failed_epoch: current,
                 refresh: AddressRefreshState::Pending { .. },
                 ..
-            } if current == failed_epoch => Ok(Some(Self::new(endpoint, failed_epoch))),
+            } if current == failed_epoch => Ok(Some(Self::new(owner, endpoint, failed_epoch))),
             BrokerState::Closed { .. } => Ok(None),
             _ => Err(io::Error::other(
                 "resolved address exhaustion diverged from direct lifecycle",
@@ -113,5 +155,32 @@ impl<T: RegisteredTransport> DirectLane<T> {
         }
         self.lifecycle.begin_endpoint_refresh(failed_epoch)?;
         Ok(self.endpoint_refresh.clone())
+    }
+
+    pub(in crate::reactor) fn defer_endpoint_refresh(
+        &mut self,
+        refresh: &DirectEndpointRefresh,
+    ) -> io::Result<()> {
+        self.require_endpoint_refresh(refresh)?;
+        self.lifecycle.defer_endpoint_refresh(refresh.failed_epoch)
+    }
+
+    pub(super) fn require_endpoint_refresh(
+        &self,
+        refresh: &DirectEndpointRefresh,
+    ) -> io::Result<()> {
+        if self.endpoint_refresh.as_ref() != Some(refresh) {
+            return Err(io::Error::other("direct endpoint-refresh fence diverged"));
+        }
+        matches!(
+            self.lifecycle.state(),
+            BrokerState::Refreshing {
+                failed_epoch,
+                refresh: AddressRefreshState::Resolving { .. },
+                ..
+            } if failed_epoch == refresh.failed_epoch
+        )
+        .then_some(())
+        .ok_or_else(|| io::Error::other("direct endpoint-refresh state diverged"))
     }
 }

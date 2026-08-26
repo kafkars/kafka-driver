@@ -46,8 +46,12 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         let effects = self
             .lifecycle
             .generation_ended(epoch, reason, now, endpoint.is_some())?;
-        let refresh =
-            DirectEndpointRefresh::after_failure(endpoint, self.lifecycle.state(), epoch)?;
+        let refresh = DirectEndpointRefresh::after_failure(
+            self.connection_owner.refresh_owner(),
+            endpoint,
+            self.lifecycle.state(),
+            epoch,
+        )?;
         if refresh.is_some() && self.endpoint_refresh.is_some() {
             return Err(io::Error::other(
                 "direct endpoint-refresh ownership was already occupied",

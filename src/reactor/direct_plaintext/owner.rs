@@ -28,7 +28,7 @@ use super::{
     session_plan::DirectSessionPlan,
 };
 
-use super::DirectEndpointRefresh;
+use super::endpoint_refresh::DirectEndpointRefresh;
 
 pub(super) type DirectSet<T> = ConnectionSet<DirectFrameDecoder, KafkaReplyClassifier, T>;
 

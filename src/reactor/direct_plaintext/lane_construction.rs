@@ -70,8 +70,12 @@ pub(super) fn start_lane<T: RegisteredTransport>(
             let epoch = ConnectionEpoch::from_raw(ID);
             let endpoint = failed_endpoint(&mut addresses, reason);
             let effects = lifecycle.generation_ended(epoch, reason, now, endpoint.is_some())?;
-            let endpoint_refresh =
-                DirectEndpointRefresh::after_failure(endpoint, lifecycle.state(), epoch)?;
+            let endpoint_refresh = DirectEndpointRefresh::after_failure(
+                connection_owner.refresh_owner(),
+                endpoint,
+                lifecycle.state(),
+                epoch,
+            )?;
             let valid = matches!(
                 (
                     lifecycle.state(),

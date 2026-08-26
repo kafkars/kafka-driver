@@ -57,6 +57,10 @@ impl DirectConnectionOwner {
             timer,
         }
     }
+
+    pub(super) const fn refresh_owner(self) -> super::endpoint_refresh::DirectRefreshOwner {
+        super::endpoint_refresh::DirectRefreshOwner::new(self.endpoint, self.lane)
+    }
 }
 
 #[derive(Debug)]

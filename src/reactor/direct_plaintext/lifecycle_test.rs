@@ -3,7 +3,7 @@
 use std::{net::SocketAddr, time::Duration};
 
 use kafka_driver_core::{
-    BrokerEffect, BrokerState, CloseReason, ConnectionEpoch, Moment, TransportFailure,
+    BrokerEffect, BrokerState, CloseReason, ConnectionEpoch, DnsFailure, Moment, TransportFailure,
 };
 
 use super::lifecycle::DirectLifecycle;
@@ -61,16 +61,16 @@ fn unexpected_close_waits_for_its_exact_deadline_then_opens_epoch_two() {
         lifecycle
             .fire_due(early)
             .unwrap_or_else(|error| panic!("check early reconnect: {error}"))
-            .is_empty()
+            .is_none()
     );
     assert_eq!(lifecycle.next_deadline(), Some(deadline));
     assert_eq!(
         lifecycle
             .fire_due(deadline)
             .unwrap_or_else(|error| panic!("fire exact reconnect: {error}")),
-        vec![BrokerEffect::OpenConnection {
+        Some(vec![BrokerEffect::OpenConnection {
             epoch: ConnectionEpoch::from_raw(2),
-        }]
+        }])
     );
     assert!(matches!(
         lifecycle.state(),
@@ -106,7 +106,46 @@ fn shutdown_owns_backoff_and_prevents_a_later_open() {
         lifecycle
             .fire_due(Moment::from_nanos(u64::MAX))
             .unwrap_or_else(|error| panic!("check post-shutdown reconnect: {error}"))
-            .is_empty()
+            .is_none()
+    );
+}
+
+#[test]
+fn refresh_backoff_shutdown_cancels_the_exact_pretransition_timer() {
+    let mut lifecycle = lifecycle();
+    lifecycle.replace_entropy(0);
+    let _effects = lifecycle
+        .generation_ended(
+            ConnectionEpoch::from_raw(1),
+            CloseReason::TransportLost(TransportFailure::Reset),
+            NOW,
+            true,
+        )
+        .unwrap_or_else(|error| panic!("suspend reconnect for refresh: {error}"));
+    lifecycle
+        .begin_endpoint_refresh(ConnectionEpoch::from_raw(1))
+        .unwrap_or_else(|error| panic!("begin endpoint refresh: {error}"));
+    let effects = lifecycle
+        .fail_endpoint_refresh(ConnectionEpoch::from_raw(1), DnsFailure::Temporary, NOW)
+        .unwrap_or_else(|error| panic!("schedule endpoint refresh retry: {error}"));
+    let [BrokerEffect::ScheduleEndpointRefreshRetry { timer_id, .. }] = effects.as_slice() else {
+        panic!("refresh failure must schedule its exact timer");
+    };
+
+    assert_eq!(
+        lifecycle
+            .begin_drain()
+            .unwrap_or_else(|error| panic!("cancel refresh retry: {error}")),
+        vec![BrokerEffect::CancelEndpointRefreshRetry {
+            timer_id: *timer_id,
+        }]
+    );
+    assert!(matches!(lifecycle.state(), BrokerState::Closed { .. }));
+    assert!(
+        lifecycle
+            .fire_due(Moment::from_nanos(u64::MAX))
+            .unwrap_or_else(|error| panic!("check cancelled refresh timer: {error}"))
+            .is_none()
     );
 }
 

@@ -37,13 +37,13 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         now: Moment,
         causality: &mut CausalSequence,
     ) -> io::Result<bool> {
-        let effects = self
+        let Some(effects) = self
             .lifecycle
             .fire_due(now)
-            .map_err(|error| self.host_fatal(error))?;
-        if effects.is_empty() {
+            .map_err(|error| self.host_fatal(error))?
+        else {
             return Ok(false);
-        }
+        };
         self.interpret_lifecycle_effects(effects, now, Some(causality))
             .map_err(|error| self.host_fatal(error))?;
         Ok(true)
@@ -64,7 +64,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         Ok(())
     }
 
-    fn interpret_lifecycle_effects(
+    pub(super) fn interpret_lifecycle_effects(
         &mut self,
         effects: Vec<BrokerEffect>,
         now: Moment,
@@ -107,7 +107,8 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
                     }
                     self.mark_waiting();
                 }
-                BrokerEffect::CancelReconnect { .. } => {
+                BrokerEffect::CancelReconnect { .. }
+                | BrokerEffect::CancelEndpointRefreshRetry { .. } => {
                     self.mark_waiting();
                 }
                 BrokerEffect::DrainConnection { epoch } => {
@@ -118,11 +119,31 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
                     }
                     self.apply_session(KafkaSessionInput::BeginDrain, now)?;
                 }
-                BrokerEffect::ScheduleEndpointRefreshRetry { .. }
-                | BrokerEffect::CancelEndpointRefreshRetry { .. } => {
-                    return Err(io::Error::other(
-                        "fixed direct lifecycle emitted an endpoint-refresh effect",
-                    ));
+                BrokerEffect::ScheduleEndpointRefreshRetry {
+                    failed_epoch,
+                    timer_id,
+                    at,
+                } => {
+                    let expected = matches!(
+                        self.lifecycle.state(),
+                        BrokerState::Refreshing {
+                            failed_epoch: current_epoch,
+                            refresh: kafka_driver_core::AddressRefreshState::Backoff {
+                                timer_id: current_timer,
+                                deadline,
+                                ..
+                            },
+                            ..
+                        } if current_epoch == failed_epoch
+                            && current_timer == timer_id
+                            && deadline == at
+                    );
+                    if !expected {
+                        return Err(io::Error::other(
+                            "direct endpoint-refresh timer diverged from broker state",
+                        ));
+                    }
+                    self.mark_waiting();
                 }
             }
         }
@@ -143,6 +164,17 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         self.fail_pending(&failure, causality)
     }
 
+    #[allow(dead_code, reason = "used by the pending resolver-host cutover")]
+    pub(super) fn settle_refresh_policy_close(
+        &mut self,
+        causality: &mut CausalSequence,
+    ) -> io::Result<()> {
+        let preceding = self.last_close_reason.unwrap_or(CloseReason::TransportLost(
+            kafka_driver_core::TransportFailure::Other,
+        ));
+        self.settle_policy_close(preceding, Some(causality))
+    }
+
     pub(super) fn host_fatal(&mut self, error: io::Error) -> io::Error {
         let reason = self
             .generation_close_reason
@@ -151,6 +183,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
                 kafka_driver_core::TransportFailure::Other,
             ));
         self.admission_open = false;
+        self.endpoint_refresh = None;
         self.clear_authentication_ownership();
         self.session_deadline = None;
         let _ = self.fail_remaining(&recovery(reason, Delivery::PossiblySent), None, Some(()));

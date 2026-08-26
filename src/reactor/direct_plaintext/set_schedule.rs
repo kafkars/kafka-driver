@@ -103,6 +103,7 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
                 !lane.is_terminal()
                     && (lane.pending_recovery.is_some()
                         || lane.runnable
+                        || lane.endpoint_refresh_needed()
                         || (lane.admission_open && !lane.pending.is_empty()))
             })
     }
