@@ -96,9 +96,13 @@ impl ClusterBackend {
         causality: &mut CausalSequence,
     ) -> io::Result<bool> {
         match self {
-            Self::Plaintext { runtime, .. } => runtime.drive(now, causality),
+            Self::Plaintext { runtime, factory } => {
+                runtime.drive_with_factory(factory, now, causality)
+            }
             #[cfg(feature = "tls-rustls")]
-            Self::Rustls { runtime, .. } => runtime.drive(now, causality),
+            Self::Rustls { runtime, factory } => {
+                runtime.drive_with_factory(factory, now, causality)
+            }
         }
     }
 

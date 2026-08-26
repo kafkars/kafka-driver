@@ -8,7 +8,7 @@ use kafka_driver_core::Moment;
 
 use crate::{RequestError, reactor::causality::CausalSequence, request::ErasedRequest};
 
-use super::{ClusterRuntime, advance_cursor};
+use super::{ClusterRuntime, route_turn::advance_cursor};
 
 #[cfg(test)]
 #[path = "seed_waiting_test.rs"]
@@ -127,6 +127,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         self.connections.has_local_work(&self.lanes)
             || self.seed_waiting_has_local_work()
             || self.route_waiting_has_local_work()
+            || self.route_install_has_local_work()
     }
 
     fn admit_seed_waiting(

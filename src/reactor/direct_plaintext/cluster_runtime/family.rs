@@ -19,10 +19,11 @@ pub(super) struct BrokerFamily {
     endpoint: BrokerEndpoint,
     owners: [BorneraLaneOwner; TrafficClass::COUNT],
     active: [bool; TrafficClass::COUNT],
+    retiring: bool,
 }
 
 impl BrokerFamily {
-    const fn new(
+    pub(super) const fn new(
         endpoint: BrokerEndpoint,
         owners: [BorneraLaneOwner; TrafficClass::COUNT],
     ) -> Self {
@@ -30,10 +31,11 @@ impl BrokerFamily {
             endpoint,
             owners,
             active: [false; TrafficClass::COUNT],
+            retiring: false,
         }
     }
 
-    fn owner(&self, traffic: TrafficClass) -> BorneraLaneOwner {
+    pub(super) fn owner(&self, traffic: TrafficClass) -> BorneraLaneOwner {
         self.owners[position(traffic)]
     }
 
@@ -41,12 +43,20 @@ impl BrokerFamily {
         &self.endpoint
     }
 
-    fn is_active(&self, traffic: TrafficClass) -> bool {
+    pub(super) fn is_active(&self, traffic: TrafficClass) -> bool {
         self.active[position(traffic)]
     }
 
-    fn mark_active(&mut self, traffic: TrafficClass) {
+    pub(super) fn mark_active(&mut self, traffic: TrafficClass) {
         self.active[position(traffic)] = true;
+    }
+
+    pub(super) const fn is_retiring(&self) -> bool {
+        self.retiring
+    }
+
+    pub(super) fn begin_retirement(&mut self) -> bool {
+        !std::mem::replace(&mut self.retiring, true)
     }
 
     pub(super) fn contains(&self, owner: DirectRefreshOwner) -> bool {
@@ -113,7 +123,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         endpoint: &BrokerEndpoint,
     ) -> io::Result<Activation> {
         if let Some(family) = self.families.get(&broker_id) {
-            if &family.endpoint != endpoint {
+            if family.is_retiring() || &family.endpoint != endpoint {
                 return Err(io::Error::other(
                     "Bornera broker family endpoint changed before replacement",
                 ));
@@ -203,31 +213,6 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
     fn owner_is_reserved(&self, owner: DirectRefreshOwner) -> bool {
         self.slots.contains_key(&owner)
             || self.families.values().any(|family| family.contains(owner))
-    }
-
-    pub(super) fn family_lane_state(
-        &self,
-        family: &BrokerFamily,
-        traffic: TrafficClass,
-    ) -> io::Result<FamilyLaneState> {
-        let owner = refresh_owner(family.owner(traffic));
-        let slot = self.slots.get(&owner).copied();
-        let mut physical = self
-            .lanes
-            .iter()
-            .enumerate()
-            .filter(|(_, lane)| lane.refresh_owner() == owner);
-        let first = physical.next().map(|(index, _)| index);
-        let unique = physical.next().is_none();
-        match (family.is_active(traffic), slot, first, unique) {
-            (true, Some(index), Some(actual), true) if index == actual => {
-                Ok(FamilyLaneState::Active(owner, index))
-            }
-            (false, None, None, true) => Ok(FamilyLaneState::Dormant),
-            _ => Err(io::Error::other(
-                "Bornera broker family lane state diverged",
-            )),
-        }
     }
 }
 

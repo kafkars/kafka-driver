@@ -158,7 +158,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         {
             return Ok(RouteResolutionProgress::Ignored);
         }
-        if self.family_endpoint_changed(lane, &pending.endpoint) {
+        if self.route_install_must_defer(lane, &pending.endpoint) {
             let state = self.route_state_mut(lane)?;
             state.last_dns_failure = None;
             state.pending_install = Some(pending.clone());
@@ -188,23 +188,13 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         let Some(family) = self.families.get(&lane.broker_id()) else {
             return Ok(None);
         };
-        if family.endpoint() != endpoint {
+        if family.is_retiring() || family.endpoint() != endpoint {
             return Ok(None);
         }
         match self.family_lane_state(family, lane.traffic_class())? {
             FamilyLaneState::Active(owner, _) => Ok(Some(owner)),
             FamilyLaneState::Dormant => Ok(None),
         }
-    }
-
-    fn family_endpoint_changed(
-        &self,
-        lane: BrokerLane,
-        endpoint: &kafka_driver_core::BrokerEndpoint,
-    ) -> bool {
-        self.families
-            .get(&lane.broker_id())
-            .is_some_and(|family| family.endpoint() != endpoint)
     }
 
     fn route_state_mut(&mut self, lane: BrokerLane) -> io::Result<&mut BrokerRouteState> {

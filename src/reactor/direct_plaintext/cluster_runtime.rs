@@ -28,9 +28,14 @@ use super::{
 pub(super) mod backend;
 pub(super) mod family;
 mod family_removal;
+mod family_state;
 mod route_admission;
 mod route_directory;
 mod route_failure;
+mod route_install;
+mod route_install_publish;
+mod route_install_rollback;
+mod route_install_work;
 mod route_resolution;
 mod route_state;
 #[cfg(test)]
@@ -59,6 +64,7 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     directory: Option<BrokerDirectory>,
     routes: BTreeMap<BrokerLane, route_state::BrokerRouteState>,
     route_cursor: usize,
+    route_install_cursor: usize,
     route_turn: Vec<BrokerLane>,
     routes_first: bool,
     seed: Option<SeedSlot>,
@@ -82,6 +88,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             directory: None,
             routes: BTreeMap::new(),
             route_cursor: 0,
+            route_install_cursor: 0,
             route_turn: Vec::new(),
             routes_first: false,
             seed: None,
@@ -218,16 +225,6 @@ const fn refresh_owner(owner: BorneraLaneOwner) -> DirectRefreshOwner {
 
 fn identity_error(error: BorneraIdentityError) -> io::Error {
     io::Error::other(error)
-}
-
-fn advance_cursor(cursor: usize, selected: usize, lanes: usize) -> usize {
-    let cursor = cursor.checked_rem(lanes).unwrap_or(0);
-    let tail = lanes.saturating_sub(cursor);
-    if selected < tail {
-        cursor + selected
-    } else {
-        selected.saturating_sub(tail)
-    }
 }
 
 #[cfg(test)]

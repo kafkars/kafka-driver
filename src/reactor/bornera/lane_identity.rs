@@ -106,7 +106,7 @@ impl BorneraIdentityAllocator {
     }
 
     #[cfg(test)]
-    pub(super) const fn at(next_endpoint: Option<u64>, next_lane: Option<u32>) -> Self {
+    pub(in crate::reactor) const fn at(next_endpoint: Option<u64>, next_lane: Option<u32>) -> Self {
         Self {
             next_endpoint,
             next_lane,

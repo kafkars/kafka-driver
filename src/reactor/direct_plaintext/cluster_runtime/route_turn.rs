@@ -97,7 +97,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
                 .take(selected)
                 .copied(),
         );
-        self.route_cursor = super::advance_cursor(self.route_cursor, selected, lanes);
+        self.route_cursor = advance_cursor(self.route_cursor, selected, lanes);
     }
 
     pub(super) fn expire_route_waiting(&mut self, now: Moment, budget: usize) -> usize {
@@ -202,5 +202,15 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
                 Ok(true)
             }
         }
+    }
+}
+
+pub(super) fn advance_cursor(cursor: usize, selected: usize, lanes: usize) -> usize {
+    let cursor = cursor.checked_rem(lanes).unwrap_or(0);
+    let tail = lanes.saturating_sub(cursor);
+    if selected < tail {
+        cursor + selected
+    } else {
+        selected.saturating_sub(tail)
     }
 }

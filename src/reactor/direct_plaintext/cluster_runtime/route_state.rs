@@ -97,12 +97,12 @@ impl BrokerRouteState {
         {
             installed.route = route;
         }
-        if self
-            .pending_install
-            .as_ref()
-            .is_some_and(|pending| pending.route != route || &pending.endpoint != endpoint)
-        {
-            self.pending_install = None;
+        if let Some(pending) = self.pending_install.as_mut() {
+            if &pending.endpoint == endpoint {
+                pending.route = route;
+            } else {
+                self.pending_install = None;
+            }
         }
     }
 
@@ -169,5 +169,9 @@ impl BrokerRouteState {
         });
         self.pending_install = None;
         self.last_dns_failure = None;
+    }
+
+    pub(super) fn clear_installed(&mut self) {
+        self.installed = None;
     }
 }

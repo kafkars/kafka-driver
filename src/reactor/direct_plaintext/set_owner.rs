@@ -2,7 +2,6 @@
 
 use std::{io, net::SocketAddr};
 
-#[cfg(test)]
 use bornera::OwnerFailure;
 use bornera::{ConnectionSet, ConnectionSetConfig, ConnectionToken, RegisteredTransport};
 use bornera_core::ConnectionEpoch;
@@ -81,7 +80,6 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
         Ok(())
     }
 
-    #[cfg(test)]
     pub(super) fn abandon_unpublished(&mut self, connection: ConnectionToken) -> io::Result<()> {
         let report = self
             .set

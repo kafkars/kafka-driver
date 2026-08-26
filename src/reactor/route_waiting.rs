@@ -150,6 +150,10 @@ impl RouteWaiting {
         self.calls.is_empty()
     }
 
+    pub(in crate::reactor) fn has_live_after(&self, now: Moment) -> bool {
+        self.calls.iter().any(|(_, deadline)| deadline > now)
+    }
+
     pub(in crate::reactor) fn len(&self) -> usize {
         self.calls.len()
     }

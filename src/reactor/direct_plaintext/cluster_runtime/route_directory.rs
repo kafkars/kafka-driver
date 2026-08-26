@@ -79,14 +79,26 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         if self.routes.contains_key(&lane) {
             return true;
         }
-        let capacity = self
+        let brokers = self
             .driver
             .metadata()
             .broker_directory()
             .max_brokers()
-            .get()
-            .saturating_mul(crate::TrafficClass::COUNT);
-        if self.routes.len() == capacity {
+            .get();
+        let Some(advertised_capacity) = brokers.checked_mul(crate::TrafficClass::COUNT) else {
+            return false;
+        };
+        // Rotation may retain one empty semantic lane per traffic class for
+        // every old physical family while the next directory is advertised.
+        let Some(rotation_capacity) = advertised_capacity.checked_mul(2) else {
+            return false;
+        };
+        let advertised = self
+            .routes
+            .values()
+            .filter(|state| state.advertised.is_some())
+            .count();
+        if advertised >= advertised_capacity || self.routes.len() >= rotation_capacity {
             return false;
         }
         self.routes.insert(

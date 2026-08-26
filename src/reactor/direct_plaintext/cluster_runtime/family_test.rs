@@ -146,6 +146,50 @@ fn changed_endpoint_is_rejected_before_factory_or_sibling_activation() {
     assert_exact_connections(&listener, 1);
 }
 
+#[test]
+fn retiring_family_rejects_same_endpoint_reactivation() {
+    let listener = listener();
+    let factory = LiveFactory::new(address(&listener));
+    let mut runtime = runtime();
+    let broker = broker_id(7);
+    let endpoint = endpoint("broker.test", 9092);
+    activate(
+        &mut runtime,
+        broker,
+        TrafficClass::Control,
+        &factory,
+        endpoint.clone(),
+    );
+    assert!(
+        runtime
+            .families
+            .get_mut(&broker)
+            .unwrap_or_else(|| panic!("family"))
+            .begin_retirement()
+    );
+
+    for traffic in [TrafficClass::Control, TrafficClass::LongPoll] {
+        let error = runtime
+            .activate_resolved_lane(
+                broker,
+                traffic,
+                &factory,
+                endpoint.clone(),
+                addresses(9092),
+                NOW,
+            )
+            .err()
+            .unwrap_or_else(|| panic!("retiring family must reject activation"));
+        assert_eq!(
+            error.to_string(),
+            "Bornera broker family endpoint changed before replacement"
+        );
+    }
+    assert_eq!(factory.attempts.get(), 1);
+    assert_eq!(runtime.lanes.len(), 1);
+    assert_exact_connections(&listener, 1);
+}
+
 fn activate(
     runtime: &mut ClusterRuntime<TcpTransport>,
     broker: BrokerId,
