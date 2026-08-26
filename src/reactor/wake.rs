@@ -5,21 +5,12 @@ use std::{fmt, io};
 /// Cloneable notification handle for waking a blocked reactor turn.
 #[derive(Clone)]
 pub struct WakeHandle {
-    pulse: PulseHandle,
+    pulse: bornera::ConnectionPulseHandle,
 }
 
 impl WakeHandle {
-    #[cfg(test)]
-    pub(in crate::reactor) fn new(poller: calandria_mio::MioPulseHandle) -> Self {
-        Self {
-            pulse: PulseHandle::Legacy(poller),
-        }
-    }
-
     pub(in crate::reactor) fn bornera(pulse: bornera::ConnectionPulseHandle) -> Self {
-        Self {
-            pulse: PulseHandle::Bornera(pulse),
-        }
+        Self { pulse }
     }
 
     /// Requests reactor progress for this exact cross-thread transition.
@@ -29,19 +20,8 @@ impl WakeHandle {
     /// independent reactor domains: one domain cannot suppress another's later
     /// request after the selector consumed an earlier event.
     pub fn wake(&self) -> io::Result<()> {
-        match &self.pulse {
-            #[cfg(test)]
-            PulseHandle::Legacy(pulse) => pulse.pulse(),
-            PulseHandle::Bornera(pulse) => pulse.pulse(),
-        }
+        self.pulse.pulse()
     }
-}
-
-#[derive(Clone)]
-enum PulseHandle {
-    #[cfg(test)]
-    Legacy(calandria_mio::MioPulseHandle),
-    Bornera(bornera::ConnectionPulseHandle),
 }
 
 impl fmt::Debug for WakeHandle {

@@ -35,7 +35,7 @@ fn direct_worker_uses_bornera_wake_and_delivers_the_exact_proof() {
         .unwrap_or_else(|| panic!("SCRAM target must select Direct"));
     assert!(direct.has_scram_sender_for_test());
     let fence = direct.arm_scram_proof_for_test(EFFECT);
-    assert!(fence.target().direct_connection().is_some());
+    let _connection = fence.target().direct_connection();
 
     let wait = Span::try_from(Duration::from_secs(1)).unwrap_or(Span::ZERO);
     let observed = reactor

@@ -1,6 +1,8 @@
 //! Exclusive Bornera backend construction before mailbox publication.
 
 use std::sync::Arc;
+#[cfg(test)]
+use std::{net::SocketAddr, time::Instant};
 
 use crate::{
     api::CallIds,
@@ -17,9 +19,6 @@ use crate::reactor::{
     mailbox,
     scram_proof::ScramProofWorker,
 };
-
-#[cfg(test)]
-use crate::reactor::{LegacyBackend, Poller, broker::BrokerLimits, broker_set::BrokerSet};
 
 impl Reactor {
     pub(crate) fn new(
@@ -82,13 +81,30 @@ impl Reactor {
     }
 
     #[cfg(test)]
-    pub(crate) fn new_legacy_test(
+    pub(crate) fn new_test(
         limits: &DriverLimits,
         call_ids: Arc<CallIds>,
         observation: Arc<Observation>,
     ) -> std::io::Result<(MailboxSender<Command>, ShutdownRequester, Self)> {
-        let clock = ReactorClock::new();
-        let construction = Construction::legacy_test(limits)?;
+        Self::new_test_at(
+            limits,
+            test_address(),
+            Instant::now(),
+            call_ids,
+            observation,
+        )
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_test_at(
+        limits: &DriverLimits,
+        address: SocketAddr,
+        origin: Instant,
+        call_ids: Arc<CallIds>,
+        observation: Arc<Observation>,
+    ) -> std::io::Result<(MailboxSender<Command>, ShutdownRequester, Self)> {
+        let clock = ReactorClock::from_origin(origin);
+        let construction = Construction::simulated_test(limits, address)?;
         Ok(Self::from_construction(
             limits,
             construction,
@@ -159,25 +175,24 @@ impl Construction {
     }
 
     #[cfg(test)]
-    fn legacy_test(limits: &DriverLimits) -> std::io::Result<Self> {
-        let broker_limits = BrokerLimits::default();
-        let capacity = BrokerSet::poll_registration_capacity(broker_limits, limits.metadata())
-            .map_err(std::io::Error::other)?;
-        let poller = Poller::with_registration_capacity(limits.poll_event_budget(), capacity)?;
-        let brokers = BrokerSet::with_scram_proof(broker_limits, limits.metadata(), None, None)
-            .map_err(std::io::Error::other)?;
+    fn simulated_test(limits: &DriverLimits, address: SocketAddr) -> std::io::Result<Self> {
         Ok(Self {
-            backend: ReactorBackend::Legacy(Box::new(LegacyBackend::new(
-                poller,
-                Vec::with_capacity(limits.poll_event_budget().get()),
-                brokers,
-            ))),
+            backend: ReactorBackend::Direct(Box::new(DirectBackend::simulated(
+                limits,
+                address,
+                kafka_driver_core::Moment::ORIGIN,
+            )?)),
             resolution: None,
             scram_proof: None,
             metadata: None,
             coordinator: None,
         })
     }
+}
+
+#[cfg(test)]
+fn test_address() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], 9092))
 }
 
 #[cfg(test)]

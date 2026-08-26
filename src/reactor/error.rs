@@ -2,8 +2,6 @@
 
 use std::{fmt, io};
 
-#[cfg(test)]
-use super::broker_set::BrokerSetError;
 use super::{
     causality::CausalSequenceError, clock::ClockOverflow, coordinator::CoordinatorOwnerError,
     metadata::MetadataOwnerError,
@@ -21,14 +19,6 @@ impl ReactorError {
         Self {
             source,
             operation: ReactorOperation::Poll,
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn broker_set(source: BrokerSetError) -> Self {
-        Self {
-            source: io::Error::other(source),
-            operation: ReactorOperation::BrokerSet,
         }
     }
 
@@ -72,8 +62,6 @@ impl fmt::Display for ReactorError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.operation {
             ReactorOperation::Poll => formatter.write_str("the driver I/O selector failed"),
-            #[cfg(test)]
-            ReactorOperation::BrokerSet => formatter.write_str("the broker set failed"),
             ReactorOperation::Clock => formatter.write_str("the driver clock failed"),
             ReactorOperation::Causality => formatter.write_str("the causal sequence failed"),
             ReactorOperation::Metadata => formatter.write_str("the cluster metadata owner failed"),
@@ -88,8 +76,6 @@ impl fmt::Display for ReactorError {
 #[derive(Clone, Copy, Debug)]
 enum ReactorOperation {
     Poll,
-    #[cfg(test)]
-    BrokerSet,
     Clock,
     Causality,
     Metadata,

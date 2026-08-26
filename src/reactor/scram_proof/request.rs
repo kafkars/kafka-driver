@@ -6,56 +6,17 @@ use bornera::ConnectionToken;
 use kafka_driver_core::{AuthenticationRound, EffectId};
 use sasl_scram::{AwaitingServerFinal, Error, OutboundMessage, PendingDerivation};
 
-#[cfg(test)]
-use crate::reactor::resource::{ResourceIdentity, ResourceToken};
-
 /// Backend-neutral destination for one proof completion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) enum ScramProofTarget {
-    #[cfg(test)]
-    Legacy {
-        token: ResourceToken,
-        identity: ResourceIdentity,
-    },
-    Direct {
-        connection: ConnectionToken,
-    },
+    Direct { connection: ConnectionToken },
 }
 
 impl ScramProofTarget {
-    #[cfg(test)]
-    pub(in crate::reactor) const fn legacy(
-        token: ResourceToken,
-        identity: ResourceIdentity,
-    ) -> Self {
-        Self::Legacy { token, identity }
-    }
-
     pub(in crate::reactor) const fn direct(connection: ConnectionToken) -> Self {
         Self::Direct { connection }
     }
 
-    #[cfg(test)]
-    pub(in crate::reactor) const fn legacy_identity(
-        self,
-    ) -> Option<(ResourceToken, ResourceIdentity)> {
-        match self {
-            #[cfg(test)]
-            Self::Legacy { token, identity } => Some((token, identity)),
-            Self::Direct { .. } => None,
-        }
-    }
-
-    #[cfg(test)]
-    pub(in crate::reactor) const fn direct_connection(self) -> Option<ConnectionToken> {
-        match self {
-            Self::Direct { connection } => Some(connection),
-            #[cfg(test)]
-            Self::Legacy { .. } => None,
-        }
-    }
-
-    #[cfg(not(test))]
     pub(in crate::reactor) const fn direct_connection(self) -> ConnectionToken {
         match self {
             Self::Direct { connection } => connection,
@@ -73,20 +34,6 @@ pub(in crate::reactor) struct ScramProofFence {
 }
 
 impl ScramProofFence {
-    #[cfg(test)]
-    pub(in crate::reactor) const fn legacy(
-        token: ResourceToken,
-        identity: ResourceIdentity,
-        effect_id: EffectId,
-        round: AuthenticationRound,
-    ) -> Self {
-        Self {
-            target: ScramProofTarget::legacy(token, identity),
-            effect_id,
-            round,
-        }
-    }
-
     pub(in crate::reactor) const fn direct(
         connection: ConnectionToken,
         effect_id: EffectId,
@@ -122,20 +69,6 @@ pub(in crate::reactor) struct ScramProofRequest {
 }
 
 impl ScramProofRequest {
-    #[cfg(test)]
-    pub(in crate::reactor) fn legacy(
-        token: ResourceToken,
-        identity: ResourceIdentity,
-        effect_id: EffectId,
-        round: AuthenticationRound,
-        pending: PendingDerivation,
-    ) -> Self {
-        Self {
-            fence: ScramProofFence::legacy(token, identity, effect_id, round),
-            pending,
-        }
-    }
-
     pub(in crate::reactor) fn direct(
         connection: ConnectionToken,
         effect_id: EffectId,

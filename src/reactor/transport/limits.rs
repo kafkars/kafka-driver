@@ -71,11 +71,6 @@ impl ReadBudget {
     pub(in crate::reactor) const fn bytes(self) -> usize {
         self.bytes.get()
     }
-
-    #[cfg(test)]
-    pub(in crate::reactor) const fn frames(self) -> usize {
-        self.frames.get()
-    }
 }
 
 /// Maximum total transport-layer byte movement in one write drive.

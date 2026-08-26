@@ -9,7 +9,7 @@ use kafka_driver_core::{
 use crate::{
     ResolverLimits, TrafficClass,
     reactor::{
-        broker_set::BrokerLane,
+        BrokerLane,
         resolver::{ResolutionOwner, Resolver, ResolverSubmitError},
     },
 };

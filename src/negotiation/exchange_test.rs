@@ -2,7 +2,6 @@
 
 use bytes::BytesMut;
 use kafka_driver_core::{CorrelationId, EffectId};
-use kafka_driver_transport::{FrameBody, FrameDecoder, FrameLimits};
 use kafka_wire::{ApiVersionsResponse, OutboundFrameLimits, RequestHeader, ResponseHeader};
 use kafka_wire_core::{
     ApiVersion, Bytes, DecodeLimits, Decoder, KafkaDecode, KafkaEncode, StrBytes,
@@ -18,7 +17,7 @@ fn given_matching_generated_response_when_finished_then_typed_body_is_returned()
     assert!(request.len() > size_of::<i32>());
 
     // When
-    let result = exchange.finish(response_frame(7, &response));
+    let result = exchange.finish_bytes(response_bytes(7, &response));
 
     // Then
     assert_eq!(result, Ok(response));
@@ -31,7 +30,7 @@ fn given_wrong_correlation_when_finished_then_the_frame_is_rejected() {
     let (exchange, _) = start();
 
     // When
-    let result = exchange.finish(response_frame(8, &response));
+    let result = exchange.finish_bytes(response_bytes(8, &response));
 
     // Then
     assert_eq!(
@@ -76,7 +75,7 @@ fn start() -> (NegotiationExchange, Bytes) {
     .unwrap_or_else(|error| panic!("bootstrap request must encode: {error}"))
 }
 
-fn response_frame(correlation: i32, response: &ApiVersionsResponse) -> FrameBody {
+fn response_bytes(correlation: i32, response: &ApiVersionsResponse) -> Bytes {
     let mut body = BytesMut::new();
     let mut header = ResponseHeader::default();
     header.correlation_id = correlation;
@@ -88,15 +87,5 @@ fn response_frame(correlation: i32, response: &ApiVersionsResponse) -> FrameBody
         response.encode_into(&mut body, ApiVersion::new(0)).is_ok(),
         "bootstrap response body must encode"
     );
-    let Ok(length) = i32::try_from(body.len()) else {
-        panic!("bootstrap response must fit a Kafka frame");
-    };
-    let mut frame = length.to_be_bytes().to_vec();
-    frame.extend_from_slice(&body);
-    let mut decoder = FrameDecoder::new(FrameLimits::default());
-    assert!(decoder.feed(&frame).is_ok());
-    let Ok(Some(frame)) = decoder.next_frame() else {
-        panic!("complete bootstrap frame must decode");
-    };
-    frame
+    body.freeze()
 }

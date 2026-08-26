@@ -108,6 +108,7 @@ impl DirectBackend {
             Self::Plaintext(runtime) => runtime.lane.endpoint_refresh.is_some(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(runtime) => runtime.lane.endpoint_refresh.is_some(),
+            Self::Simulated(runtime) => runtime.lane.endpoint_refresh.is_some(),
         }
     }
 
@@ -116,6 +117,7 @@ impl DirectBackend {
             Self::Plaintext(runtime) => runtime.lane.lifecycle.state(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(runtime) => runtime.lane.lifecycle.state(),
+            Self::Simulated(runtime) => runtime.lane.lifecycle.state(),
         }
     }
 }

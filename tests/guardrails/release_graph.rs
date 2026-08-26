@@ -1,21 +1,13 @@
 //! Release builds retain Bornera as their sole connection and transport owner.
 
-use syn::{Attribute, ImplItem, Item};
+use std::{fs, path::Path};
+
+use syn::Item;
 
 use super::support::{read, workspace_root};
 
-fn is_test_only(attributes: &[Attribute]) -> bool {
-    attributes.iter().any(|attribute| {
-        attribute.path().is_ident("cfg")
-            && attribute
-                .meta
-                .require_list()
-                .is_ok_and(|list| list.tokens.to_string().contains("test"))
-    })
-}
-
 #[test]
-fn legacy_transport_modules_are_excluded_from_release_builds() {
+fn legacy_transport_module_trees_are_absent() {
     let root = workspace_root();
     let source = read(&root.join("src/reactor/mod.rs"));
     let syntax = syn::parse_file(&source).unwrap_or_else(|error| panic!("parse reactor: {error}"));
@@ -28,14 +20,11 @@ fn legacy_transport_modules_are_excluded_from_release_builds() {
         "timer",
         "tls",
     ];
-    let exposed = syntax
+    let declared = syntax
         .items
         .iter()
         .filter_map(|item| match item {
-            Item::Mod(module)
-                if legacy.contains(&module.ident.to_string().as_str())
-                    && !is_test_only(&module.attrs) =>
-            {
+            Item::Mod(module) if legacy.contains(&module.ident.to_string().as_str()) => {
                 Some(module.ident.to_string())
             }
             _ => None,
@@ -43,41 +32,54 @@ fn legacy_transport_modules_are_excluded_from_release_builds() {
         .collect::<Vec<_>>();
 
     assert!(
-        exposed.is_empty(),
-        "legacy reactor modules exposed in release graph: {exposed:?}"
+        declared.is_empty(),
+        "legacy reactor modules remain declared: {declared:?}"
+    );
+    let retained = legacy
+        .iter()
+        .filter(|module| contains_rust_source(&root.join("src/reactor").join(module)))
+        .collect::<Vec<_>>();
+    assert!(
+        retained.is_empty(),
+        "legacy reactor module trees remain on disk: {retained:?}"
     );
 }
 
+fn contains_rust_source(directory: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return false;
+    };
+    entries.filter_map(Result::ok).any(|entry| {
+        let path = entry.path();
+        if path.is_dir() {
+            contains_rust_source(&path)
+        } else {
+            path.extension().is_some_and(|extension| extension == "rs")
+        }
+    })
+}
+
 #[test]
-fn legacy_backend_and_constructor_are_test_only() {
+fn reactor_backend_and_construction_have_no_legacy_path() {
     let root = workspace_root();
     let backend = read(&root.join("src/reactor/backend.rs"));
     let backend =
         syn::parse_file(&backend).unwrap_or_else(|error| panic!("parse backend: {error}"));
-    let legacy_variant = backend.items.iter().find_map(|item| match item {
+    let has_legacy_variant = backend.items.iter().any(|item| match item {
         Item::Enum(item) if item.ident == "ReactorBackend" => item
             .variants
             .iter()
-            .find(|variant| variant.ident == "Legacy"),
-        _ => None,
+            .any(|variant| variant.ident == "Legacy"),
+        _ => false,
     });
     assert!(
-        legacy_variant.is_some_and(|variant| is_test_only(&variant.attrs)),
-        "ReactorBackend::Legacy must remain test-only"
+        !has_legacy_variant,
+        "ReactorBackend must have no legacy variant"
     );
 
     let construction = read(&root.join("src/reactor/host/construction.rs"));
-    let construction = syn::parse_file(&construction)
-        .unwrap_or_else(|error| panic!("parse construction: {error}"));
-    let legacy_constructor = construction.items.iter().find_map(|item| match item {
-        Item::Impl(item) => item.items.iter().find_map(|item| match item {
-            ImplItem::Fn(function) if function.sig.ident == "new_legacy_test" => Some(function),
-            _ => None,
-        }),
-        _ => None,
-    });
     assert!(
-        legacy_constructor.is_some_and(|function| is_test_only(&function.attrs)),
-        "legacy reactor construction must remain test-only"
+        !construction.contains("new_legacy") && !construction.contains("LegacyBackend"),
+        "reactor construction must have no legacy path"
     );
 }

@@ -2,12 +2,12 @@
 
 use std::num::{NonZeroU8, NonZeroUsize};
 
-use kafka_driver_core::{AuthenticationRound, ConnectionEpoch, EffectId, TransportId};
+use kafka_driver_core::{AuthenticationRound, EffectId, Moment};
 
 use crate::{
     SaslConfig, ScramProofLimits,
     authentication::{AuthenticationReceive, AuthenticationSession},
-    reactor::resource::{ResourceIdentity, ResourceToken},
+    reactor::direct_plaintext::DirectBackend,
 };
 
 use super::{ScramProofRequest, ScramProofSubmitError, ScramProofWorker, ScramProofWorkerError};
@@ -75,17 +75,22 @@ pub(in crate::reactor) fn request(raw: u64) -> ScramProofRequest {
     let AuthenticationReceive::Derive(pending) = session.receive(challenge.as_bytes()) else {
         panic!("worker challenge must request derivation");
     };
-    ScramProofRequest::legacy(
-        ResourceToken::new(
-            calandria::ResourceOwnerId::new(raw),
-            calandria::ResourceSlotId::new(0),
-            calandria::ResourceGeneration::INITIAL,
-        ),
-        ResourceIdentity::new(TransportId::from_raw(raw), ConnectionEpoch::from_raw(raw)),
+    ScramProofRequest::direct(
+        simulated_connection(),
         EffectId::from_raw(raw),
         AuthenticationRound::new(NonZeroU8::MIN),
         pending,
     )
+}
+
+fn simulated_connection() -> bornera::ConnectionToken {
+    DirectBackend::simulated(
+        &crate::DriverLimits::default(),
+        std::net::SocketAddr::from(([127, 0, 0, 1], 9092)),
+        Moment::ORIGIN,
+    )
+    .unwrap_or_else(|error| panic!("build Bornera proof fixture: {error}"))
+    .simulated_connection_for_test()
 }
 
 pub(super) fn assert_continues(outcome: super::ScramProofOutcome) {

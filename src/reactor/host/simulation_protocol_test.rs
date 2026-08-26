@@ -29,7 +29,7 @@ pub(super) fn expected_outbound() -> [OutboundFrame; 2] {
         },
         OutboundFrame {
             api_key: METADATA_API_DESCRIPTOR.api_key.value(),
-            correlation_id: 0,
+            correlation_id: 1,
         },
     ]
 }

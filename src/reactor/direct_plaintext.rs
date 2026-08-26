@@ -14,6 +14,8 @@ mod authentication_settlement;
 #[cfg(test)]
 mod authentication_test;
 mod backend;
+#[cfg(test)]
+mod backend_simulation_test;
 mod cluster_runtime;
 mod construction;
 mod decoder_gate;

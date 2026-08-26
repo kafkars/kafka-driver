@@ -3,6 +3,8 @@
 mod plaintext;
 #[cfg(feature = "tls-rustls")]
 mod rustls;
+#[cfg(test)]
+mod simulated_test;
 
 use std::{io, net::SocketAddr};
 
@@ -23,6 +25,8 @@ pub(super) use plaintext::PlaintextAttempt;
 pub(super) use rustls::RustlsAttempt;
 #[cfg(all(test, feature = "tls-rustls"))]
 pub(super) use rustls::rustls_connect_error;
+#[cfg(test)]
+pub(super) use simulated_test::{SimulatedAttempt, SimulatedTransport, SimulatedTransportHandle};
 
 /// Immutable policy capable of creating a fresh transport and slot per epoch.
 pub(super) trait DirectConnectionAttempt<T: RegisteredTransport> {

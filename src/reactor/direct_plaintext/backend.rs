@@ -12,6 +12,8 @@ use crate::{
     request::ErasedRequest,
 };
 
+#[cfg(test)]
+use super::backend_simulation_test::SimulatedBackend;
 use super::runtime::DirectRuntime;
 #[cfg(feature = "tls-rustls")]
 use super::rustls_transport::DirectRustlsTransport;
@@ -23,6 +25,8 @@ pub(in crate::reactor) enum DirectBackend {
     Plaintext(Box<DirectRuntime<TcpTransport>>),
     #[cfg(feature = "tls-rustls")]
     Rustls(Box<DirectRuntime<DirectRustlsTransport>>),
+    #[cfg(test)]
+    Simulated(Box<SimulatedBackend>),
 }
 
 impl DirectBackend {
@@ -63,6 +67,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.submit(request, now, causality),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.submit(request, now, causality),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.submit(request, now, causality),
         }
     }
 
@@ -75,6 +81,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.drive(now, causality),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.drive(now, causality),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.drive(now, causality),
         }
     }
 
@@ -87,6 +95,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.begin_session_drain(now, causality),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.begin_session_drain(now, causality),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.begin_session_drain(now, causality),
         }
     }
 
@@ -95,6 +105,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.wait(maximum),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.wait(maximum),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.wait(maximum),
         }
     }
 
@@ -103,6 +115,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.wake_handle(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.wake_handle(),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.wake_handle(),
         }
     }
 
@@ -111,6 +125,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.pulse_handle(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.pulse_handle(),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.pulse_handle(),
         }
     }
 
@@ -119,6 +135,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.next_deadline(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.next_deadline(),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.next_deadline(),
         }
     }
 
@@ -130,6 +148,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.fire_due_session_deadline(now),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.fire_due_session_deadline(now),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.fire_due_session_deadline(now),
         }
     }
 
@@ -138,6 +158,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.install_scram_proof_sender(sender),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.install_scram_proof_sender(sender),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.install_scram_proof_sender(sender),
         }
     }
 
@@ -146,6 +168,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.release_scram_proof_sender(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.release_scram_proof_sender(),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.release_scram_proof_sender(),
         }
     }
 
@@ -158,6 +182,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.complete_scram_proof(outcome, now),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.complete_scram_proof(outcome, now),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.complete_scram_proof(outcome, now),
         }
     }
 
@@ -166,6 +192,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.has_local_work(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.has_local_work(),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.has_local_work(),
         }
     }
 
@@ -174,6 +202,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.is_terminal(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.is_terminal(),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.is_terminal(),
         }
     }
 
@@ -182,6 +212,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.seed_snapshot(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.seed_snapshot(),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.seed_snapshot(),
         }
     }
 }

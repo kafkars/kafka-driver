@@ -2,8 +2,6 @@
 
 use bytes::BytesMut;
 use kafka_driver_core::{CorrelationId, EffectId, SaslMechanism};
-#[cfg(test)]
-use kafka_driver_transport::FrameBody;
 use kafka_wire::{
     OutboundFrameLimits, ResponseHeader, SaslHandshakeRequest, encode_request,
     response_header_version_for,
@@ -22,8 +20,6 @@ pub(crate) enum HandshakeOutcome {
 /// Identities and decode policy for one outstanding mechanism handshake.
 #[derive(Debug)]
 pub(crate) struct HandshakeExchange {
-    #[cfg(test)]
-    effect_id: EffectId,
     correlation_id: CorrelationId,
     mechanism: SaslMechanism,
     version: ApiVersion,
@@ -40,7 +36,6 @@ impl HandshakeExchange {
         outbound_limits: OutboundFrameLimits,
         decode_limits: DecodeLimits,
     ) -> Result<(Self, Bytes), AuthenticationExchangeError> {
-        #[cfg(not(test))]
         let _ = effect_id;
         let mut request = SaslHandshakeRequest::default();
         request.mechanism = StrBytes::from(mechanism.name());
@@ -55,8 +50,6 @@ impl HandshakeExchange {
         )?;
         Ok((
             Self {
-                #[cfg(test)]
-                effect_id,
                 correlation_id,
                 mechanism,
                 version,
@@ -64,19 +57,6 @@ impl HandshakeExchange {
             },
             frame.freeze(),
         ))
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn effect_id(&self) -> EffectId {
-        self.effect_id
-    }
-
-    #[cfg(test)]
-    pub(crate) fn finish(
-        self,
-        frame: FrameBody,
-    ) -> Result<HandshakeOutcome, AuthenticationExchangeError> {
-        self.finish_bytes(frame.into_bytes())
     }
 
     pub(crate) fn finish_bytes(

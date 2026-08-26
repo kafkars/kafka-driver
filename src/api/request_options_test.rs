@@ -18,7 +18,7 @@ fn reversed_version_bounds_do_not_allocate_a_call_identity() {
     // Given: a public driver whose next call identity is one.
     let call_ids = Arc::new(CallIds::new());
     let observation = Arc::new(Observation::default());
-    let (commands, shutdown, mut reactor) = Reactor::new_legacy_test(
+    let (commands, shutdown, mut reactor) = Reactor::new_test(
         &DriverLimits::default(),
         Arc::clone(&call_ids),
         Arc::clone(&observation),

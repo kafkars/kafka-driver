@@ -32,7 +32,6 @@ fn bootstrap_constructs_only_the_bornera_cluster_selector() {
     .unwrap_or_else(|error| panic!("bootstrap reactor: {error}"));
 
     assert!(reactor.backend.cluster().is_some());
-    assert!(reactor.backend.legacy().is_none());
     assert!(reactor.backend.direct().is_none());
     assert_eq!(reactor.backend.selector_count(), 1);
 }

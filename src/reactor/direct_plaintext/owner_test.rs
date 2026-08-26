@@ -41,6 +41,7 @@ fn loopback_session_round_trip_releases_every_semantic_context() {
         Some(DirectBackend::Plaintext(owner)) => owner.as_mut(),
         #[cfg(feature = "tls-rustls")]
         Some(DirectBackend::Rustls(_)) => panic!("plaintext test constructed a rustls owner"),
+        Some(DirectBackend::Simulated(_)) => panic!("plaintext test constructed simulation"),
         None => panic!("direct construction must own only Bornera"),
     };
     assert_eq!(owner.selector_registrations(), 1);

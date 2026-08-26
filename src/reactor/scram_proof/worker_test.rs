@@ -7,10 +7,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{
-    ScramProofLimits,
-    reactor::{Poller, WakeHandle},
-};
+use crate::{ScramProofLimits, reactor::wake_fixture_test::WakeFixture};
 
 use super::{
     ScramProofShutdown, ScramProofWorker,
@@ -19,9 +16,9 @@ use super::{
 
 #[test]
 fn completed_proof_wakes_the_reactor_with_exact_request_identity() {
-    let mut poller = Poller::new(NonZeroUsize::MIN)
-        .unwrap_or_else(|error| panic!("create test poller: {error}"));
-    let wake = WakeHandle::new(poller.pulse_handle());
+    let mut fixture =
+        WakeFixture::new().unwrap_or_else(|error| panic!("create test selector: {error}"));
+    let wake = fixture.public_wake();
     let worker = ScramProofWorker::spawn(ScramProofLimits::default(), wake)
         .unwrap_or_else(|error| panic!("spawn proof worker: {error}"));
     let expected = request(7);
@@ -31,9 +28,8 @@ fn completed_proof_wakes_the_reactor_with_exact_request_identity() {
         .sender()
         .submit(expected)
         .unwrap_or_else(|error| panic!("admit proof: {error}"));
-    let mut events = Vec::new();
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
+    fixture
+        .wait(Duration::from_secs(1))
         .unwrap_or_else(|error| panic!("wait for proof worker wake: {error}"));
     let mut outcomes = Vec::new();
     let progress = worker
@@ -55,9 +51,9 @@ fn completed_proof_wakes_the_reactor_with_exact_request_identity() {
 
 #[test]
 fn shutdown_joins_a_worker_blocked_by_full_outcome_capacity() {
-    let mut poller = Poller::new(NonZeroUsize::MIN)
-        .unwrap_or_else(|error| panic!("create test poller: {error}"));
-    let wake = WakeHandle::new(poller.pulse_handle());
+    let mut fixture =
+        WakeFixture::new().unwrap_or_else(|error| panic!("create test selector: {error}"));
+    let wake = fixture.public_wake();
     let limits = ScramProofLimits::new(nonzero(2), NonZeroUsize::MIN, NonZeroUsize::MIN);
     let worker = ScramProofWorker::spawn(limits, wake)
         .unwrap_or_else(|error| panic!("spawn proof worker: {error}"));
@@ -68,9 +64,8 @@ fn shutdown_joins_a_worker_blocked_by_full_outcome_capacity() {
             .unwrap_or_else(|error| panic!("admit proof request: {error}"));
     }
     drop(sender);
-    let mut events = Vec::new();
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
+    fixture
+        .wait(Duration::from_secs(1))
         .unwrap_or_else(|error| panic!("wait for first proof outcome: {error}"));
 
     worker

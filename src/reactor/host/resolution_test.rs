@@ -12,7 +12,7 @@ use crate::{
     BootstrapLimits, ResolverLimits, TrafficClass,
     config::BootstrapConfig,
     reactor::{
-        broker_set::BrokerLane,
+        BrokerLane,
         direct_plaintext::endpoint_refresh::DirectRefreshOwner,
         resolver::{ResolverSubmitError, ResolverWorkerError},
     },

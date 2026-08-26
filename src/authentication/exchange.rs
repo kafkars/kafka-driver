@@ -3,8 +3,6 @@
 use super::AuthenticationExchangeError;
 use bytes::BytesMut;
 use kafka_driver_core::{AuthenticationRound, CorrelationId, EffectId};
-#[cfg(test)]
-use kafka_driver_transport::FrameBody;
 use kafka_wire::{
     OutboundFrameLimits, ResponseHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
     encode_request, response_header_version_for,
@@ -92,14 +90,6 @@ impl AuthenticateExchange {
 
     pub(crate) const fn round(&self) -> AuthenticationRound {
         self.round
-    }
-
-    #[cfg(test)]
-    pub(crate) fn finish(
-        self,
-        frame: FrameBody,
-    ) -> Result<SaslAuthenticateResponse, AuthenticationExchangeError> {
-        self.finish_bytes(frame.into_bytes())
     }
 
     pub(crate) fn finish_bytes(

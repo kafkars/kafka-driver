@@ -51,11 +51,6 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         now: Moment,
     ) -> io::Result<bool> {
         let result = (|| {
-            #[cfg(test)]
-            let Some(connection) = outcome.fence().target().direct_connection() else {
-                return Ok(false);
-            };
-            #[cfg(not(test))]
             let connection = outcome.fence().target().direct_connection();
             let Some(index) = self.scram_proof_lane_index(connection)? else {
                 return Ok(false);

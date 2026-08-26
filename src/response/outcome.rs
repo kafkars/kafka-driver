@@ -1,8 +1,6 @@
 //! Typed completion observations and sanitized connection-close failures.
 
 use kafka_driver_core::{CallFailure, Delivery, DnsFailure};
-#[cfg(test)]
-use kafka_driver_core::{CallId, CorrelationId};
 use kafka_wire_core::{ApiKey, ApiVersion, DecodeError, EncodeError};
 
 /// Why one generated request could not complete successfully.
@@ -101,9 +99,6 @@ pub enum RequestError {
     ConnectionClosed(ResponseCloseReason),
 }
 
-#[cfg(test)]
-pub(crate) type ResponseFailure = RequestError;
-
 /// Sanitized reason all remaining typed response slots were failed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -123,23 +118,4 @@ pub(crate) enum CompletionDisposition {
     Delivered,
     /// The caller had already abandoned its receiver.
     ReceiverAbandoned,
-}
-
-#[cfg(test)]
-/// Successful verified response dispatch.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ResponseDispatch {
-    pub(crate) call_id: CallId,
-    pub(crate) correlation_id: CorrelationId,
-    pub(crate) completion: CompletionDisposition,
-}
-
-/// Aggregate result of failing every remaining typed response slot.
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct FailedResponses {
-    /// Slots removed from the registry.
-    pub(crate) total: usize,
-    /// Slots whose public receivers had already been abandoned.
-    pub(crate) abandoned: usize,
 }

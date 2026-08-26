@@ -2,16 +2,10 @@
 
 use std::time::Instant;
 
-#[cfg(test)]
-use kafka_driver_core::CorrelationId;
 use kafka_driver_core::{CallId, Moment, NegotiatedApi, OutcomeStamp};
 use kafka_wire::OutboundFrameLimits;
-#[cfg(test)]
-use kafka_wire_core::Bytes;
 use kafka_wire_core::{ApiKey, ApiVersion, DecodeLimits, StrBytes};
 
-#[cfg(test)]
-use crate::response::ResponseRegistry;
 use crate::{RequestError, TrafficClass, api::RouteFact};
 
 use super::BorneraRequestPreparation;
@@ -47,17 +41,6 @@ pub(crate) trait ErasedRequest: Send {
 
     /// Records the exact semantic route selected before broker ownership.
     fn record_route(&mut self, route: RouteFact) -> Result<(), RouteFact>;
-
-    #[cfg(test)]
-    /// Encodes the request and transfers its typed completion into FIFO ownership.
-    fn prepare(
-        self: Box<Self>,
-        correlation_id: CorrelationId,
-        version: ApiVersion,
-        client_id: Option<&StrBytes>,
-        outbound_limits: OutboundFrameLimits,
-        responses: &mut ResponseRegistry,
-    ) -> Result<Bytes, RequestError>;
 
     /// Measures and transfers typed completion into Bornera preparation ownership.
     fn prepare_bornera(

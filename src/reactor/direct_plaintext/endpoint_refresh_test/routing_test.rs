@@ -177,6 +177,7 @@ fn plaintext_backend_delegates_matching_failure_once() {
         )),
         #[cfg(feature = "tls-rustls")]
         DirectBackend::Rustls(_) => panic!("plaintext fixture changed transport family"),
+        DirectBackend::Simulated(_) => panic!("plaintext fixture changed to simulation"),
     }
 }
 

@@ -21,16 +21,6 @@ impl Reactor {
         let mut delivered = 0;
         for outcome in self.scram_proof_outcomes.drain(..) {
             let settled = match outcome.fence().target() {
-                #[cfg(test)]
-                ScramProofTarget::Legacy { .. } => {
-                    let Some(legacy) = self.backend.legacy_mut() else {
-                        continue;
-                    };
-                    legacy
-                        .brokers
-                        .complete_scram_proof(&legacy.poller, outcome)
-                        .map_err(ReactorError::broker_set)?
-                }
                 ScramProofTarget::Direct { .. } => {
                     if let Some(cluster) = self.backend.cluster_mut() {
                         cluster

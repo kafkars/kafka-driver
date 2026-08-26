@@ -6,12 +6,6 @@ use kafka_driver_core::{CallFailure, Delivery, Moment, OutcomeStamp};
 
 use crate::{RequestError, reactor::wait_queue::WaitQueue, request::ErasedRequest};
 
-#[cfg(test)]
-#[path = "route_waiting_legacy_test.rs"]
-mod legacy;
-#[cfg(test)]
-pub(in crate::reactor) use legacy::terminal;
-
 pub(in crate::reactor) struct RouteWaiting {
     calls: WaitQueue<WaitingCall>,
     retained_bytes: usize,
@@ -89,15 +83,6 @@ impl RouteWaiting {
         RouteWaitingOutcome::Ready(waiting.request)
     }
 
-    #[cfg(test)]
-    pub(in crate::reactor) fn expire_due(
-        &mut self,
-        now: Moment,
-        observed_at: Option<OutcomeStamp>,
-    ) -> RouteWaitingExpiration {
-        self.expire_due_bounded(now, observed_at, self.turn_budget.get())
-    }
-
     pub(in crate::reactor) fn expire_due_bounded(
         &mut self,
         now: Moment,
@@ -114,16 +99,7 @@ impl RouteWaiting {
             fail(waiting.request, deadline_exceeded(), observed_at);
             settled += 1;
         }
-        #[cfg(test)]
-        let more_due = self
-            .calls
-            .next_deadline()
-            .is_some_and(|deadline| deadline <= now);
-        RouteWaitingExpiration {
-            settled,
-            #[cfg(test)]
-            more_due,
-        }
+        RouteWaitingExpiration { settled }
     }
 
     pub(in crate::reactor) fn next_deadline(&self) -> Option<Moment> {
@@ -188,18 +164,11 @@ pub(in crate::reactor) enum RouteWaitingOutcome {
 
 pub(in crate::reactor) struct RouteWaitingExpiration {
     settled: usize,
-    #[cfg(test)]
-    more_due: bool,
 }
 
 impl RouteWaitingExpiration {
     pub(in crate::reactor) const fn settled(&self) -> usize {
         self.settled
-    }
-
-    #[cfg(test)]
-    pub(in crate::reactor) const fn more_due(&self) -> bool {
-        self.more_due
     }
 }
 

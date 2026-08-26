@@ -37,7 +37,7 @@ fn exact_proof_completes_once_while_a_wrong_fence_is_ignored() {
         .unwrap_or_else(|error| panic!("receive exact direct proof: {error}"));
     let fence = exact.fence();
     assert_eq!(
-        fence.target().direct_connection(),
+        Some(fence.target().direct_connection()),
         fixture.owner.lane.connection
     );
     assert_eq!(fence.effect_id(), EFFECT);

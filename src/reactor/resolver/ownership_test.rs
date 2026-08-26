@@ -7,7 +7,7 @@ use kafka_driver_core::{BrokerId, EffectId};
 
 use crate::{
     TrafficClass,
-    reactor::{broker_set::BrokerLane, direct_plaintext::endpoint_refresh::DirectRefreshOwner},
+    reactor::{BrokerLane, direct_plaintext::endpoint_refresh::DirectRefreshOwner},
 };
 
 use super::{ResolutionOwner, ResolverOwnership, ResolverOwnershipError};

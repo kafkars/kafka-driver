@@ -66,6 +66,7 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.as_mut(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(_) => panic!("host SCRAM fixture requires plaintext"),
+            Self::Simulated(_) => panic!("host SCRAM fixture requires plaintext"),
         };
         open_transport(owner);
         let pending = arm_first_proof(owner);
@@ -84,6 +85,7 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.lane.scram_proof_sender.is_some(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.lane.scram_proof_sender.is_some(),
+            Self::Simulated(owner) => owner.lane.scram_proof_sender.is_some(),
         }
     }
 
@@ -92,6 +94,7 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.lane.pending_scram_proof.is_some(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.lane.pending_scram_proof.is_some(),
+            Self::Simulated(owner) => owner.lane.pending_scram_proof.is_some(),
         }
     }
 
@@ -100,6 +103,7 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.lane.session.state(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.lane.session.state(),
+            Self::Simulated(owner) => owner.lane.session.state(),
         };
         match state {
             KafkaSessionState::Authenticating {

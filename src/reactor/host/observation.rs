@@ -15,10 +15,6 @@ impl Reactor {
                     .direct()
                     .and_then(super::super::direct_plaintext::DirectBackend::seed_snapshot)
             });
-        #[cfg(test)]
-        let legacy = self.backend.legacy();
-        #[cfg(test)]
-        let seed = seed.or_else(|| legacy.and_then(|legacy| legacy.brokers.seed_snapshot()));
         let bootstrap = BootstrapSnapshot::new(
             self.resolution
                 .as_ref()
@@ -27,19 +23,10 @@ impl Reactor {
         );
         let directory_generation =
             cluster.and_then(super::super::direct_plaintext::ClusterBackend::directory_generation);
-        #[cfg(test)]
-        let directory_generation = directory_generation
-            .or_else(|| legacy.and_then(|legacy| legacy.brokers.directory_generation()));
         let lanes = cluster.map_or_else(
             Vec::new,
             super::super::direct_plaintext::ClusterBackend::lane_snapshots,
         );
-        #[cfg(test)]
-        let lanes = if cluster.is_some() {
-            lanes
-        } else {
-            legacy.map_or_else(Vec::new, |legacy| legacy.brokers.lane_snapshots())
-        };
         DriverSnapshot::new(
             self.commands.snapshot(),
             directory_generation,

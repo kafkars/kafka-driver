@@ -2,9 +2,11 @@
 
 use std::{num::NonZeroUsize, time::Duration};
 
+use calandria::WaitOutcome;
+
 use super::{
-    PollEvent, Poller, WakeHandle,
     mailbox::{DrainStatus, MailboxReceiver, TrySendError, mailbox},
+    wake_fixture_test::WakeFixture,
 };
 
 #[test]
@@ -112,41 +114,31 @@ fn repeated_wakes_coalesce_until_the_mailbox_is_drained() {
 
 #[test]
 fn external_wake_is_not_suppressed_by_pending_mailbox_notification() {
-    let (sender, receiver, mut poller) = test_mailbox(NonZeroUsize::MIN);
+    let (sender, receiver, mut fixture) = test_mailbox(NonZeroUsize::MIN);
     assert!(sender.try_send(1).is_ok());
-    let mut events = Vec::with_capacity(1);
-    let first = poller.poll_into(Some(Duration::from_secs(1)), &mut events);
-    let Ok(first) = first else {
-        panic!("mailbox notification must reach the selector");
-    };
-    assert_eq!(first, 1);
-    assert_eq!(events, vec![PollEvent::Wake]);
+    let first = fixture.wait(Duration::from_secs(1));
+    assert!(matches!(first, Ok(WaitOutcome::Notified)));
     assert!(receiver.notification_is_requested());
-    events.clear();
 
-    assert!(WakeHandle::new(poller.pulse_handle()).wake().is_ok());
+    assert!(fixture.public_wake().wake().is_ok());
 
-    let second = poller.poll_into(Some(Duration::from_secs(1)), &mut events);
-    let Ok(second) = second else {
-        panic!("independent notification must reach the selector");
-    };
-    assert_eq!(second, 1);
-    assert_eq!(events, vec![PollEvent::Wake]);
+    let second = fixture.wait(Duration::from_secs(1));
+    assert!(matches!(second, Ok(WaitOutcome::Notified)));
 }
 
 fn test_mailbox<T>(
     capacity: NonZeroUsize,
-) -> (super::MailboxSender<T>, MailboxReceiver<T>, Poller) {
-    let Ok(poller) = Poller::new(NonZeroUsize::MIN) else {
+) -> (super::MailboxSender<T>, MailboxReceiver<T>, WakeFixture) {
+    let Ok(fixture) = WakeFixture::new() else {
         panic!("host must provide a Mio selector");
     };
     let (sender, receiver) = mailbox(
         capacity,
         nonzero(capacity.get()),
         unit_weight::<T>,
-        poller.wake_handle(),
+        fixture.internal_wake(),
     );
-    (sender, receiver, poller)
+    (sender, receiver, fixture)
 }
 
 fn weighted_mailbox(
@@ -155,12 +147,17 @@ fn weighted_mailbox(
 ) -> (
     super::MailboxSender<String>,
     MailboxReceiver<String>,
-    Poller,
+    WakeFixture,
 ) {
-    let poller = Poller::new(NonZeroUsize::MIN)
+    let fixture = WakeFixture::new()
         .unwrap_or_else(|error| panic!("host must provide a Mio selector: {error}"));
-    let (sender, receiver) = mailbox(capacity, byte_capacity, String::len, poller.wake_handle());
-    (sender, receiver, poller)
+    let (sender, receiver) = mailbox(
+        capacity,
+        byte_capacity,
+        String::len,
+        fixture.internal_wake(),
+    );
+    (sender, receiver, fixture)
 }
 
 fn unit_weight<T>(_command: &T) -> usize {

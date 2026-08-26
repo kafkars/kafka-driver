@@ -46,12 +46,8 @@ pub use tls::{TlsClientConfig, TlsClientPolicy};
 
 pub(crate) use bootstrap::BootstrapConfig;
 pub(crate) use broker::{BrokerAddresses, BrokerTemplate, BrokerTemplateParts, DirectBrokerConfig};
-#[cfg(test)]
-pub(crate) use broker::{BrokerConfig, BrokerSecurity};
 pub(crate) use client_id::{ClientId, ClientIdError};
 pub(crate) use scram_policy::{ScramClientConfigError, kafka_scram_client_config};
 pub(crate) use target::DriverTarget;
-#[cfg(all(test, feature = "tls-rustls"))]
-pub(crate) use tls::TlsConnectionConfig;
 #[cfg(feature = "tls-rustls")]
 pub(crate) use tls::TlsSessionError;

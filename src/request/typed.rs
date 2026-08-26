@@ -2,16 +2,10 @@
 
 use std::time::Instant;
 
-#[cfg(test)]
-use kafka_driver_core::CorrelationId;
 use kafka_driver_core::{CallId, OutcomeStamp};
 use kafka_wire::{OutboundFrameLimits, RequestResponsePair};
-#[cfg(test)]
-use kafka_wire_core::Bytes;
 use kafka_wire_core::{ApiVersion, DecodeLimits, StrBytes};
 
-#[cfg(test)]
-use crate::response::ResponseRegistry;
 use crate::{
     RequestError, TrafficClass,
     api::RouteFact,
@@ -134,25 +128,6 @@ where
     fn record_route(&mut self, route: RouteFact) -> Result<(), RouteFact> {
         self.mark_routed(Instant::now());
         self.completion.record_route(route)
-    }
-
-    #[cfg(test)]
-    fn prepare(
-        self: Box<Self>,
-        correlation_id: CorrelationId,
-        version: ApiVersion,
-        client_id: Option<&StrBytes>,
-        outbound_limits: OutboundFrameLimits,
-        responses: &mut ResponseRegistry,
-    ) -> Result<Bytes, RequestError> {
-        super::typed_legacy::prepare(
-            *self,
-            correlation_id,
-            version,
-            client_id,
-            outbound_limits,
-            responses,
-        )
     }
 
     fn prepare_bornera(

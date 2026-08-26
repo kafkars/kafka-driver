@@ -5,20 +5,20 @@ use std::{num::NonZeroU16, sync::Arc};
 use kafka_driver_core::{BrokerEndpoint, HostName};
 use rustls::{ClientConfig, RootCertStore};
 
-use super::{TlsClientPolicy, TlsConnectionConfig};
+use super::TlsClientPolicy;
 
 #[test]
 fn distinct_logical_endpoints_bind_distinct_server_identities() {
     let policy = policy();
-    let first = TlsConnectionConfig::endpoint(policy.clone(), endpoint("one.kafka.test"));
-    let second = TlsConnectionConfig::endpoint(policy, endpoint("two.kafka.test"));
-
-    let first_name = first
-        .server_name()
+    let first = policy
+        .bind_endpoint(&endpoint("one.kafka.test"))
         .unwrap_or_else(|error| panic!("bind first endpoint identity: {error}"));
-    let second_name = second
-        .server_name()
+    let second = policy
+        .bind_endpoint(&endpoint("two.kafka.test"))
         .unwrap_or_else(|error| panic!("bind second endpoint identity: {error}"));
+
+    let first_name = first.server_name_for_test();
+    let second_name = second.server_name_for_test();
 
     assert_eq!(first_name.to_str(), "one.kafka.test");
     assert_eq!(second_name.to_str(), "two.kafka.test");
@@ -26,9 +26,7 @@ fn distinct_logical_endpoints_bind_distinct_server_identities() {
 
 #[test]
 fn non_tls_logical_host_is_rejected_before_session_creation() {
-    let config = TlsConnectionConfig::endpoint(policy(), endpoint("broker/test"));
-
-    assert!(config.server_name().is_err());
+    assert!(policy().bind_endpoint(&endpoint("broker/test")).is_err());
 }
 
 fn policy() -> TlsClientPolicy {

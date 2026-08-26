@@ -72,6 +72,8 @@ impl DirectBackend {
             Self::Plaintext(owner) => owner.pending_endpoint_refresh_owner(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(owner) => owner.pending_endpoint_refresh_owner(),
+            #[cfg(test)]
+            Self::Simulated(owner) => owner.pending_endpoint_refresh_owner(),
         }
     }
 
@@ -83,6 +85,8 @@ impl DirectBackend {
             Self::Plaintext(runtime) => runtime.take_endpoint_refresh(owner),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(runtime) => runtime.take_endpoint_refresh(owner),
+            #[cfg(test)]
+            Self::Simulated(runtime) => runtime.take_endpoint_refresh(owner),
         }
     }
 
@@ -94,6 +98,8 @@ impl DirectBackend {
             Self::Plaintext(runtime) => runtime.defer_endpoint_refresh(refresh),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(runtime) => runtime.defer_endpoint_refresh(refresh),
+            #[cfg(test)]
+            Self::Simulated(runtime) => runtime.defer_endpoint_refresh(refresh),
         }
     }
 
@@ -110,6 +116,10 @@ impl DirectBackend {
             }
             #[cfg(feature = "tls-rustls")]
             Self::Rustls(runtime) => {
+                runtime.complete_endpoint_refresh(owner, outcome, now, causality)
+            }
+            #[cfg(test)]
+            Self::Simulated(runtime) => {
                 runtime.complete_endpoint_refresh(owner, outcome, now, causality)
             }
         }

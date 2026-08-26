@@ -11,7 +11,12 @@ use crate::reactor::broker::BrokerLimits;
 #[cfg(feature = "tls-rustls")]
 use super::rustls_transport::DirectRustlsTransport;
 #[cfg(test)]
-use super::{attempt::DirectConnectionAttempt, lane_plan::KafkaSessionPlan};
+use super::{
+    attempt::{
+        DirectConnectionAttempt, SimulatedAttempt, SimulatedTransport, SimulatedTransportHandle,
+    },
+    lane_plan::KafkaSessionPlan,
+};
 use super::{
     lane_construction::start_lane, lane_plan::BorneraLanePlan, limits::DirectSetBounds,
     runtime::DirectRuntime, set_owner::DirectSetOwner,
@@ -52,6 +57,26 @@ impl DirectRuntime<TcpTransport> {
             None,
             KafkaSessionPlan::new(sasl, broker),
             attempt,
+        );
+        start(driver, plan, now)
+    }
+}
+
+#[cfg(test)]
+impl DirectRuntime<SimulatedTransport> {
+    pub(super) fn new_simulated(
+        driver: &DriverLimits,
+        address: SocketAddr,
+        handle: SimulatedTransportHandle,
+        now: Moment,
+    ) -> io::Result<Self> {
+        let broker = BrokerLimits::default();
+        let plan = BorneraLanePlan::new(
+            BrokerAddresses::Direct(address),
+            broker,
+            None,
+            KafkaSessionPlan::new(None, broker),
+            Box::new(SimulatedAttempt::new(driver, broker, handle)),
         );
         start(driver, plan, now)
     }

@@ -86,7 +86,7 @@ fn isolated_reactor() -> (
     crate::completion::ShutdownRequester,
     Reactor,
 ) {
-    Reactor::new_legacy_test(
+    Reactor::new_test(
         &DriverLimits::default(),
         Arc::new(CallIds::new()),
         Arc::new(Observation::default()),

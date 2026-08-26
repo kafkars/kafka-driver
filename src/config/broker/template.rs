@@ -1,16 +1,8 @@
 //! Reusable broker policy consumed after endpoint resolution.
 
-#[cfg(test)]
-use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
-
 #[cfg(feature = "tls-rustls")]
 use crate::config::TlsClientPolicy;
-#[cfg(all(test, feature = "tls-rustls"))]
-use crate::config::TlsConnectionConfig;
 use crate::config::{ClientId, SaslConfig};
-
-#[cfg(test)]
-use super::{BrokerAddresses, BrokerConfig, BrokerSecurity};
 
 /// Reusable transport and authentication policy applied after address selection.
 #[derive(Clone, Debug)]
@@ -55,38 +47,6 @@ impl BrokerTemplate {
             BrokerTemplateParts::Rustls { client_id, .. } => *client_id = replacement,
         }
         self
-    }
-
-    #[cfg(test)]
-    pub(crate) fn at_resolved(
-        self,
-        endpoint: BrokerEndpoint,
-        addresses: ResolvedAddressSet,
-    ) -> BrokerConfig {
-        let (security, sasl, client_id) = match self.into_parts() {
-            BrokerTemplateParts::Plaintext { sasl, client_id } => {
-                (BrokerSecurity::Plaintext, sasl, client_id)
-            }
-            #[cfg(feature = "tls-rustls")]
-            BrokerTemplateParts::Rustls {
-                tls,
-                sasl,
-                client_id,
-            } => (
-                BrokerSecurity::Rustls(TlsConnectionConfig::endpoint(tls, endpoint.clone())),
-                sasl,
-                client_id,
-            ),
-        };
-        BrokerConfig {
-            addresses: BrokerAddresses::Resolved {
-                endpoint,
-                addresses,
-            },
-            security,
-            sasl,
-            client_id,
-        }
     }
 
     pub(crate) fn requires_proof_worker(&self) -> bool {

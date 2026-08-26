@@ -48,21 +48,7 @@ impl Reactor {
                     .install_directory(directory)
                     .map_err(ReactorError::host)
             } else {
-                #[cfg(test)]
-                {
-                    if let Some(legacy) = self.backend.legacy_mut() {
-                        legacy
-                            .brokers
-                            .install_directory(directory)
-                            .map_err(ReactorError::broker_set)
-                    } else {
-                        Ok(false)
-                    }
-                }
-                #[cfg(not(test))]
-                {
-                    Ok(false)
-                }
+                Ok(false)
             }
         } else {
             Ok(false)

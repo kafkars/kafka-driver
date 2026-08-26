@@ -11,15 +11,15 @@ use kafka_driver_core::{
     BrokerEndpoint, ConnectionEpoch, DnsRequest, EffectId, HostName, IpAddress,
 };
 
-use crate::{ResolverLimits, reactor::Poller};
+use crate::{ResolverLimits, reactor::wake_fixture_test::WakeFixture};
 
 use super::{Resolver, ResolverShutdown};
 
 #[test]
 fn numeric_resolution_wakes_the_reactor_with_exact_request_identity() {
-    let mut poller = Poller::new(std::num::NonZeroUsize::MIN)
-        .unwrap_or_else(|error| panic!("create test poller: {error}"));
-    let wake = crate::reactor::WakeHandle::new(poller.pulse_handle());
+    let mut fixture =
+        WakeFixture::new().unwrap_or_else(|error| panic!("create test selector: {error}"));
+    let wake = fixture.public_wake();
     let resolver = Resolver::spawn(ResolverLimits::default(), wake)
         .unwrap_or_else(|error| panic!("spawn DNS worker: {error}"));
     let request = DnsRequest::new(
@@ -31,9 +31,8 @@ fn numeric_resolution_wakes_the_reactor_with_exact_request_identity() {
     resolver
         .submit(request.clone())
         .unwrap_or_else(|error| panic!("admit DNS request: {error}"));
-    let mut events = Vec::new();
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
+    fixture
+        .wait(Duration::from_secs(1))
         .unwrap_or_else(|error| panic!("wait for DNS worker wake: {error}"));
     let mut outcomes = Vec::new();
     let progress = resolver
@@ -60,9 +59,9 @@ fn numeric_resolution_wakes_the_reactor_with_exact_request_identity() {
 
 #[test]
 fn shutdown_joins_a_worker_blocked_by_full_outcome_capacity() {
-    let mut poller = Poller::new(NonZeroUsize::MIN)
-        .unwrap_or_else(|error| panic!("create test poller: {error}"));
-    let wake = crate::reactor::WakeHandle::new(poller.pulse_handle());
+    let mut fixture =
+        WakeFixture::new().unwrap_or_else(|error| panic!("create test selector: {error}"));
+    let wake = fixture.public_wake();
     let limits = ResolverLimits::new(
         nonzero(2),
         NonZeroUsize::MIN,
@@ -80,9 +79,8 @@ fn shutdown_joins_a_worker_blocked_by_full_outcome_capacity() {
             ))
             .unwrap_or_else(|error| panic!("admit DNS request: {error}"));
     }
-    let mut events = Vec::new();
-    poller
-        .poll_into(Some(Duration::from_secs(1)), &mut events)
+    fixture
+        .wait(Duration::from_secs(1))
         .unwrap_or_else(|error| panic!("wait for first DNS outcome: {error}"));
 
     resolver

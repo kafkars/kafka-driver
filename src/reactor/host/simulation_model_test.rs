@@ -13,7 +13,6 @@ use kafka_wire::{MetadataRequest, MetadataResponse};
 use crate::{
     Call, CompletionError, Driver, DriverLimits, RequestError,
     api::{CallIds, DriverIdentity},
-    config::BrokerConfig,
     observation::Observation,
 };
 
@@ -80,14 +79,12 @@ impl DriverWorld {
         let origin = Instant::now();
         let call_ids = Arc::new(CallIds::new());
         let observation = Arc::new(Observation::default());
-        let config = BrokerConfig::plaintext(
-            "127.0.0.1:9092"
-                .parse()
-                .unwrap_or_else(|error| panic!("simulated broker address must be valid: {error}")),
-        );
+        let address = "127.0.0.1:9092"
+            .parse()
+            .unwrap_or_else(|error| panic!("simulated broker address must be valid: {error}"));
         let (commands, shutdown, reactor) = Reactor::new_simulated(
             &limits,
-            config,
+            address,
             origin,
             Arc::clone(&call_ids),
             Arc::clone(&observation),
@@ -223,7 +220,7 @@ impl Model for DriverWorld {
                 }
             }
             CapabilityEvent::Inbound(bytes) => {
-                if !self.reactor.simulate_receive(bytes) {
+                if !self.reactor.simulate_receive(&bytes) {
                     return Err(SimulationFailure::Capability("missing simulated transport"));
                 }
             }

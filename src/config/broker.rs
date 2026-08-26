@@ -6,56 +6,12 @@ use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
 
 #[cfg(feature = "tls-rustls")]
 use super::TlsClientConfig;
-#[cfg(all(test, feature = "tls-rustls"))]
-use super::TlsConnectionConfig;
 
 use super::{ClientId, SaslConfig};
 
 mod template;
 
 pub(crate) use template::{BrokerTemplate, BrokerTemplateParts};
-
-/// Fully selected connection mechanics for one configured broker.
-#[cfg(test)]
-#[derive(Clone, Debug)]
-pub(crate) struct BrokerConfig {
-    addresses: BrokerAddresses,
-    security: BrokerSecurity,
-    sasl: Option<SaslConfig>,
-    client_id: Option<ClientId>,
-}
-
-#[cfg(test)]
-impl BrokerConfig {
-    pub(crate) const fn plaintext(address: SocketAddr) -> Self {
-        Self {
-            addresses: BrokerAddresses::Direct(address),
-            security: BrokerSecurity::Plaintext,
-            sasl: None,
-            client_id: None,
-        }
-    }
-
-    pub(crate) fn with_sasl(mut self, sasl: Option<SaslConfig>) -> Self {
-        self.sasl = sasl;
-        self
-    }
-
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        BrokerAddresses,
-        BrokerSecurity,
-        Option<SaslConfig>,
-        Option<ClientId>,
-    ) {
-        (self.addresses, self.security, self.sasl, self.client_id)
-    }
-
-    pub(crate) const fn is_resolved(&self) -> bool {
-        matches!(self.addresses, BrokerAddresses::Resolved { .. })
-    }
-}
 
 /// One fixed numeric Bornera owner with same-address reconnect generations.
 #[derive(Clone, Debug)]
@@ -161,13 +117,4 @@ pub(crate) enum BrokerAddresses {
         /// Current candidates in resolver preference order.
         addresses: ResolvedAddressSet,
     },
-}
-
-/// Selected byte-stream protection beneath Kafka framing.
-#[cfg(test)]
-#[derive(Clone, Debug)]
-pub(crate) enum BrokerSecurity {
-    Plaintext,
-    #[cfg(feature = "tls-rustls")]
-    Rustls(TlsConnectionConfig),
 }
