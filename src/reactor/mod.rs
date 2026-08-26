@@ -10,6 +10,7 @@ mod bootstrap;
 )]
 mod bornera;
 mod broker;
+mod broker_rpc;
 mod broker_set;
 mod causality;
 mod clock;
@@ -39,6 +40,8 @@ mod wake;
 #[cfg(test)]
 mod address_rotation_test;
 #[cfg(test)]
+mod broker_rpc_test;
+#[cfg(test)]
 mod causality_test;
 #[cfg(test)]
 mod clock_test;
@@ -54,6 +57,7 @@ mod mailbox_test;
 mod wait_queue_test;
 
 pub(in crate::reactor) use backend::{LegacyBackend, ReactorBackend};
+pub(in crate::reactor) use broker_rpc::{BrokerRpc, BrokerRpcError, LegacyBrokerRpc};
 pub(crate) use clock::ReactorClock;
 pub(crate) use command::Command;
 pub use error::ReactorError;

@@ -7,7 +7,7 @@ use kafka_driver_core::{
 use crate::{
     InvalidationDisposition,
     api::CallIds,
-    reactor::{Poller, RouteInvalidation, broker::SingleBroker},
+    reactor::{BrokerRpc, RouteInvalidation},
 };
 
 use super::{MetadataOwner, MetadataOwnerError, invalidation_wait::InvalidationJoin};
@@ -16,8 +16,7 @@ impl MetadataOwner {
     pub(in crate::reactor) fn invalidate_broker_route(
         &mut self,
         invalidation: RouteInvalidation<BrokerRoute>,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -47,15 +46,14 @@ impl MetadataOwner {
         } else {
             let _ = completion.complete(immediate_disposition(disposition));
         }
-        self.interpret(transition, Some(broker), poller, now, call_ids, evidence)?;
+        self.interpret(transition, Some(broker), now, call_ids, evidence)?;
         Ok(())
     }
 
     pub(in crate::reactor) fn invalidate_partition_route(
         &mut self,
         invalidation: RouteInvalidation<PartitionRoute>,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -86,7 +84,7 @@ impl MetadataOwner {
         } else {
             let _ = completion.complete(immediate_disposition(disposition));
         }
-        self.interpret(transition, Some(broker), poller, now, call_ids, evidence)?;
+        self.interpret(transition, Some(broker), now, call_ids, evidence)?;
         Ok(())
     }
 }

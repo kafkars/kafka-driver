@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt};
 
-use crate::reactor::broker::BrokerError;
+use crate::reactor::BrokerRpcError;
 
 #[derive(Debug)]
 pub(in crate::reactor) enum MetadataOwnerError {
@@ -10,7 +10,7 @@ pub(in crate::reactor) enum MetadataOwnerError {
     OperationIdentityExhausted,
     GenerationExhausted,
     UnexpectedEffect,
-    Broker(BrokerError),
+    Broker(BrokerRpcError),
 }
 
 impl fmt::Display for MetadataOwnerError {

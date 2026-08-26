@@ -7,7 +7,10 @@ use kafka_driver_core::{BrokerId, Moment, PartitionId, TopicName};
 use crate::{
     RequestError, Route,
     api::RouteFact,
-    reactor::metadata::{ControllerWait, PartitionWait},
+    reactor::{
+        BrokerRpc,
+        metadata::{ControllerWait, PartitionWait},
+    },
     request::ErasedRequest,
 };
 
@@ -72,11 +75,11 @@ impl Reactor {
                 request.fail(RequestError::RouteUnavailable);
                 return Ok(());
             };
+            let mut seed = legacy.seed_rpc();
             metadata
                 .wait_for_controller(
                     ControllerWait::controller(request),
-                    legacy.brokers.seed_mut(),
-                    &legacy.poller,
+                    seed.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc),
                     now,
                     &self.call_ids,
                     evidence,
@@ -111,11 +114,11 @@ impl Reactor {
                 request.fail(RequestError::RouteUnavailable);
                 return Ok(());
             };
+            let mut seed = legacy.seed_rpc();
             metadata
                 .wait_for_broker(
                     ControllerWait::broker(broker_id, request),
-                    legacy.brokers.seed_mut(),
-                    &legacy.poller,
+                    seed.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc),
                     now,
                     &self.call_ids,
                     evidence,
@@ -151,11 +154,11 @@ impl Reactor {
                 request.fail(RequestError::RouteUnavailable);
                 return Ok(());
             };
+            let mut seed = legacy.seed_rpc();
             metadata
                 .wait_for_partition(
                     PartitionWait::new(topic, partition, request),
-                    legacy.brokers.seed_mut(),
-                    &legacy.poller,
+                    seed.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc),
                     now,
                     &self.call_ids,
                     evidence,

@@ -7,7 +7,7 @@ use crate::{
     TopicViewError,
     api::CallIds,
     metadata::{MetadataResponseProvenance, snapshot_from_response},
-    reactor::{Poller, broker::SingleBroker},
+    reactor::BrokerRpc,
 };
 
 use super::{MetadataOwner, MetadataOwnerError, pending::PendingMetadata};
@@ -15,8 +15,7 @@ use super::{MetadataOwner, MetadataOwnerError, pending::PendingMetadata};
 impl MetadataOwner {
     pub(super) fn observe_completion(
         &mut self,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: kafka_driver_core::EvidenceStamp,
@@ -42,7 +41,7 @@ impl MetadataOwner {
             self.topic_views.mark_terminal(&topic, terminal);
         }
         let transition = self.machine.apply(input);
-        self.interpret(transition, Some(broker), poller, now, call_ids, evidence)?;
+        self.interpret(transition, Some(broker), now, call_ids, evidence)?;
         Ok(true)
     }
 

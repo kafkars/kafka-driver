@@ -5,7 +5,8 @@ use std::io;
 use calandria::{Span, WaitOutcome};
 
 use super::{
-    PollEvent, Poller, WakeHandle, broker_set::BrokerSet, direct_plaintext::DirectBackend,
+    LegacyBrokerRpc, PollEvent, Poller, WakeHandle, broker_set::BrokerSet,
+    direct_plaintext::DirectBackend,
 };
 
 pub(in crate::reactor) enum ReactorBackend {
@@ -30,6 +31,12 @@ impl LegacyBackend {
             poll_events,
             brokers,
         }
+    }
+
+    pub(in crate::reactor) fn seed_rpc(&mut self) -> Option<LegacyBrokerRpc<'_>> {
+        let poller = &self.poller;
+        let seed = self.brokers.seed_mut()?;
+        Some(LegacyBrokerRpc::new(seed, poller))
     }
 }
 

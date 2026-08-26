@@ -4,12 +4,7 @@ use kafka_driver_core::{
     BrokerId, CallId, EvidenceStamp, MetadataDisposition, MetadataInput, MetadataQuery, Moment,
 };
 
-use crate::{
-    RequestError,
-    api::CallIds,
-    reactor::{Poller, broker::SingleBroker},
-    request::ErasedRequest,
-};
+use crate::{RequestError, api::CallIds, reactor::BrokerRpc, request::ErasedRequest};
 
 use super::{ControllerWaitProgress, MetadataOwner, MetadataOwnerError};
 
@@ -17,32 +12,29 @@ impl MetadataOwner {
     pub(in crate::reactor) fn wait_for_controller(
         &mut self,
         waiting: ControllerWait,
-        broker: Option<&mut SingleBroker>,
-        poller: &Poller,
+        broker: Option<&mut dyn BrokerRpc>,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
-        self.wait_for_cluster_route(waiting, broker, poller, now, call_ids, evidence)
+        self.wait_for_cluster_route(waiting, broker, now, call_ids, evidence)
     }
 
     pub(in crate::reactor) fn wait_for_broker(
         &mut self,
         waiting: ControllerWait,
-        broker: Option<&mut SingleBroker>,
-        poller: &Poller,
+        broker: Option<&mut dyn BrokerRpc>,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
-        self.wait_for_cluster_route(waiting, broker, poller, now, call_ids, evidence)
+        self.wait_for_cluster_route(waiting, broker, now, call_ids, evidence)
     }
 
     fn wait_for_cluster_route(
         &mut self,
         waiting: ControllerWait,
-        broker: Option<&mut SingleBroker>,
-        poller: &Poller,
+        broker: Option<&mut dyn BrokerRpc>,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -61,7 +53,7 @@ impl MetadataOwner {
             self.reject_controller_query_capacity(call_id)?;
             return Ok(());
         }
-        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
+        self.interpret(transition, broker, now, call_ids, evidence)?;
         Ok(())
     }
 

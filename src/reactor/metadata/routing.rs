@@ -5,12 +5,7 @@ use kafka_driver_core::{
     TopicName,
 };
 
-use crate::{
-    RequestError,
-    api::CallIds,
-    reactor::{Poller, broker::SingleBroker},
-    request::ErasedRequest,
-};
+use crate::{RequestError, api::CallIds, reactor::BrokerRpc, request::ErasedRequest};
 
 use super::{MetadataOwner, MetadataOwnerError, PartitionWaitProgress};
 
@@ -18,8 +13,7 @@ impl MetadataOwner {
     pub(in crate::reactor) fn wait_for_partition(
         &mut self,
         waiting: PartitionWait,
-        broker: Option<&mut SingleBroker>,
-        poller: &Poller,
+        broker: Option<&mut dyn BrokerRpc>,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -43,7 +37,7 @@ impl MetadataOwner {
             self.reject_query_capacity(call_id)?;
             return Ok(());
         }
-        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
+        self.interpret(transition, broker, now, call_ids, evidence)?;
         Ok(())
     }
 

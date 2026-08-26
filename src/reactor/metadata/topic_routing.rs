@@ -6,10 +6,7 @@ use kafka_driver_core::{
 };
 
 use crate::{
-    TopicView, TopicViewError,
-    api::CallIds,
-    completion::CompletionSender,
-    reactor::{Poller, broker::SingleBroker},
+    TopicView, TopicViewError, api::CallIds, completion::CompletionSender, reactor::BrokerRpc,
 };
 
 use super::{MetadataOwner, MetadataOwnerError};
@@ -18,8 +15,7 @@ impl MetadataOwner {
     pub(in crate::reactor) fn wait_for_topic_view(
         &mut self,
         waiting: TopicViewWait,
-        broker: Option<&mut SingleBroker>,
-        poller: &Poller,
+        broker: Option<&mut dyn BrokerRpc>,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -54,7 +50,7 @@ impl MetadataOwner {
                 }));
             return Ok(());
         }
-        self.interpret(transition, broker, poller, now, call_ids, evidence)?;
+        self.interpret(transition, broker, now, call_ids, evidence)?;
         Ok(())
     }
 

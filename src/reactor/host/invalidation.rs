@@ -47,7 +47,11 @@ impl Reactor {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
-        let (Some(metadata), Some(seed)) = (&mut self.metadata, legacy.brokers.seed_mut()) else {
+        let Some(metadata) = &mut self.metadata else {
+            let _ = completion.complete(InvalidationDisposition::Unavailable);
+            return Ok(());
+        };
+        let Some(mut seed) = legacy.seed_rpc() else {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
@@ -55,8 +59,7 @@ impl Reactor {
         metadata
             .invalidate_broker_route(
                 RouteInvalidation::new(route, observed_at, completion),
-                seed,
-                &legacy.poller,
+                &mut seed,
                 now,
                 &self.call_ids,
                 evidence,
@@ -75,7 +78,11 @@ impl Reactor {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
-        let (Some(metadata), Some(seed)) = (&mut self.metadata, legacy.brokers.seed_mut()) else {
+        let Some(metadata) = &mut self.metadata else {
+            let _ = completion.complete(InvalidationDisposition::Unavailable);
+            return Ok(());
+        };
+        let Some(mut seed) = legacy.seed_rpc() else {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
@@ -83,8 +90,7 @@ impl Reactor {
         metadata
             .invalidate_partition_route(
                 RouteInvalidation::new(route, observed_at, completion),
-                seed,
-                &legacy.poller,
+                &mut seed,
                 now,
                 &self.call_ids,
                 evidence,

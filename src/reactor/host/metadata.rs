@@ -21,9 +21,9 @@ impl Reactor {
             let Some(legacy) = self.backend.legacy_mut() else {
                 return Ok(false);
             };
-            let progress = if let Some(seed) = legacy.brokers.seed_mut() {
+            let progress = if let Some(mut seed) = legacy.seed_rpc() {
                 metadata
-                    .drive(seed, &legacy.poller, now, &self.call_ids, evidence)
+                    .drive(&mut seed, now, &self.call_ids, evidence)
                     .map_err(ReactorError::metadata)?
             } else {
                 false

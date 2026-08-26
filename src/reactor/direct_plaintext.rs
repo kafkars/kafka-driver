@@ -31,6 +31,7 @@ mod publication;
 mod reconnect;
 mod recovery_owners;
 mod recovery_settlement;
+mod rpc;
 mod runtime;
 #[cfg(feature = "tls-rustls")]
 mod rustls_transport;
@@ -95,3 +96,4 @@ mod shared_set_test;
 
 pub(in crate::reactor) use backend::DirectBackend;
 pub(in crate::reactor) use endpoint_refresh::DirectEndpointRefresh;
+pub(in crate::reactor) use rpc::DirectBrokerRpc;

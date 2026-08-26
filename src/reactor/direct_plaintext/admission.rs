@@ -64,7 +64,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         Ok(admitted)
     }
 
-    fn can_admit_public(&self) -> bool {
+    pub(super) fn can_admit_public(&self) -> bool {
         self.pending_recovery.is_none()
             && self.connection.is_some()
             && self.lifecycle.has_live_generation()

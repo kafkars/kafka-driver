@@ -3,8 +3,9 @@
 use std::time::Instant;
 
 use crate::{
-    MetadataGeneration, TopicName, TopicView, TopicViewError, completion::CompletionSender,
-    reactor::metadata::TopicViewWait,
+    MetadataGeneration, TopicName, TopicView, TopicViewError,
+    completion::CompletionSender,
+    reactor::{BrokerRpc, metadata::TopicViewWait},
 };
 
 use super::{Reactor, ReactorError};
@@ -52,6 +53,7 @@ impl Reactor {
             }
         }
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
+        let mut seed = legacy.seed_rpc();
         metadata
             .wait_for_topic_view(
                 TopicViewWait::new(
@@ -61,8 +63,7 @@ impl Reactor {
                     result_capacity_bytes,
                     completion,
                 ),
-                legacy.brokers.seed_mut(),
-                &legacy.poller,
+                seed.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc),
                 now,
                 &self.call_ids,
                 evidence,
