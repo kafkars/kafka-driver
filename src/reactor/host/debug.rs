@@ -27,6 +27,8 @@ impl std::fmt::Debug for Reactor {
         let waiting_calls = 0;
         let metadata_generation =
             cluster.and_then(super::super::direct_plaintext::ClusterBackend::directory_generation);
+        let [resolver_shutdown_abandoned, proof_shutdown_abandoned] =
+            self.observation.worker_shutdown_abandonments();
         let mut diagnostics = formatter.debug_struct("Reactor");
         diagnostics
             .field("limits", &self.limits)
@@ -40,6 +42,8 @@ impl std::fmt::Debug for Reactor {
             .field("waiting_calls", &waiting_calls)
             .field("resolving_names", &self.resolution.is_some())
             .field("metadata_generation", &metadata_generation)
+            .field("resolver_shutdown_abandoned", &resolver_shutdown_abandoned)
+            .field("proof_shutdown_abandoned", &proof_shutdown_abandoned)
             .field("state", &self.state);
         diagnostics.finish_non_exhaustive()
     }

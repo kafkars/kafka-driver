@@ -6,7 +6,15 @@ use std::{
     thread,
 };
 
-use crate::{ScramProofLimits, reactor::WakeHandle};
+use kafka_driver_core::Moment;
+
+use crate::{
+    ScramProofLimits,
+    reactor::{
+        WakeHandle,
+        worker_shutdown::{WorkerShutdown, WorkerShutdownPoll},
+    },
+};
 
 use super::{
     ScramProofOutcome, ScramProofRequest, ScramProofSubmitError, ScramProofWorkerError, worker,
@@ -91,15 +99,19 @@ impl ScramProofWorker {
     pub(in crate::reactor) fn shutdown(mut self) -> io::Result<()> {
         self.close_channels();
         ScramProofShutdown {
-            worker: self.worker.take(),
+            worker: WorkerShutdown::new(
+                self.worker.take(),
+                Moment::ORIGIN,
+                "SCRAM proof worker panicked",
+            ),
         }
         .join()
     }
 
-    pub(in crate::reactor) fn begin_shutdown(mut self) -> ScramProofShutdown {
+    pub(in crate::reactor) fn begin_shutdown(mut self, now: Moment) -> ScramProofShutdown {
         self.close_channels();
         ScramProofShutdown {
-            worker: self.worker.take(),
+            worker: WorkerShutdown::new(self.worker.take(), now, "SCRAM proof worker panicked"),
         }
     }
 
@@ -127,39 +139,33 @@ impl Drop for ScramProofWorker {
 
 /// Graceful-shutdown ownership of a proof worker pending nonblocking observation.
 pub(in crate::reactor) struct ScramProofShutdown {
-    worker: Option<thread::JoinHandle<()>>,
+    worker: WorkerShutdown,
 }
 
 impl ScramProofShutdown {
-    pub(in crate::reactor) fn poll_complete(&mut self) -> io::Result<bool> {
-        let Some(worker) = &self.worker else {
-            return Ok(true);
-        };
-        if !worker.is_finished() {
-            return Ok(false);
-        }
-        self.join_worker()?;
-        Ok(true)
+    pub(in crate::reactor) fn poll_complete(
+        &mut self,
+        now: Moment,
+    ) -> io::Result<WorkerShutdownPoll> {
+        self.worker.poll(now)
+    }
+
+    pub(in crate::reactor) const fn deadline(&self) -> Moment {
+        self.worker.deadline()
     }
 
     #[cfg(test)]
-    fn join(mut self) -> io::Result<()> {
-        self.join_worker()
-    }
-
-    fn join_worker(&mut self) -> io::Result<()> {
-        let Some(worker) = self.worker.take() else {
-            return Ok(());
-        };
-        worker
-            .join()
-            .map_err(|_| io::Error::other("SCRAM proof worker panicked"))
+    fn join(self) -> io::Result<()> {
+        self.worker.join()
     }
 
     #[cfg(test)]
-    pub(in crate::reactor) fn from_worker(worker: thread::JoinHandle<()>) -> Self {
+    pub(in crate::reactor) fn from_worker(
+        worker: thread::JoinHandle<()>,
+        started_at: Moment,
+    ) -> Self {
         Self {
-            worker: Some(worker),
+            worker: WorkerShutdown::new(Some(worker), started_at, "SCRAM proof worker panicked"),
         }
     }
 }

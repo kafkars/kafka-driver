@@ -32,6 +32,7 @@ mod waiter;
 mod wake;
 #[cfg(test)]
 mod wake_fixture_test;
+mod worker_shutdown;
 
 #[cfg(test)]
 mod address_rotation_test;

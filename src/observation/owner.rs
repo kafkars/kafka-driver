@@ -26,6 +26,8 @@ pub(crate) struct Observation {
     pub(super) local_rejection: AtomicU64,
     pub(super) response_capacity: AtomicU64,
     pub(super) route_capacity: AtomicU64,
+    resolver_shutdown_abandoned: AtomicU64,
+    proof_shutdown_abandoned: AtomicU64,
     mailbox: LatencyCounter,
     routing: LatencyCounter,
     preparation: LatencyCounter,
@@ -91,6 +93,22 @@ impl Observation {
                 self.deadline_lateness.snapshot(),
             ]),
         }
+    }
+
+    pub(crate) fn record_resolver_shutdown_abandoned(&self) {
+        increment(&self.resolver_shutdown_abandoned);
+    }
+
+    pub(crate) fn record_proof_shutdown_abandoned(&self) {
+        increment(&self.proof_shutdown_abandoned);
+    }
+
+    pub(crate) fn worker_shutdown_abandonments(&self) -> [u64; 2] {
+        let load = |counter: &AtomicU64| counter.load(Ordering::Relaxed);
+        [
+            load(&self.resolver_shutdown_abandoned),
+            load(&self.proof_shutdown_abandoned),
+        ]
     }
 }
 

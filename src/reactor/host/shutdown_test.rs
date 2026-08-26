@@ -6,6 +6,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use kafka_driver_core::Moment;
+
 use crate::{
     DriverLimits,
     api::CallIds,
@@ -24,7 +26,7 @@ fn zero_wait_turn_returns_while_resolver_shutdown_is_blocked() {
     let (observed, result) = channel();
     let owner = thread::spawn(move || {
         let (commands, shutdown, mut reactor) = isolated_reactor();
-        reactor.resolver_shutdown = Some(ResolverShutdown::from_worker(worker));
+        reactor.resolver_shutdown = Some(ResolverShutdown::from_worker(worker, Moment::ORIGIN));
         let completion = shutdown
             .subscribe(|| commands.try_send_control(Command::Shutdown))
             .unwrap_or_else(|_| panic!("request isolated shutdown"));
@@ -55,7 +57,7 @@ fn pending_worker_shutdown_bounds_a_long_host_wait() {
     let (observed, result) = channel();
     let owner = thread::spawn(move || {
         let (commands, shutdown, mut reactor) = isolated_reactor();
-        reactor.resolver_shutdown = Some(ResolverShutdown::from_worker(worker));
+        reactor.resolver_shutdown = Some(ResolverShutdown::from_worker(worker, Moment::ORIGIN));
         let completion = shutdown
             .subscribe(|| commands.try_send_control(Command::Shutdown))
             .unwrap_or_else(|_| panic!("request isolated shutdown"));

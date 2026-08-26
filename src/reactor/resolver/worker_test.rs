@@ -8,10 +8,13 @@ use std::{
 };
 
 use kafka_driver_core::{
-    BrokerEndpoint, ConnectionEpoch, DnsRequest, EffectId, HostName, IpAddress,
+    BrokerEndpoint, ConnectionEpoch, DnsRequest, EffectId, HostName, IpAddress, Moment,
 };
 
-use crate::{ResolverLimits, reactor::wake_fixture_test::WakeFixture};
+use crate::{
+    ResolverLimits,
+    reactor::{wake_fixture_test::WakeFixture, worker_shutdown::WorkerShutdownPoll},
+};
 
 use super::{Resolver, ResolverShutdown};
 
@@ -94,17 +97,17 @@ fn shutdown_poll_returns_while_the_worker_is_still_blocked() {
     let worker = thread::spawn(move || {
         let _ = blocked.recv();
     });
-    let mut shutdown = ResolverShutdown::from_worker(worker);
+    let mut shutdown = ResolverShutdown::from_worker(worker, Moment::ORIGIN);
     let (observed, result) = channel();
     let poll = thread::spawn(move || {
-        let progress = shutdown.poll_complete();
+        let progress = shutdown.poll_complete(Moment::ORIGIN);
         let _ = observed.send(progress);
         shutdown
     });
 
     assert!(matches!(
         result.recv_timeout(Duration::from_secs(1)),
-        Ok(Ok(false))
+        Ok(Ok(WorkerShutdownPoll::Pending))
     ));
     release
         .send(())
@@ -112,12 +115,42 @@ fn shutdown_poll_returns_while_the_worker_is_still_blocked() {
     shutdown = poll
         .join()
         .unwrap_or_else(|_| panic!("join resolver shutdown poll"));
-    while !shutdown
-        .poll_complete()
+    while shutdown
+        .poll_complete(Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("finish resolver shutdown: {error}"))
+        == WorkerShutdownPoll::Pending
     {
         thread::yield_now();
     }
+}
+
+#[test]
+fn shutdown_abandons_a_blocked_resolver_at_the_grace_deadline() {
+    let (release, exited, worker) = blocked_worker();
+    let mut shutdown = ResolverShutdown::from_worker(worker, Moment::ORIGIN);
+
+    assert_eq!(
+        shutdown
+            .poll_complete(Moment::ORIGIN)
+            .unwrap_or_else(|error| panic!("poll live resolver shutdown: {error}")),
+        WorkerShutdownPoll::Pending
+    );
+    assert_eq!(
+        shutdown
+            .poll_complete(shutdown.deadline())
+            .unwrap_or_else(|error| panic!("abandon blocked resolver: {error}")),
+        WorkerShutdownPoll::Abandoned
+    );
+    assert_eq!(
+        shutdown
+            .poll_complete(shutdown.deadline())
+            .unwrap_or_else(|error| panic!("re-poll abandoned resolver: {error}")),
+        WorkerShutdownPoll::Complete
+    );
+    release
+        .send(())
+        .unwrap_or_else(|error| panic!("release abandoned resolver: {error}"));
+    assert_eq!(exited.recv_timeout(Duration::from_secs(1)), Ok(()));
 }
 
 #[test]
@@ -131,7 +164,11 @@ fn dropping_live_resolver_detaches_an_unfinished_worker() {
 fn dropping_resolver_shutdown_detaches_an_unfinished_worker() {
     let (release, exited, worker) = blocked_worker();
 
-    assert_drop_returns(ResolverShutdown::from_worker(worker), &release, &exited);
+    assert_drop_returns(
+        ResolverShutdown::from_worker(worker, Moment::ORIGIN),
+        &release,
+        &exited,
+    );
 }
 
 fn blocked_worker() -> (Sender<()>, Receiver<()>, thread::JoinHandle<()>) {

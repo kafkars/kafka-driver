@@ -6,9 +6,15 @@ use std::{
     thread,
 };
 
-use kafka_driver_core::{DnsOutcome, DnsRequest, ResolutionLimits};
+use kafka_driver_core::{DnsOutcome, DnsRequest, Moment, ResolutionLimits};
 
-use crate::{ResolverLimits, reactor::WakeHandle};
+use crate::{
+    ResolverLimits,
+    reactor::{
+        WakeHandle,
+        worker_shutdown::{WorkerShutdown, WorkerShutdownPoll},
+    },
+};
 
 use super::{ResolverSubmitError, ResolverWorkerError, worker};
 
@@ -96,15 +102,15 @@ impl Resolver {
     pub(in crate::reactor) fn shutdown(mut self) -> io::Result<()> {
         self.close_channels();
         ResolverShutdown {
-            worker: self.worker.take(),
+            worker: WorkerShutdown::new(self.worker.take(), Moment::ORIGIN, "DNS worker panicked"),
         }
         .join()
     }
 
-    pub(in crate::reactor) fn begin_shutdown(mut self) -> ResolverShutdown {
+    pub(in crate::reactor) fn begin_shutdown(mut self, now: Moment) -> ResolverShutdown {
         self.close_channels();
         ResolverShutdown {
-            worker: self.worker.take(),
+            worker: WorkerShutdown::new(self.worker.take(), now, "DNS worker panicked"),
         }
     }
 
@@ -116,6 +122,11 @@ impl Resolver {
             outcome_budget: 1,
             worker: Some(worker),
         }
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn install_worker_for_test(&mut self, worker: thread::JoinHandle<()>) {
+        assert!(self.worker.replace(worker).is_none());
     }
 
     fn close_channels(&mut self) {
@@ -132,39 +143,33 @@ impl Drop for Resolver {
 
 /// Graceful-shutdown ownership of a DNS worker pending nonblocking observation.
 pub(in crate::reactor) struct ResolverShutdown {
-    worker: Option<thread::JoinHandle<()>>,
+    worker: WorkerShutdown,
 }
 
 impl ResolverShutdown {
-    pub(in crate::reactor) fn poll_complete(&mut self) -> io::Result<bool> {
-        let Some(worker) = &self.worker else {
-            return Ok(true);
-        };
-        if !worker.is_finished() {
-            return Ok(false);
-        }
-        self.join_worker()?;
-        Ok(true)
+    pub(in crate::reactor) fn poll_complete(
+        &mut self,
+        now: Moment,
+    ) -> io::Result<WorkerShutdownPoll> {
+        self.worker.poll(now)
+    }
+
+    pub(in crate::reactor) const fn deadline(&self) -> Moment {
+        self.worker.deadline()
     }
 
     #[cfg(test)]
-    fn join(mut self) -> io::Result<()> {
-        self.join_worker()
-    }
-
-    fn join_worker(&mut self) -> io::Result<()> {
-        let Some(worker) = self.worker.take() else {
-            return Ok(());
-        };
-        worker
-            .join()
-            .map_err(|_| io::Error::other("DNS worker panicked"))
+    fn join(self) -> io::Result<()> {
+        self.worker.join()
     }
 
     #[cfg(test)]
-    pub(in crate::reactor) fn from_worker(worker: thread::JoinHandle<()>) -> Self {
+    pub(in crate::reactor) fn from_worker(
+        worker: thread::JoinHandle<()>,
+        started_at: Moment,
+    ) -> Self {
         Self {
-            worker: Some(worker),
+            worker: WorkerShutdown::new(Some(worker), started_at, "DNS worker panicked"),
         }
     }
 }

@@ -1,7 +1,9 @@
 //! Terminal hosting state and shared shutdown barrier settlement.
 
+use kafka_driver_core::Moment;
+
 use super::{Reactor, ReactorError, TurnOutcome};
-use crate::reactor::direct_plaintext::DirectBackend;
+use crate::reactor::{direct_plaintext::DirectBackend, worker_shutdown::WorkerShutdownPoll};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum HostState {
@@ -19,6 +21,7 @@ impl Reactor {
     pub(super) fn finish_shutdown_if_terminal(
         &mut self,
         commands: usize,
+        now: Moment,
     ) -> Result<Option<TurnOutcome>, ReactorError> {
         let backend_terminal = if let Some(cluster) = self.backend.cluster() {
             cluster.is_terminal().map_err(ReactorError::host)?
@@ -33,9 +36,15 @@ impl Reactor {
         self.resolution = None;
         self.metadata = None;
         self.coordinator = None;
-        let resolver_stopped = poll_resolver(&mut self.resolver_shutdown)?;
-        let scram_stopped = poll_scram_proof(&mut self.scram_proof_shutdown)?;
-        if !resolver_stopped || !scram_stopped {
+        let resolver = poll_resolver(&mut self.resolver_shutdown, now)?;
+        if resolver == WorkerShutdownPoll::Abandoned {
+            self.observation.record_resolver_shutdown_abandoned();
+        }
+        let proof = poll_scram_proof(&mut self.scram_proof_shutdown, now)?;
+        if proof == WorkerShutdownPoll::Abandoned {
+            self.observation.record_proof_shutdown_abandoned();
+        }
+        if resolver == WorkerShutdownPoll::Pending || proof == WorkerShutdownPoll::Pending {
             return Ok(None);
         }
         drop(self.commands.close());
@@ -47,26 +56,28 @@ impl Reactor {
 
 fn poll_resolver(
     worker: &mut Option<super::super::resolver::ResolverShutdown>,
-) -> Result<bool, ReactorError> {
+    now: Moment,
+) -> Result<WorkerShutdownPoll, ReactorError> {
     let Some(shutdown) = worker else {
-        return Ok(true);
+        return Ok(WorkerShutdownPoll::Complete);
     };
-    if !shutdown.poll_complete().map_err(ReactorError::host)? {
-        return Ok(false);
+    let progress = shutdown.poll_complete(now).map_err(ReactorError::host)?;
+    if progress != WorkerShutdownPoll::Pending {
+        *worker = None;
     }
-    *worker = None;
-    Ok(true)
+    Ok(progress)
 }
 
 fn poll_scram_proof(
     worker: &mut Option<super::super::scram_proof::ScramProofShutdown>,
-) -> Result<bool, ReactorError> {
+    now: Moment,
+) -> Result<WorkerShutdownPoll, ReactorError> {
     let Some(shutdown) = worker else {
-        return Ok(true);
+        return Ok(WorkerShutdownPoll::Complete);
     };
-    if !shutdown.poll_complete().map_err(ReactorError::host)? {
-        return Ok(false);
+    let progress = shutdown.poll_complete(now).map_err(ReactorError::host)?;
+    if progress != WorkerShutdownPoll::Pending {
+        *worker = None;
     }
-    *worker = None;
-    Ok(true)
+    Ok(progress)
 }

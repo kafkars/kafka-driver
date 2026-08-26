@@ -90,7 +90,7 @@ impl Reactor {
     fn start_drain(&mut self, now: Moment) -> Result<(), ReactorError> {
         self.close_admission();
         if let Some(resolution) = self.resolution.take() {
-            self.resolver_shutdown = Some(resolution.begin_shutdown());
+            self.resolver_shutdown = Some(resolution.begin_shutdown(now));
         }
         if let Some(cluster) = self.backend.cluster_mut() {
             cluster.release_scram_proof_sender();
@@ -99,7 +99,7 @@ impl Reactor {
             direct.release_scram_proof_sender();
         }
         if let Some(worker) = self.scram_proof.take() {
-            self.scram_proof_shutdown = Some(worker.begin_shutdown());
+            self.scram_proof_shutdown = Some(worker.begin_shutdown(now));
         }
         self.scram_proof_outcomes.clear();
         if let Some(metadata) = &mut self.metadata {

@@ -101,8 +101,13 @@ impl NameResolution {
         (resolution, requests, outcomes)
     }
 
-    pub(super) fn begin_shutdown(self) -> ResolverShutdown {
-        self.resolver.begin_shutdown()
+    pub(super) fn begin_shutdown(self, now: Moment) -> ResolverShutdown {
+        self.resolver.begin_shutdown(now)
+    }
+
+    #[cfg(test)]
+    pub(super) fn install_worker_for_test(&mut self, worker: std::thread::JoinHandle<()>) {
+        self.resolver.install_worker_for_test(worker);
     }
 
     pub(super) fn drive(

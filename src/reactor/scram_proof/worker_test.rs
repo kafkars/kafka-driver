@@ -7,7 +7,12 @@ use std::{
     time::Duration,
 };
 
-use crate::{ScramProofLimits, reactor::wake_fixture_test::WakeFixture};
+use kafka_driver_core::Moment;
+
+use crate::{
+    ScramProofLimits,
+    reactor::{wake_fixture_test::WakeFixture, worker_shutdown::WorkerShutdownPoll},
+};
 
 use super::{
     ScramProofShutdown, ScramProofWorker,
@@ -84,7 +89,40 @@ fn dropping_live_proof_owner_detaches_an_unfinished_worker() {
 fn dropping_proof_shutdown_detaches_an_unfinished_worker() {
     let (release, exited, worker) = blocked_worker();
 
-    assert_drop_returns(ScramProofShutdown::from_worker(worker), &release, &exited);
+    assert_drop_returns(
+        ScramProofShutdown::from_worker(worker, Moment::ORIGIN),
+        &release,
+        &exited,
+    );
+}
+
+#[test]
+fn shutdown_abandons_a_blocked_proof_worker_at_the_grace_deadline() {
+    let (release, exited, worker) = blocked_worker();
+    let mut shutdown = ScramProofShutdown::from_worker(worker, Moment::ORIGIN);
+
+    assert_eq!(
+        shutdown
+            .poll_complete(Moment::ORIGIN)
+            .unwrap_or_else(|error| panic!("poll live proof shutdown: {error}")),
+        WorkerShutdownPoll::Pending
+    );
+    assert_eq!(
+        shutdown
+            .poll_complete(shutdown.deadline())
+            .unwrap_or_else(|error| panic!("abandon blocked proof worker: {error}")),
+        WorkerShutdownPoll::Abandoned
+    );
+    assert_eq!(
+        shutdown
+            .poll_complete(shutdown.deadline())
+            .unwrap_or_else(|error| panic!("re-poll abandoned proof worker: {error}")),
+        WorkerShutdownPoll::Complete
+    );
+    release
+        .send(())
+        .unwrap_or_else(|error| panic!("release abandoned proof worker: {error}"));
+    assert_eq!(exited.recv_timeout(Duration::from_secs(1)), Ok(()));
 }
 
 fn blocked_worker() -> (Sender<()>, Receiver<()>, thread::JoinHandle<()>) {

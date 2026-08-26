@@ -72,6 +72,16 @@ impl Reactor {
                     .then(|| now.checked_add(WORKER_SHUTDOWN_OBSERVATION_INTERVAL))
                     .flatten(),
             )
+            .chain(
+                self.resolver_shutdown
+                    .as_ref()
+                    .map(super::super::resolver::ResolverShutdown::deadline),
+            )
+            .chain(
+                self.scram_proof_shutdown
+                    .as_ref()
+                    .map(super::super::scram_proof::ScramProofShutdown::deadline),
+            )
             .min()
     }
 

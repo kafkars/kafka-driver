@@ -16,6 +16,7 @@ use crate::{
     api::CallIds,
     config::{DirectBrokerConfig, DriverTarget},
     observation::Observation,
+    reactor::worker_shutdown::WorkerShutdownPoll,
 };
 
 use super::Reactor;
@@ -133,9 +134,9 @@ fn finish_worker_shutdown(reactor: &mut Reactor) {
             .scram_proof_shutdown
             .as_mut()
             .unwrap_or_else(|| panic!("Direct proof shutdown owner missing"))
-            .poll_complete()
+            .poll_complete(NOW)
             .unwrap_or_else(|error| panic!("poll Direct proof shutdown: {error}"));
-        if stopped {
+        if stopped != WorkerShutdownPoll::Pending {
             reactor.scram_proof_shutdown = None;
             return;
         }
