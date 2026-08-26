@@ -36,6 +36,37 @@ pub(crate) enum BrokerStep {
     CloseNotifyObserved,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TerminalScript {
+    CloseNotifyAfterOne,
+    TruncateAfterOne,
+    TruncateAfterTwo,
+    PartialAfterOne,
+}
+
+impl TerminalScript {
+    pub(crate) const fn generation_one_calls(self) -> usize {
+        match self {
+            Self::TruncateAfterTwo => 3,
+            Self::CloseNotifyAfterOne | Self::TruncateAfterOne | Self::PartialAfterOne => 2,
+        }
+    }
+
+    pub(crate) const fn complete_responses(self) -> usize {
+        match self {
+            Self::TruncateAfterTwo => 2,
+            Self::CloseNotifyAfterOne | Self::TruncateAfterOne | Self::PartialAfterOne => 1,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TerminalStep {
+    GenerationOneClosed,
+    GenerationTwoNegotiated,
+    ProbeResponded,
+}
+
 pub(crate) struct TlsBroker {
     pub(super) listener: TcpListener,
     client: Arc<ClientConfig>,
@@ -116,6 +147,20 @@ impl TlsBroker {
         self,
     ) -> (mpsc::Receiver<BrokerStep>, thread::JoinHandle<()>) {
         self.spawn_with(Self::serve_two_calls_before_truncation)
+    }
+
+    pub(crate) fn spawn_terminal_ordering(
+        self,
+        script: TerminalScript,
+    ) -> (
+        mpsc::Receiver<TerminalStep>,
+        mpsc::SyncSender<()>,
+        thread::JoinHandle<()>,
+    ) {
+        let (sender, receiver) = mpsc::channel();
+        let (release, released) = mpsc::sync_channel(1);
+        let owner = thread::spawn(move || self.serve_terminal_ordering(script, &sender, &released));
+        (receiver, release, owner)
     }
 
     pub(crate) fn spawn_observing_identity_rejection(

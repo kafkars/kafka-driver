@@ -10,7 +10,7 @@ use std::{
 use rustls::{ServerConnection, StreamOwned};
 
 use super::{
-    BrokerStep, TlsBroker,
+    BrokerStep, TerminalScript, TerminalStep, TlsBroker,
     codec::{call_response, negotiation_response, read_frame},
 };
 
@@ -68,6 +68,51 @@ impl TlsBroker {
             .sock
             .shutdown(Shutdown::Both)
             .unwrap_or_else(|error| panic!("truncate TLS broker after two responses: {error}"));
+    }
+
+    pub(super) fn serve_terminal_ordering(
+        self,
+        script: TerminalScript,
+        steps: &mpsc::Sender<TerminalStep>,
+        released: &mpsc::Receiver<()>,
+    ) {
+        let mut first = self.accept_stream();
+        Self::negotiate_generation(&mut first, 0);
+        let correlations = (0..script.generation_one_calls())
+            .map(|_| read_frame(&mut first))
+            .collect::<Vec<_>>();
+        let mut plaintext = correlations
+            .iter()
+            .take(script.complete_responses())
+            .flat_map(|correlation| call_response(*correlation))
+            .collect::<Vec<_>>();
+        if script == TerminalScript::PartialAfterOne {
+            let trailing = call_response(correlations[1]);
+            plaintext.extend_from_slice(&trailing[..6]);
+        }
+        write_frame(&mut first, &plaintext, "TLS terminal response prefix");
+        match script {
+            TerminalScript::CloseNotifyAfterOne => clean_close(&mut first),
+            TerminalScript::TruncateAfterOne
+            | TerminalScript::TruncateAfterTwo
+            | TerminalScript::PartialAfterOne => truncate(&first),
+        }
+        drop(first);
+        send_terminal_step(steps, TerminalStep::GenerationOneClosed);
+
+        let mut second = self.accept_stream();
+        Self::negotiate_generation(&mut second, 0);
+        send_terminal_step(steps, TerminalStep::GenerationTwoNegotiated);
+        let probe = read_frame(&mut second);
+        assert_eq!(
+            probe, 1,
+            "fresh recovery epoch must restart correlation ownership"
+        );
+        write_frame(&mut second, &call_response(probe), "TLS recovery probe");
+        send_terminal_step(steps, TerminalStep::ProbeResponded);
+        released
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap_or_else(|error| panic!("release TLS recovery generation: {error}"));
     }
 
     pub(super) fn serve_observing_close_notify(self, steps: &mpsc::Sender<BrokerStep>) {
@@ -143,6 +188,19 @@ impl TlsBroker {
         send_step(steps, BrokerStep::CallResponded);
     }
 
+    fn negotiate_generation(stream: &mut StreamOwned<ServerConnection, TcpStream>, expected: i32) {
+        let correlation = read_frame(stream);
+        assert_eq!(
+            correlation, expected,
+            "fresh TLS epoch must restart negotiation"
+        );
+        write_frame(
+            stream,
+            &negotiation_response(correlation),
+            "TLS generation negotiation response",
+        );
+    }
+
     fn accept_stream(&self) -> StreamOwned<ServerConnection, TcpStream> {
         let (socket, _) = self
             .listener
@@ -177,4 +235,36 @@ fn send_step(steps: &mpsc::Sender<BrokerStep>, step: BrokerStep) {
     steps
         .send(step)
         .unwrap_or_else(|error| panic!("report TLS broker step {step:?}: {error}"));
+}
+
+fn send_terminal_step(steps: &mpsc::Sender<TerminalStep>, step: TerminalStep) {
+    steps
+        .send(step)
+        .unwrap_or_else(|error| panic!("report TLS terminal step {step:?}: {error}"));
+}
+
+fn clean_close(stream: &mut StreamOwned<ServerConnection, TcpStream>) {
+    stream.conn.send_close_notify();
+    while stream.conn.wants_write() {
+        let written = stream
+            .conn
+            .write_tls(&mut stream.sock)
+            .unwrap_or_else(|error| panic!("write TLS close-notify: {error}"));
+        assert_ne!(written, 0, "TLS close-notify write must progress");
+    }
+    stream
+        .sock
+        .flush()
+        .unwrap_or_else(|error| panic!("flush TLS close-notify: {error}"));
+    stream
+        .sock
+        .shutdown(Shutdown::Write)
+        .unwrap_or_else(|error| panic!("close TLS broker write side: {error}"));
+}
+
+fn truncate(stream: &StreamOwned<ServerConnection, TcpStream>) {
+    stream
+        .sock
+        .shutdown(Shutdown::Both)
+        .unwrap_or_else(|error| panic!("truncate TLS broker socket: {error}"));
 }
