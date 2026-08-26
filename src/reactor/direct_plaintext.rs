@@ -34,6 +34,8 @@ mod endpoint_refresh_test;
 #[cfg(test)]
 mod endpoint_selection_test;
 mod failure_translation;
+#[cfg(test)]
+mod failure_translation_test;
 mod generation;
 mod invariant_failure;
 mod lane_construction;

@@ -103,7 +103,7 @@ fn accepted_plain_handshake_followed_by_eof_retries_as_transport_loss() {
         .unwrap_or_else(|error| panic!("queue call behind EOF PLAIN handshake: {error}"));
     drive_until_backoff(&mut owner, now, &mut causality);
 
-    let expected_reason = CloseReason::TransportLost(TransportFailure::Other);
+    let expected_reason = CloseReason::TransportLost(TransportFailure::Reset);
     assert!(call.try_result().is_none());
     assert_eq!(owner.lane.last_close_reason, Some(expected_reason));
     assert_empty_contexts(&owner);

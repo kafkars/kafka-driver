@@ -102,7 +102,8 @@ pub(super) fn close_reason(reason: BorneraCloseReason) -> CloseReason {
         BorneraCloseReason::Requested => CloseReason::Requested,
         BorneraCloseReason::ConnectFailed => CloseReason::OpenFailed(TransportFailure::Other),
         BorneraCloseReason::ConnectTimedOut => CloseReason::OpenFailed(TransportFailure::TimedOut),
-        BorneraCloseReason::TransportLost | BorneraCloseReason::DeadlineAfterPossibleSend => {
+        BorneraCloseReason::TransportLost => CloseReason::TransportLost(TransportFailure::Reset),
+        BorneraCloseReason::DeadlineAfterPossibleSend => {
             CloseReason::TransportLost(TransportFailure::Other)
         }
         BorneraCloseReason::UnexpectedReply => CloseReason::UnexpectedResponse,

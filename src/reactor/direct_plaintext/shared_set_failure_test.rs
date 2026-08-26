@@ -65,6 +65,8 @@ fn stale_lane_drain_does_not_short_circuit_peer_outcome_settlement() {
     assert!(first_seen && second_seen);
     assert_eq!(lanes[0].contexts.snapshot().published(), 1);
     assert_eq!(lanes[1].contexts.snapshot().published(), 1);
+    quiesce_selector(&mut connections, &mut lanes, &mut causality);
+    assert_eq!(second_call.try_result(), None);
     release_response(&second_control, "peer");
     let wait = Span::try_from(Duration::from_millis(100)).unwrap_or(Span::ZERO);
     assert_eq!(
@@ -73,6 +75,7 @@ fn stale_lane_drain_does_not_short_circuit_peer_outcome_settlement() {
             .unwrap_or_else(|error| panic!("poll written peer response: {error}")),
         WaitOutcome::Notified
     );
+    assert_eq!(second_call.try_result(), None);
     release_response(&first_control, "stale");
 
     let first_connection = lanes[0].connection_for_test();
@@ -134,6 +137,26 @@ fn release_response(control: &ResponseControl, name: &str) {
         .response_written
         .recv()
         .unwrap_or_else(|error| panic!("await {name} lane response: {error}"));
+}
+
+fn quiesce_selector(
+    connections: &mut DirectSetOwner<TcpTransport>,
+    lanes: &mut [DirectLane<TcpTransport>],
+    causality: &mut CausalSequence,
+) {
+    for _ in 0..64 {
+        drive(connections, lanes, causality);
+        if connections.has_local_work(lanes) {
+            continue;
+        }
+        let outcome = connections
+            .wait(lanes, Span::ZERO)
+            .unwrap_or_else(|error| panic!("poll residual shared-set readiness: {error}"));
+        if outcome == WaitOutcome::Idle {
+            return;
+        }
+    }
+    panic!("shared selector retained readiness before response release");
 }
 
 fn assert_clean_peer(connections: &DirectSetOwner<TcpTransport>, connection: ConnectionToken) {
