@@ -12,6 +12,7 @@ mod decoder_gate;
 mod drive;
 pub(in crate::reactor) mod endpoint_refresh;
 mod endpoint_refresh_completion;
+mod endpoint_refresh_routing;
 mod failure_translation;
 mod generation;
 mod invariant_failure;

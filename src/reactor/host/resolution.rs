@@ -14,7 +14,7 @@ use crate::{
     ResolverLimits,
     config::BootstrapConfig,
     reactor::{
-        ReactorError, WakeHandle,
+        WakeHandle,
         bootstrap::{BootstrapAction, BootstrapOwner},
         entropy::JitterEntropy,
         resolver::{
@@ -24,9 +24,8 @@ use crate::{
 };
 
 use super::{
-    Reactor,
     resolution_error::NameResolutionError,
-    resolution_progress::{BrokerDnsOutcome, ResolutionProgress, ResolutionTurn},
+    resolution_progress::{BrokerDnsOutcome, DirectDnsOutcome, ResolutionProgress},
 };
 
 pub(in crate::reactor::host) use permit::ResolutionPermit;
@@ -106,9 +105,10 @@ impl NameResolution {
         self.resolver.begin_shutdown()
     }
 
-    fn drive(
+    pub(super) fn drive(
         &mut self,
         broker_outcomes: &mut Vec<BrokerDnsOutcome>,
+        direct_outcomes: &mut Vec<DirectDnsOutcome>,
         now: Moment,
     ) -> Result<ResolutionProgress, NameResolutionError> {
         let restarted = self.restart_exhausted_bootstrap(now)?;
@@ -123,6 +123,9 @@ impl NameResolution {
             match owner {
                 ResolutionOwner::Broker(lane) => {
                     broker_outcomes.push(BrokerDnsOutcome { lane, outcome });
+                }
+                ResolutionOwner::Direct(owner) => {
+                    direct_outcomes.push(DirectDnsOutcome { owner, outcome });
                 }
                 ResolutionOwner::Bootstrap => {
                     self.last_bootstrap_dns_failure = outcome.result().as_ref().err().copied();
@@ -179,9 +182,10 @@ impl NameResolution {
     pub(super) fn drive_for_test(
         &mut self,
         broker_outcomes: &mut Vec<BrokerDnsOutcome>,
+        direct_outcomes: &mut Vec<DirectDnsOutcome>,
         now: Moment,
     ) -> Result<ResolutionProgress, NameResolutionError> {
-        self.drive(broker_outcomes, now)
+        self.drive(broker_outcomes, direct_outcomes, now)
     }
 
     pub(super) const fn next_deadline(&self) -> Option<Moment> {
@@ -190,51 +194,5 @@ impl NameResolution {
 
     pub(super) const fn last_bootstrap_dns_failure(&self) -> Option<kafka_driver_core::DnsFailure> {
         self.last_bootstrap_dns_failure
-    }
-}
-
-impl Reactor {
-    pub(super) fn continue_resolution(
-        &mut self,
-        now: Moment,
-    ) -> Result<ResolutionTurn, ReactorError> {
-        if self.backend.legacy().is_none() {
-            return Ok(ResolutionTurn::idle());
-        }
-        let scheduled = self.schedule_address_refreshes()?;
-        let Some(resolution) = &mut self.resolution else {
-            return Ok(ResolutionTurn::idle());
-        };
-        self.broker_dns_outcomes.clear();
-        let progress = resolution
-            .drive(&mut self.broker_dns_outcomes, now)
-            .map_err(|error| ReactorError::host(std::io::Error::other(error)))?;
-        let turn = ResolutionTurn {
-            made_progress: scheduled || progress.made_progress(),
-            more_work: progress.more_work,
-        };
-        let Some(legacy) = self.backend.legacy_mut() else {
-            return Ok(ResolutionTurn::idle());
-        };
-        if let Some(seed) = progress.broker {
-            if legacy.brokers.has_seed() {
-                legacy
-                    .brokers
-                    .replace_seed_endpoint(seed, &legacy.poller, now)
-                    .map_err(ReactorError::broker_set)?;
-            } else {
-                legacy
-                    .brokers
-                    .install_resolved_seed(seed, &legacy.poller, now)
-                    .map_err(ReactorError::broker_set)?;
-            }
-        }
-        for completed in self.broker_dns_outcomes.drain(..) {
-            legacy
-                .brokers
-                .complete_resolution(completed.lane, completed.outcome, &legacy.poller, now)
-                .map_err(ReactorError::broker_set)?;
-        }
-        Ok(turn)
     }
 }

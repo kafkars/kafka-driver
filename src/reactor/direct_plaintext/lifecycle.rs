@@ -98,7 +98,6 @@ impl DirectLifecycle {
         self.apply(input)
     }
 
-    #[allow(dead_code, reason = "used by the pending resolver-host cutover")]
     pub(super) fn begin_endpoint_refresh(
         &mut self,
         failed_epoch: ConnectionEpoch,
@@ -175,7 +174,6 @@ impl DirectLifecycle {
         }
     }
 
-    #[allow(dead_code, reason = "used by the pending resolver-host cutover")]
     pub(super) fn reserve_endpoint_refresh(
         &mut self,
         now: Moment,

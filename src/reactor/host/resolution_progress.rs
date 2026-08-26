@@ -2,10 +2,18 @@
 
 use kafka_driver_core::DnsOutcome;
 
-use crate::reactor::{bootstrap::ResolvedSeed, broker_set::BrokerLane};
+use crate::reactor::{
+    bootstrap::ResolvedSeed, broker_set::BrokerLane,
+    direct_plaintext::endpoint_refresh::DirectRefreshOwner,
+};
 
 pub(super) struct BrokerDnsOutcome {
     pub(super) lane: BrokerLane,
+    pub(super) outcome: DnsOutcome,
+}
+
+pub(super) struct DirectDnsOutcome {
+    pub(super) owner: DirectRefreshOwner,
     pub(super) outcome: DnsOutcome,
 }
 

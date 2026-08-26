@@ -18,10 +18,12 @@ use crate::{DriverLimits, config::BrokerAddresses};
 
 use super::super::{
     attempt::{DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner},
+    backend::DirectBackend,
     endpoint_refresh::DirectEndpointRefresh,
     lane_construction::start_lane,
     limits::DirectSetBounds,
     owner::{DirectLane, DirectSet},
+    runtime::DirectRuntime,
     session_plan::DirectSessionPlan,
     set_owner::DirectSetOwner,
 };
@@ -84,6 +86,35 @@ impl RefreshFixture {
             .lock()
             .unwrap_or_else(|error| panic!("read recorded addresses: {error}"))
             .clone()
+    }
+}
+
+impl DirectBackend {
+    pub(in crate::reactor) fn pending_plaintext_refresh_for_test(
+        endpoint_id: u64,
+        lane_id: u32,
+    ) -> Self {
+        let fixture = RefreshFixture::pending(endpoint_id, lane_id);
+        Self::Plaintext(Box::new(DirectRuntime {
+            connections: fixture.set,
+            lane: fixture.lane,
+        }))
+    }
+
+    pub(in crate::reactor) fn has_endpoint_refresh_for_test(&self) -> bool {
+        match self {
+            Self::Plaintext(runtime) => runtime.lane.endpoint_refresh.is_some(),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(runtime) => runtime.lane.endpoint_refresh.is_some(),
+        }
+    }
+
+    pub(in crate::reactor) fn broker_state_for_test(&self) -> BrokerState {
+        match self {
+            Self::Plaintext(runtime) => runtime.lane.lifecycle.state(),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls(runtime) => runtime.lane.lifecycle.state(),
+        }
     }
 }
 

@@ -4,12 +4,15 @@ use std::{collections::BTreeMap, fmt, num::NonZeroUsize};
 
 use kafka_driver_core::EffectId;
 
-use crate::reactor::broker_set::BrokerLane;
+use crate::reactor::{
+    broker_set::BrokerLane, direct_plaintext::endpoint_refresh::DirectRefreshOwner,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) enum ResolutionOwner {
     Bootstrap,
     Broker(BrokerLane),
+    Direct(DirectRefreshOwner),
 }
 
 pub(in crate::reactor) struct ResolverOwnership {

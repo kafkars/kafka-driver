@@ -1,10 +1,5 @@
 //! One-shot DNS ownership after a resolved address pass is exhausted.
 
-#![allow(
-    dead_code,
-    reason = "the resolver host consumes this seam in the next bounded cutover"
-)]
-
 use std::io;
 
 use bornera::RegisteredTransport;
@@ -26,14 +21,16 @@ pub(in crate::reactor) struct DirectRefreshOwner {
 }
 
 impl DirectRefreshOwner {
-    pub(super) const fn new(endpoint: EndpointId, lane: LaneId) -> Self {
+    pub(in crate::reactor) const fn new(endpoint: EndpointId, lane: LaneId) -> Self {
         Self { endpoint, lane }
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn endpoint(self) -> EndpointId {
         self.endpoint
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn lane(self) -> LaneId {
         self.lane
     }
@@ -115,6 +112,14 @@ pub(super) fn failed_endpoint(
 }
 
 impl<T: RegisteredTransport> DirectLane<T> {
+    pub(in crate::reactor) const fn refresh_owner(&self) -> DirectRefreshOwner {
+        self.connection_owner.refresh_owner()
+    }
+
+    pub(in crate::reactor) fn pending_endpoint_refresh_owner(&self) -> Option<DirectRefreshOwner> {
+        self.endpoint_refresh_needed().then(|| self.refresh_owner())
+    }
+
     pub(in crate::reactor) fn endpoint_refresh_needed(&self) -> bool {
         matches!(
             (self.endpoint_refresh.as_ref(), self.lifecycle.state()),

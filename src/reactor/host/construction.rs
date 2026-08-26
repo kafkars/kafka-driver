@@ -49,6 +49,7 @@ impl Reactor {
             resolution: construction.resolution,
             resolver_shutdown: None,
             broker_dns_outcomes: Vec::with_capacity(limits.resolver().outcome_budget().get()),
+            direct_dns_outcomes: Vec::with_capacity(limits.resolver().outcome_budget().get()),
             scram_proof: construction.scram_proof,
             scram_proof_shutdown: None,
             scram_proof_outcomes: Vec::with_capacity(limits.scram_proof().outcome_budget().get()),

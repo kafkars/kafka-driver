@@ -4,6 +4,9 @@ use super::{Reactor, ReactorError};
 
 impl Reactor {
     pub(super) fn schedule_address_refreshes(&mut self) -> Result<bool, ReactorError> {
+        if self.backend.direct().is_some() {
+            return self.schedule_direct_address_refresh();
+        }
         let Some(legacy) = self.backend.legacy_mut() else {
             return Ok(false);
         };

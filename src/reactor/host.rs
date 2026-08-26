@@ -8,6 +8,7 @@ mod construction;
 mod coordinator;
 mod coordinator_routing;
 mod debug;
+mod direct_address_refresh;
 mod invalidation;
 mod metadata;
 mod observation;
@@ -15,6 +16,7 @@ mod outcome;
 mod resolution;
 mod resolution_error;
 mod resolution_progress;
+mod resolution_turn;
 mod routing;
 mod scram_proof;
 #[cfg(test)]
@@ -24,6 +26,8 @@ mod submission;
 mod topic_view;
 mod turn;
 
+#[cfg(test)]
+mod direct_address_refresh_test;
 #[cfg(test)]
 mod resolution_test;
 #[cfg(test)]
@@ -59,7 +63,7 @@ use super::{
 };
 
 use resolution::NameResolution;
-use resolution_progress::BrokerDnsOutcome;
+use resolution_progress::{BrokerDnsOutcome, DirectDnsOutcome};
 use state::HostState;
 
 pub use outcome::TurnOutcome;
@@ -73,6 +77,7 @@ pub struct Reactor {
     resolution: Option<NameResolution>,
     resolver_shutdown: Option<ResolverShutdown>,
     broker_dns_outcomes: Vec<BrokerDnsOutcome>,
+    direct_dns_outcomes: Vec<DirectDnsOutcome>,
     scram_proof: Option<ScramProofWorker>,
     scram_proof_shutdown: Option<super::scram_proof::ScramProofShutdown>,
     scram_proof_outcomes: Vec<ScramProofOutcome>,

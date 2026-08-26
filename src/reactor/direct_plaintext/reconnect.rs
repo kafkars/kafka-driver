@@ -164,7 +164,6 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         self.fail_pending(&failure, causality)
     }
 
-    #[allow(dead_code, reason = "used by the pending resolver-host cutover")]
     pub(super) fn settle_refresh_policy_close(
         &mut self,
         causality: &mut CausalSequence,

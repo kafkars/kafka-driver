@@ -2,9 +2,13 @@
 
 use std::num::NonZeroUsize;
 
+use bornera_core::{EndpointId, LaneId};
 use kafka_driver_core::{BrokerId, EffectId};
 
-use crate::{TrafficClass, reactor::broker_set::BrokerLane};
+use crate::{
+    TrafficClass,
+    reactor::{broker_set::BrokerLane, direct_plaintext::endpoint_refresh::DirectRefreshOwner},
+};
 
 use super::{ResolutionOwner, ResolverOwnership, ResolverOwnershipError};
 
@@ -40,6 +44,19 @@ fn completion_returns_the_exact_owner_and_releases_capacity() {
             .register(EffectId::from_raw(2), ResolutionOwner::Bootstrap)
             .is_ok()
     );
+}
+
+#[test]
+fn direct_completion_returns_the_stable_endpoint_and_lane_owner() {
+    let mut ownership = ResolverOwnership::new(nonzero(1));
+    let owner =
+        ResolutionOwner::Direct(DirectRefreshOwner::new(EndpointId::new(31), LaneId::new(7)));
+    ownership
+        .register(EffectId::from_raw(9), owner)
+        .unwrap_or_else(|error| panic!("Direct owner must fit: {error}"));
+
+    assert_eq!(ownership.remove(EffectId::from_raw(9)), Some(owner));
+    assert_eq!(ownership.remove(EffectId::from_raw(9)), None);
 }
 
 fn broker_id(raw: i32) -> BrokerId {

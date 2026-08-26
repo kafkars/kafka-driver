@@ -4,6 +4,7 @@ use kafka_driver_core::EffectId;
 
 use crate::reactor::{
     broker_set::BrokerLane,
+    direct_plaintext::endpoint_refresh::DirectRefreshOwner,
     resolver::{ResolutionOwner, ResolverOwnershipError},
 };
 
@@ -36,6 +37,13 @@ impl NameResolution {
         lane: BrokerLane,
     ) -> Result<Option<ResolutionPermit>, NameResolutionError> {
         self.try_reserve(ResolutionOwner::Broker(lane))
+    }
+
+    pub(in crate::reactor::host) fn try_reserve_direct(
+        &mut self,
+        owner: DirectRefreshOwner,
+    ) -> Result<Option<ResolutionPermit>, NameResolutionError> {
+        self.try_reserve(ResolutionOwner::Direct(owner))
     }
 
     pub(in crate::reactor::host) const fn capacity(&self) -> usize {

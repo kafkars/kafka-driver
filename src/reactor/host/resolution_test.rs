@@ -2,6 +2,7 @@
 
 use std::num::{NonZeroU16, NonZeroUsize};
 
+use bornera_core::{EndpointId, LaneId};
 use kafka_driver_core::{
     BootstrapSet, BrokerEndpoint, BrokerId, ConnectionEpoch, DnsFailure, DnsOutcome, DnsRequest,
     EffectId, HostName, Moment,
@@ -12,6 +13,7 @@ use crate::{
     config::BootstrapConfig,
     reactor::{
         broker_set::BrokerLane,
+        direct_plaintext::endpoint_refresh::DirectRefreshOwner,
         resolver::{ResolverSubmitError, ResolverWorkerError},
     },
 };
@@ -51,8 +53,9 @@ fn full_worker_queue_preserves_broker_resolution_until_capacity_returns() {
         .unwrap_or_else(|error| panic!("initial bootstrap request: {error}"));
     assert_ne!(bootstrap_request.effect_id(), broker_request.effect_id());
     let mut broker_outcomes = Vec::new();
+    let mut direct_outcomes = Vec::new();
     let progress = resolution
-        .drive_for_test(&mut broker_outcomes, Moment::ORIGIN)
+        .drive_for_test(&mut broker_outcomes, &mut direct_outcomes, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("retry saturated resolution: {error}"));
     assert_eq!(progress.submissions, 1);
     assert_eq!(requests.try_recv(), Ok(broker_request.clone()));
@@ -66,11 +69,57 @@ fn full_worker_queue_preserves_broker_resolution_until_capacity_returns() {
         .send(outcome.clone())
         .unwrap_or_else(|error| panic!("queue broker DNS outcome: {error}"));
     resolution
-        .drive_for_test(&mut broker_outcomes, Moment::ORIGIN)
+        .drive_for_test(&mut broker_outcomes, &mut direct_outcomes, Moment::ORIGIN)
         .unwrap_or_else(|error| panic!("complete retained resolution: {error}"));
     assert_eq!(broker_outcomes.len(), 1);
     assert_eq!(broker_outcomes[0].lane, lane);
     assert_eq!(broker_outcomes[0].outcome, outcome);
+    assert!(direct_outcomes.is_empty());
+}
+
+#[test]
+fn full_worker_queue_retains_and_dispatches_one_exact_direct_resolution() {
+    let limits = resolver_limits();
+    let (mut resolution, requests, outcomes) = NameResolution::isolated(bootstrap(), limits);
+    let owner = direct_owner();
+    let permit = resolution
+        .try_reserve_direct(owner)
+        .unwrap_or_else(|error| panic!("reserve Direct DNS ownership: {error}"))
+        .unwrap_or_else(|| panic!("Direct DNS ownership must fit"));
+    let direct_request =
+        DnsRequest::new(ConnectionEpoch::from_raw(4), permit.effect_id(), endpoint());
+    resolution
+        .submit(permit, direct_request.clone())
+        .unwrap_or_else(|error| panic!("retain saturated Direct DNS: {error}"));
+    let _bootstrap_request = requests
+        .try_recv()
+        .unwrap_or_else(|error| panic!("initial bootstrap request: {error}"));
+    let mut broker_outcomes = Vec::new();
+    let mut direct_outcomes = Vec::new();
+
+    let retried = resolution
+        .drive_for_test(&mut broker_outcomes, &mut direct_outcomes, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("retry Direct DNS submission: {error}"));
+
+    assert_eq!(retried.submissions, 1);
+    assert_eq!(requests.try_recv(), Ok(direct_request.clone()));
+    assert!(requests.try_recv().is_err());
+    let outcome = DnsOutcome::new(
+        direct_request.epoch(),
+        direct_request.effect_id(),
+        Err(DnsFailure::Temporary),
+    );
+    outcomes
+        .send(outcome.clone())
+        .unwrap_or_else(|error| panic!("queue Direct DNS outcome: {error}"));
+    resolution
+        .drive_for_test(&mut broker_outcomes, &mut direct_outcomes, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("dispatch Direct DNS outcome: {error}"));
+
+    assert!(broker_outcomes.is_empty());
+    assert_eq!(direct_outcomes.len(), 1);
+    assert_eq!(direct_outcomes[0].owner, owner);
+    assert_eq!(direct_outcomes[0].outcome, outcome);
 }
 
 #[test]
@@ -86,8 +135,10 @@ fn closed_worker_is_host_failure_without_discarding_the_pending_request() {
     assert!(resolution.submit(permit, broker_request.clone()).is_ok());
     drop(requests);
     let mut broker_outcomes = Vec::new();
+    let mut direct_outcomes = Vec::new();
 
-    let failure = resolution.drive_for_test(&mut broker_outcomes, Moment::ORIGIN);
+    let failure =
+        resolution.drive_for_test(&mut broker_outcomes, &mut direct_outcomes, Moment::ORIGIN);
 
     assert!(matches!(
         failure,
@@ -95,6 +146,7 @@ fn closed_worker_is_host_failure_without_discarding_the_pending_request() {
             if request == broker_request
     ));
     assert!(broker_outcomes.is_empty());
+    assert!(direct_outcomes.is_empty());
 }
 
 #[test]
@@ -110,14 +162,17 @@ fn lost_worker_outcome_channel_is_host_fatal_with_owned_dns_in_flight() {
     assert!(resolution.submit(permit, broker_request).is_ok());
     drop(outcomes);
     let mut broker_outcomes = Vec::new();
+    let mut direct_outcomes = Vec::new();
 
-    let failure = resolution.drive_for_test(&mut broker_outcomes, Moment::ORIGIN);
+    let failure =
+        resolution.drive_for_test(&mut broker_outcomes, &mut direct_outcomes, Moment::ORIGIN);
 
     assert!(matches!(
         failure,
         Err(NameResolutionError::Worker(ResolverWorkerError::Lost))
     ));
     assert!(broker_outcomes.is_empty());
+    assert!(direct_outcomes.is_empty());
 }
 
 fn bootstrap() -> BootstrapConfig {
@@ -147,6 +202,10 @@ fn endpoint() -> BrokerEndpoint {
 fn lane() -> BrokerLane {
     let broker_id = BrokerId::new(7).unwrap_or_else(|error| panic!("valid broker ID: {error}"));
     BrokerLane::new(broker_id, TrafficClass::Interactive)
+}
+
+fn direct_owner() -> DirectRefreshOwner {
+    DirectRefreshOwner::new(EndpointId::new(41), LaneId::new(3))
 }
 
 const fn port() -> NonZeroU16 {

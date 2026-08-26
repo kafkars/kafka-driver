@@ -1,10 +1,5 @@
 //! DNS policy transitions for a suspended Direct reconnect.
 
-#![allow(
-    dead_code,
-    reason = "the resolver host consumes this seam in the next bounded cutover"
-)]
-
 use std::io;
 
 use kafka_driver_core::{BrokerEffect, BrokerInput, DnsFailure, Moment};
