@@ -1,40 +1,29 @@
-//! Transport-specific connection acquisition with shared semantic-owner initialization.
+//! Persistent set construction with the first replayable connection attempt.
 
 use std::{io, net::SocketAddr};
 
 use bornera::{
-    ConnectionConfig, ConnectionIdentity, ConnectionSet, ConnectionSetConfig, ConnectionToken,
-    RegisteredTransport, TcpTransport, TransportLimits,
+    ConnectionSet, ConnectionSetConfig, ConnectionToken, RegisteredTransport, TcpTransport,
 };
-use bornera_core::{ConnectionEpoch, ConnectionId, EndpointId, LaneId};
-use calandria::{Deadline, ResourceOwnerId, RetainedBytes, TimerOwnerId, Turn};
-use kafka_driver_core::{AuthenticationPolicy, KafkaSessionLimits, KafkaSessionMachine, Moment};
-use kafka_wire::{KafkaRequest, SaslAuthenticateRequest, SaslHandshakeRequest};
+use bornera_core::ConnectionEpoch;
+use calandria::{ResourceOwnerId, RetainedBytes, Turn};
+use kafka_driver_core::Moment;
 use kafka_wire_core::DecodeLimits;
 
-#[cfg(feature = "tls-rustls")]
-use bornera_rustls::RustlsConnector;
-
 use crate::{
-    authentication::AuthenticationSession,
     config::{ClientId, DriverLimits, SaslConfig},
-    reactor::{
-        bornera::{KafkaReplyClassifier, OperationContexts},
-        broker::BrokerLimits,
-    },
+    reactor::{bornera::OperationContexts, broker::BrokerLimits},
 };
 
 #[cfg(feature = "tls-rustls")]
-use super::decoder_gate::DecoderGate;
-#[cfg(feature = "tls-rustls")]
-use super::limits::rustls_transport_limits;
-#[cfg(feature = "tls-rustls")]
-use super::rustls_transport::{DirectRustlsConnector, DirectRustlsTransport};
+use super::{attempt::RustlsAttempt, rustls_transport::DirectRustlsTransport};
 use super::{
-    limits::{set_limits, slot_limits},
+    attempt::{DirectConnectionAttempt, PlaintextAttempt},
+    limits::set_limits,
     operation_owner::DirectOperationContext,
-    owner::{DirectOwner, DirectSet, ID, calandria_moment, message},
+    owner::{DirectOwner, DirectSet, ID, message},
     pending::PendingRequests,
+    session_plan::{DirectSessionOwnership, DirectSessionPlan},
 };
 
 impl DirectOwner<TcpTransport> {
@@ -46,23 +35,24 @@ impl DirectOwner<TcpTransport> {
         now: Moment,
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
-        let session = session_ownership(sasl, broker)?;
-        let (decoder, slot) = slot_limits(
+        let session_plan = DirectSessionPlan::new(sasl, broker);
+        let session = session_plan.start()?;
+        let connection_attempt: Box<dyn DirectConnectionAttempt<TcpTransport>> =
+            Box::new(PlaintextAttempt::new(driver, broker, address));
+        let mut set = new_set(driver)?;
+        let connection = connection_attempt.connect(&mut set, ConnectionEpoch::new(ID), now)?;
+        finish(
             driver,
             broker,
-            TransportLimits::new(RetainedBytes::ZERO),
-            None,
-        )?;
-        let mut set = new_set(driver)?;
-        let connection = set
-            .connect(
-                connection_config(address, now, broker)?,
-                slot,
-                decoder,
-                KafkaReplyClassifier,
-            )
-            .map_err(message)?;
-        finish(driver, broker, client_id, session, set, connection)
+            client_id,
+            InitialDirect {
+                session_plan,
+                session,
+                set,
+                connection_attempt,
+                connection,
+            },
+        )
     }
 }
 
@@ -77,30 +67,24 @@ impl DirectOwner<DirectRustlsTransport> {
         now: Moment,
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
-        let session = session_ownership(sasl, broker)?;
-        let transport = rustls_transport_limits()?;
-        let decoder_gate = DecoderGate::new();
-        let (decoder, slot) = slot_limits(
+        let session_plan = DirectSessionPlan::new(sasl, broker);
+        let session = session_plan.start()?;
+        let connection_attempt: Box<dyn DirectConnectionAttempt<DirectRustlsTransport>> =
+            Box::new(RustlsAttempt::new(driver, broker, address, tls));
+        let mut set = new_set(driver)?;
+        let connection = connection_attempt.connect(&mut set, ConnectionEpoch::new(ID), now)?;
+        finish(
             driver,
             broker,
-            transport.transport_limits(),
-            Some(decoder_gate.clone()),
-        )?;
-        let connector = DirectRustlsConnector::new(
-            RustlsConnector::new(tls.into_bornera(transport)),
-            decoder_gate,
-        );
-        let mut set = new_set(driver)?;
-        let connection = set
-            .connect_with(
-                connection_config(address, now, broker)?,
-                slot,
-                decoder,
-                KafkaReplyClassifier,
-                connector,
-            )
-            .map_err(message)?;
-        finish(driver, broker, client_id, session, set, connection)
+            client_id,
+            InitialDirect {
+                session_plan,
+                session,
+                set,
+                connection_attempt,
+                connection,
+            },
+        )
     }
 }
 
@@ -112,42 +96,34 @@ fn new_set<T: RegisteredTransport>(driver: &DriverLimits) -> io::Result<DirectSe
     .map_err(message)
 }
 
-fn connection_config(
-    address: SocketAddr,
-    now: Moment,
-    broker: BrokerLimits,
-) -> io::Result<ConnectionConfig> {
-    let connect_deadline = now
-        .checked_add(broker.connect_timeout())
-        .ok_or_else(|| io::Error::other("direct connect deadline overflowed"))?;
-    let lane =
-        u32::try_from(ID).map_err(|_| io::Error::other("direct lane identity exceeds u32"))?;
-    Ok(ConnectionConfig::new(
-        ConnectionIdentity::new(
-            EndpointId::new(ID),
-            LaneId::new(lane),
-            ConnectionId::new(ID),
-            ConnectionEpoch::new(ID),
-        ),
-        address,
-        Deadline::at(calandria_moment(connect_deadline)),
-        TimerOwnerId::new(ID),
-    ))
+struct InitialDirect<T: RegisteredTransport> {
+    session_plan: DirectSessionPlan,
+    session: DirectSessionOwnership,
+    set: DirectSet<T>,
+    connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
+    connection: ConnectionToken,
 }
 
 fn finish<T: RegisteredTransport>(
     driver: &DriverLimits,
     broker: BrokerLimits,
     client_id: Option<ClientId>,
-    session: SessionOwnership,
-    set: DirectSet<T>,
-    connection: ConnectionToken,
+    initial: InitialDirect<T>,
 ) -> io::Result<DirectOwner<T>> {
+    let InitialDirect {
+        session_plan,
+        session,
+        set,
+        connection_attempt,
+        connection,
+    } = initial;
     let retained =
         RetainedBytes::try_from(driver.mailbox_byte_capacity().get()).map_err(message)?;
     Ok(DirectOwner {
         set,
+        connection_attempt,
         connection,
+        session_plan,
         session: session.machine,
         authentication_session: session.authentication,
         scram_proof_sender: None,
@@ -176,37 +152,5 @@ fn finish<T: RegisteredTransport>(
         admission_open: false,
         terminal: false,
         pending_recovery: None,
-    })
-}
-
-struct SessionOwnership {
-    machine: KafkaSessionMachine,
-    authentication: Option<AuthenticationSession>,
-}
-
-fn session_ownership(
-    sasl: Option<SaslConfig>,
-    broker: BrokerLimits,
-) -> io::Result<SessionOwnership> {
-    let Some(sasl) = sasl else {
-        return Ok(SessionOwnership {
-            machine: KafkaSessionMachine::new(KafkaSessionLimits::default()),
-            authentication: None,
-        });
-    };
-    let policy = AuthenticationPolicy::new(
-        sasl.mechanism(),
-        SaslHandshakeRequest::API_KEY,
-        SaslAuthenticateRequest::API_KEY,
-        broker.authentication(),
-    );
-    let authentication = AuthenticationSession::new(sasl).map_err(|error| {
-        io::Error::other(format!(
-            "direct authentication session could not start: {error:?}"
-        ))
-    })?;
-    Ok(SessionOwnership {
-        machine: KafkaSessionMachine::new_authenticated(KafkaSessionLimits::default(), policy),
-        authentication: Some(authentication),
     })
 }

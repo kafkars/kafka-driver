@@ -1,6 +1,7 @@
 //! Direct numeric broker ownership on one Bornera selector.
 
 mod admission;
+mod attempt;
 mod authentication_admission;
 mod authentication_publication;
 mod authentication_reserve;
@@ -23,9 +24,12 @@ mod recovery_settlement;
 mod rustls_transport;
 mod scram_proof;
 mod session_close;
+mod session_plan;
 mod session_progress;
 mod settlement;
 
+#[cfg(test)]
+mod attempt_test;
 #[cfg(test)]
 mod authentication_fixture_test;
 #[cfg(test)]
@@ -41,6 +45,8 @@ mod owner_test;
 mod pending_test;
 #[cfg(test)]
 mod recovery_test;
+#[cfg(all(test, feature = "tls-rustls"))]
+mod rustls_attempt_test;
 #[cfg(test)]
 pub(in crate::reactor) mod scram_fixture_test;
 #[cfg(test)]
