@@ -2,9 +2,9 @@
 
 use std::{io, net::SocketAddr};
 
-use bornera::{
-    ConnectionSet, ConnectionSetConfig, ConnectionToken, OwnerFailure, RegisteredTransport,
-};
+#[cfg(test)]
+use bornera::OwnerFailure;
+use bornera::{ConnectionSet, ConnectionSetConfig, ConnectionToken, RegisteredTransport};
 use bornera_core::ConnectionEpoch;
 use calandria::{ResourceOwnerId, Turn};
 use kafka_driver_core::Moment;
@@ -81,7 +81,7 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
         Ok(())
     }
 
-    /// Abandons a connection created by a lane that never became observable.
+    #[cfg(test)]
     pub(super) fn abandon_unpublished(&mut self, connection: ConnectionToken) -> io::Result<()> {
         let report = self
             .set

@@ -27,6 +27,7 @@ use super::{
 
 pub(super) mod backend;
 pub(super) mod family;
+mod family_removal;
 pub(super) mod seed;
 mod seed_waiting;
 mod seed_waiting_settlement;
@@ -43,7 +44,7 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     identities: BorneraIdentityAllocator,
     lanes: Vec<DirectLane<T>>,
     slots: BTreeMap<DirectRefreshOwner, usize>,
-    families: BTreeMap<BrokerId, [DirectRefreshOwner; TrafficClass::COUNT]>,
+    families: BTreeMap<BrokerId, family::BrokerFamily>,
     seed: Option<SeedSlot>,
     seed_waiting: PendingRequests,
     seed_waiting_state: seed_waiting_settlement::SeedWaitingState,
@@ -109,7 +110,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
                 "Bornera cluster seed can only change through replacement",
             ));
         }
-        if self.families.values().any(|family| family.contains(&owner)) {
+        if self.families.values().any(|family| family.contains(owner)) {
             return Err(io::Error::other(
                 "Bornera broker-family lanes must be removed together",
             ));
