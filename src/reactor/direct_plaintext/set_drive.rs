@@ -8,10 +8,7 @@ use kafka_driver_core::Moment;
 
 use crate::reactor::causality::CausalSequence;
 
-use super::{
-    owner::{DirectLane, calandria_moment, message},
-    set_owner::DirectSetOwner,
-};
+use super::{owner::DirectLane, set_owner::DirectSetOwner};
 
 impl<T: RegisteredTransport> DirectSetOwner<T> {
     pub(super) fn drive(
@@ -102,10 +99,7 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
         {
             self.turns = self.turns.saturating_add(1);
         }
-        let turn = self
-            .set
-            .turn_component(calandria_moment(now))
-            .map_err(message)?;
+        let turn = self.drive_selector(now)?;
         let progress = turn.work().get() != 0;
         self.last_turn = turn;
         Ok(progress)

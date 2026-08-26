@@ -41,7 +41,7 @@ ring = "0.17.14"
 rustls = { version = "=0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
 sasl-scram = { version = "=0.0.1-rc.3", default-features = false, features = ["std", "sha256", "sha512", "saslprep"] }
 serde = { version = "1.0", features = ["derive"] }
-syn = { version = "2.0", features = ["full"] }
+syn = { version = "2.0", features = ["full", "visit"] }
 toml = "0.8"
 zeroize = "1.9"
 

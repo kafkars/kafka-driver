@@ -16,8 +16,8 @@ use crate::{
 use crate::reactor::direct_plaintext::{
     decoder_gate::DecoderGate,
     limits::{rustls_transport_limits, slot_limits},
-    owner::DirectSet,
     rustls_transport::{DirectRustlsConnector, DirectRustlsTransport},
+    set_owner::DirectSet,
 };
 
 pub(in crate::reactor::direct_plaintext) struct RustlsAttempt {

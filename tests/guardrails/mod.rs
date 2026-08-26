@@ -11,3 +11,4 @@ mod release_graph;
 mod release_metadata;
 mod support;
 mod test_location;
+mod transport_authority;

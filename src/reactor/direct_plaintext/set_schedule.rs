@@ -18,7 +18,7 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
         maximum: Span,
     ) -> io::Result<WaitOutcome> {
         self.ensure_lane_capacity(lanes.len())?;
-        match self.set.poll_io(maximum) {
+        match self.wait_selector(maximum) {
             Ok(outcome) => Ok(outcome),
             Err(error) => {
                 let primary = message(error);

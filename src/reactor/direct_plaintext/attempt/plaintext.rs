@@ -16,7 +16,7 @@ use crate::{
     reactor::{bornera::KafkaReplyClassifier, broker::BrokerLimits},
 };
 
-use crate::reactor::direct_plaintext::{limits::slot_limits, owner::DirectSet};
+use crate::reactor::direct_plaintext::{limits::slot_limits, set_owner::DirectSet};
 
 pub(in crate::reactor::direct_plaintext) struct PlaintextAttempt {
     driver: DriverLimits,

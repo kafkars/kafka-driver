@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use bornera::{ConnectionSet, ConnectionToken, RegisteredTransport};
+use bornera::{ConnectionToken, RegisteredTransport};
 use kafka_driver_core::{CallFailure, Delivery, KafkaSessionMachine, Moment};
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::DecodeLimits;
@@ -19,18 +19,20 @@ use crate::{
 };
 
 use super::{operation_owner::DirectOperationContext, pending::PendingRequests};
-use crate::reactor::bornera::{KafkaFrame, KafkaReplyClassifier, OperationContexts};
+use crate::reactor::bornera::{KafkaFrame, OperationContexts};
 
 use super::{
     attempt::{BorneraLaneOwner, DirectConnectionAttempt},
-    decoder_gate::DirectFrameDecoder,
     lane_plan::KafkaSessionPlan,
     lifecycle::DirectLifecycle,
 };
 
-use super::endpoint_refresh::DirectEndpointRefresh;
+#[cfg(not(test))]
+use super::set_owner::DirectSet;
+#[cfg(test)]
+pub(super) use super::set_owner::DirectSet;
 
-pub(super) type DirectSet<T> = ConnectionSet<DirectFrameDecoder, KafkaReplyClassifier, T>;
+use super::endpoint_refresh::DirectEndpointRefresh;
 
 pub(super) const INITIAL_EPOCH: u64 = 1;
 pub(super) const SET_OWNER_ID: u64 = 1;

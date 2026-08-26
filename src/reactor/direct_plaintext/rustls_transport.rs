@@ -141,7 +141,7 @@ impl Source for DirectRustlsTransport {
         token: Token,
         interests: mio::Interest,
     ) -> io::Result<()> {
-        self.inner.register(registry, token, interests)
+        Source::register(&mut self.inner, registry, token, interests)
     }
 
     fn reregister(
@@ -150,11 +150,11 @@ impl Source for DirectRustlsTransport {
         token: Token,
         interests: mio::Interest,
     ) -> io::Result<()> {
-        self.inner.reregister(registry, token, interests)
+        Source::reregister(&mut self.inner, registry, token, interests)
     }
 
     fn deregister(&mut self, registry: &Registry) -> io::Result<()> {
-        self.inner.deregister(registry)
+        Source::deregister(&mut self.inner, registry)
     }
 }
 

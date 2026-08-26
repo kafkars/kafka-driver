@@ -15,7 +15,7 @@ use bornera_core::ConnectionEpoch;
 use calandria::Deadline;
 use kafka_driver_core::Moment;
 
-use super::owner::{DirectSet, calandria_moment};
+use super::{owner::calandria_moment, set_owner::DirectSet};
 use crate::reactor::broker::BrokerLimits;
 
 pub(super) use crate::reactor::bornera::BorneraLaneOwner;

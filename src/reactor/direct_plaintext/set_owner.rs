@@ -5,19 +5,28 @@ use std::{io, net::SocketAddr};
 use bornera::OwnerFailure;
 use bornera::{ConnectionSet, ConnectionSetConfig, ConnectionToken, RegisteredTransport};
 use bornera_core::ConnectionEpoch;
-use calandria::{ResourceOwnerId, Turn};
+use calandria::{ResourceOwnerId, Span, Turn, WaitOutcome};
 use kafka_driver_core::Moment;
 
 use crate::config::DriverLimits;
 
 use super::{
     attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt},
+    decoder_gate::DirectFrameDecoder,
     drive::DirectDrivePreparation,
     limits::{DirectSetBounds, set_limits},
-    owner::{DirectLane, DirectLaneAccess, DirectLaneView, DirectSet, SET_OWNER_ID, message},
+    owner::{
+        DirectLane, DirectLaneAccess, DirectLaneView, SET_OWNER_ID, calandria_moment, message,
+    },
 };
+use crate::reactor::bornera::KafkaReplyClassifier;
+
+pub(super) type DirectSet<T> = ConnectionSet<DirectFrameDecoder, KafkaReplyClassifier, T>;
 
 pub(super) struct DirectSetOwner<T: RegisteredTransport> {
+    #[cfg(not(test))]
+    set: DirectSet<T>,
+    #[cfg(test)]
     pub(super) set: DirectSet<T>,
     pub(super) last_turn: Turn,
     pub(super) preparations: Vec<(usize, Option<DirectDrivePreparation>)>,
@@ -103,11 +112,19 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
     }
 
     pub(super) fn wake_handle(&self) -> calandria::WakeHandle {
-        self.set.wake_handle()
+        ConnectionSet::wake_handle(&self.set)
     }
 
     pub(super) fn pulse_handle(&self) -> bornera::ConnectionPulseHandle {
-        self.set.pulse_handle()
+        ConnectionSet::pulse_handle(&self.set)
+    }
+
+    pub(super) fn drive_selector(&mut self, now: Moment) -> io::Result<Turn> {
+        ConnectionSet::turn_component(&mut self.set, calandria_moment(now)).map_err(message)
+    }
+
+    pub(super) fn wait_selector(&mut self, maximum: Span) -> io::Result<WaitOutcome> {
+        ConnectionSet::poll_io(&mut self.set, maximum).map_err(message)
     }
 
     #[cfg(test)]
