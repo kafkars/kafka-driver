@@ -63,7 +63,7 @@ pub(in crate::reactor::direct_plaintext) trait BorneraLanePlanFactory<T: Registe
     ) -> io::Result<BorneraLanePlan<T>>;
 }
 
-pub(in crate::reactor::direct_plaintext) struct PlaintextLanePlanFactory {
+pub(in crate::reactor) struct PlaintextLanePlanFactory {
     policy: LanePolicy,
 }
 
@@ -87,7 +87,7 @@ impl BorneraLanePlanFactory<TcpTransport> for PlaintextLanePlanFactory {
 }
 
 #[cfg(feature = "tls-rustls")]
-pub(in crate::reactor::direct_plaintext) struct RustlsLanePlanFactory {
+pub(in crate::reactor) struct RustlsLanePlanFactory {
     policy: LanePolicy,
     tls: TlsClientPolicy,
 }

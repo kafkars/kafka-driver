@@ -88,10 +88,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
 }
 
 impl ClusterBackend {
-    pub(in crate::reactor::direct_plaintext) fn install_scram_proof_sender(
-        &mut self,
-        sender: ScramProofSender,
-    ) {
+    pub(in crate::reactor) fn install_scram_proof_sender(&mut self, sender: ScramProofSender) {
         match self {
             Self::Plaintext { runtime, .. } => runtime.install_scram_proof_sender(sender),
             #[cfg(feature = "tls-rustls")]
@@ -99,7 +96,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn release_scram_proof_sender(&mut self) {
+    pub(in crate::reactor) fn release_scram_proof_sender(&mut self) {
         match self {
             Self::Plaintext { runtime, .. } => runtime.release_scram_proof_sender(),
             #[cfg(feature = "tls-rustls")]
@@ -107,7 +104,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn complete_scram_proof(
+    pub(in crate::reactor) fn complete_scram_proof(
         &mut self,
         outcome: ScramProofOutcome,
         now: Moment,

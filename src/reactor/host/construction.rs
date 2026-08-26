@@ -12,8 +12,12 @@ use crate::{
 use super::{CoordinatorOwner, HostState, MetadataOwner, NameResolution, Reactor};
 use crate::reactor::{
     Command, LegacyBackend, MailboxSender, Poller, ReactorBackend, ReactorClock, WakeHandle,
-    broker::BrokerLimits, broker_set::BrokerSet, causality::CausalSequence,
-    direct_plaintext::DirectBackend, mailbox, scram_proof::ScramProofWorker,
+    broker::BrokerLimits,
+    broker_set::BrokerSet,
+    causality::CausalSequence,
+    direct_plaintext::{ClusterBackend, DirectBackend},
+    mailbox,
+    scram_proof::ScramProofWorker,
 };
 
 impl Reactor {
@@ -28,6 +32,7 @@ impl Reactor {
         let construction = match target {
             Some(target) => match target.select_direct() {
                 DirectTargetSelection::Direct(config) => Construction::direct(limits, config, now)?,
+                DirectTargetSelection::Cluster(config) => Construction::cluster(limits, config)?,
                 DirectTargetSelection::Legacy(target) => {
                     Construction::legacy(limits, Some(target), now)?
                 }
@@ -102,6 +107,29 @@ impl Construction {
         })
     }
 
+    fn cluster(
+        limits: &DriverLimits,
+        config: crate::config::BootstrapConfig,
+    ) -> std::io::Result<Self> {
+        let requires_proof_worker = config.requires_proof_worker();
+        let mut backend = ClusterBackend::new(limits, config.broker_template().clone())?;
+        let wake = WakeHandle::bornera(backend.pulse_handle());
+        let scram_proof = requires_proof_worker
+            .then(|| ScramProofWorker::spawn(limits.scram_proof(), wake.clone()))
+            .transpose()?;
+        if let Some(worker) = &scram_proof {
+            backend.install_scram_proof_sender(worker.sender());
+        }
+        let resolution = NameResolution::start(config, limits.resolver(), wake)?;
+        Ok(Self {
+            backend: ReactorBackend::Cluster(Box::new(backend)),
+            resolution: Some(resolution),
+            scram_proof,
+            metadata: Some(MetadataOwner::new(limits.metadata())),
+            coordinator: Some(CoordinatorOwner::new(limits.coordinator())),
+        })
+    }
+
     fn legacy(
         limits: &DriverLimits,
         target: Option<DriverTarget>,
@@ -164,3 +192,7 @@ impl Construction {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "construction_test.rs"]
+mod test;

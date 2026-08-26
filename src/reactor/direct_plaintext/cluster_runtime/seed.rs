@@ -22,7 +22,7 @@ pub(in crate::reactor::direct_plaintext) enum SeedReplacement<T: RegisteredTrans
 }
 
 /// Result of offering transport-neutral seed evidence to a typed cluster runtime.
-pub(in crate::reactor::direct_plaintext) enum ResolvedSeedReplacement {
+pub(in crate::reactor) enum ResolvedSeedReplacement {
     Replaced,
     Retained,
     Stale,
@@ -207,7 +207,11 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
     ) -> io::Result<()> {
         let (_, [owner]) = self.reserve_endpoint_lanes::<1>()?;
         let key = refresh_owner(owner);
-        let lane = self.start_cluster_lane(plan, owner, now)?;
+        let mut lane = self.start_cluster_lane(plan, owner, now)?;
+        let retired = &self.lanes[index];
+        lane.last_close_reason = retired.last_close_reason;
+        lane.write_frame_rejections = retired.write_frame_rejections;
+        lane.write_byte_rejections = retired.write_byte_rejections;
         let _retired = std::mem::replace(&mut self.lanes[index], lane);
         self.slots.remove(&current.owner);
         self.slots.insert(key, index);

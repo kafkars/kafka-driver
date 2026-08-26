@@ -97,4 +97,8 @@ mod shared_set_test;
 pub(in crate::reactor) use backend::DirectBackend;
 #[cfg(test)]
 pub(in crate::reactor) use cluster_runtime::seed_rotation_host_test_bridge::ClusterSeedFatalFixture;
+pub(in crate::reactor) use cluster_runtime::{
+    backend::ClusterBackend, endpoint_refresh::ClusterEndpointRefreshAction,
+    rpc_access::ClusterRpcAccessError,
+};
 pub(in crate::reactor) use rpc::DirectBrokerRpc;

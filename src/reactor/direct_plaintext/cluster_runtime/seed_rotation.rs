@@ -142,7 +142,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
 }
 
 impl ClusterBackend {
-    pub(in crate::reactor::direct_plaintext) fn prepare_seed_bootstrap_restart(
+    pub(in crate::reactor) fn prepare_seed_bootstrap_restart(
         &mut self,
         now: Moment,
         causality: &mut CausalSequence,
@@ -156,9 +156,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn seed_bootstrap_restart_pending(
-        &mut self,
-    ) -> io::Result<bool> {
+    pub(in crate::reactor) fn seed_bootstrap_restart_pending(&mut self) -> io::Result<bool> {
         match self {
             Self::Plaintext { runtime, .. } => runtime.seed_bootstrap_restart_pending(),
             #[cfg(feature = "tls-rustls")]
@@ -166,9 +164,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn mark_seed_bootstrap_resolution_owned(
-        &mut self,
-    ) -> io::Result<()> {
+    pub(in crate::reactor) fn mark_seed_bootstrap_resolution_owned(&mut self) -> io::Result<()> {
         match self {
             Self::Plaintext { runtime, .. } => runtime.mark_seed_bootstrap_resolution_owned(),
             #[cfg(feature = "tls-rustls")]
@@ -176,7 +172,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn finish_seed_host_result<R>(
+    pub(in crate::reactor) fn finish_seed_host_result<R>(
         &mut self,
         result: io::Result<R>,
     ) -> io::Result<R> {

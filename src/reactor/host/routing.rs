@@ -8,7 +8,7 @@ use crate::{
     RequestError, Route,
     api::RouteFact,
     reactor::{
-        BrokerRpc,
+        BackendRpcAccessError,
         metadata::{ControllerWait, PartitionWait},
     },
     request::ErasedRequest,
@@ -45,6 +45,11 @@ impl Reactor {
                 .submit(request, now, &mut self.causality)
                 .map_err(ReactorError::host);
         }
+        if let Some(cluster) = self.backend.cluster_mut() {
+            return cluster
+                .submit_seed(request, now, &mut self.causality)
+                .map_err(ReactorError::host);
+        }
         let Some(legacy) = self.backend.legacy_mut() else {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());
@@ -71,21 +76,18 @@ impl Reactor {
                 return Ok(());
             };
             let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
-            let Some(legacy) = self.backend.legacy_mut() else {
-                request.fail(RequestError::RouteUnavailable);
-                return Ok(());
-            };
-            let mut seed = legacy.seed_rpc();
-            metadata
-                .wait_for_controller(
-                    ControllerWait::controller(request),
-                    seed.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc),
-                    now,
-                    &self.call_ids,
-                    evidence,
-                )
-                .map_err(ReactorError::metadata)?;
-            return Ok(());
+            return self
+                .backend
+                .with_seed_rpc(&mut self.causality, |seed| {
+                    metadata.wait_for_controller(
+                        ControllerWait::controller(request),
+                        seed,
+                        now,
+                        &self.call_ids,
+                        evidence,
+                    )
+                })
+                .map_err(metadata_rpc_error);
         };
         let Ok(request) = bind_route(request, RouteFact::Controller(route)) else {
             return Ok(());
@@ -110,21 +112,18 @@ impl Reactor {
                 return Ok(());
             };
             let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
-            let Some(legacy) = self.backend.legacy_mut() else {
-                request.fail(RequestError::RouteUnavailable);
-                return Ok(());
-            };
-            let mut seed = legacy.seed_rpc();
-            metadata
-                .wait_for_broker(
-                    ControllerWait::broker(broker_id, request),
-                    seed.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc),
-                    now,
-                    &self.call_ids,
-                    evidence,
-                )
-                .map_err(ReactorError::metadata)?;
-            return Ok(());
+            return self
+                .backend
+                .with_seed_rpc(&mut self.causality, |seed| {
+                    metadata.wait_for_broker(
+                        ControllerWait::broker(broker_id, request),
+                        seed,
+                        now,
+                        &self.call_ids,
+                        evidence,
+                    )
+                })
+                .map_err(metadata_rpc_error);
         };
         let Ok(request) = bind_route(request, RouteFact::Broker(route)) else {
             return Ok(());
@@ -150,27 +149,33 @@ impl Reactor {
                 return Ok(());
             };
             let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
-            let Some(legacy) = self.backend.legacy_mut() else {
-                request.fail(RequestError::RouteUnavailable);
-                return Ok(());
-            };
-            let mut seed = legacy.seed_rpc();
-            metadata
-                .wait_for_partition(
-                    PartitionWait::new(topic, partition, request),
-                    seed.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc),
-                    now,
-                    &self.call_ids,
-                    evidence,
-                )
-                .map_err(ReactorError::metadata)?;
-            return Ok(());
+            return self
+                .backend
+                .with_seed_rpc(&mut self.causality, |seed| {
+                    metadata.wait_for_partition(
+                        PartitionWait::new(topic, partition, request),
+                        seed,
+                        now,
+                        &self.call_ids,
+                        evidence,
+                    )
+                })
+                .map_err(metadata_rpc_error);
         };
         let broker = route.broker_route();
         let Ok(request) = bind_route(request, RouteFact::PartitionLeader(route)) else {
             return Ok(());
         };
         self.submit_broker_route(broker, request, now)
+    }
+}
+
+fn metadata_rpc_error(
+    error: BackendRpcAccessError<crate::reactor::metadata::MetadataOwnerError>,
+) -> ReactorError {
+    match error {
+        BackendRpcAccessError::Host(error) => ReactorError::host(error),
+        BackendRpcAccessError::Owner(error) => ReactorError::metadata(error),
     }
 }
 

@@ -1,6 +1,7 @@
 //! Host-phase integration for generated Metadata progress on the bootstrap broker.
 
 use crate::api::RouteFact;
+use crate::reactor::BackendRpcAccessError;
 use kafka_driver_core::Moment;
 
 use super::{HostState, Reactor, ReactorError, routing::bind_route};
@@ -10,7 +11,7 @@ impl Reactor {
         if self.state != HostState::Running {
             return Ok(false);
         }
-        if self.backend.legacy().is_none() {
+        if self.metadata.is_none() {
             return Ok(false);
         }
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
@@ -18,16 +19,13 @@ impl Reactor {
             let Some(metadata) = &mut self.metadata else {
                 return Ok(false);
             };
-            let Some(legacy) = self.backend.legacy_mut() else {
-                return Ok(false);
-            };
-            let progress = if let Some(mut seed) = legacy.seed_rpc() {
-                metadata
-                    .drive(&mut seed, now, &self.call_ids, evidence)
-                    .map_err(ReactorError::metadata)?
-            } else {
-                false
-            };
+            let progress = self
+                .backend
+                .with_seed_rpc(&mut self.causality, |seed| match seed {
+                    Some(seed) => metadata.drive(seed, now, &self.call_ids, evidence),
+                    None => Ok(false),
+                })
+                .map_err(metadata_rpc_error)?;
             let directory = metadata
                 .current()
                 .map(|snapshot| snapshot.brokers().clone());
@@ -45,13 +43,18 @@ impl Reactor {
             )
         };
         let installed = if let Some(directory) = &directory {
-            let Some(legacy) = self.backend.legacy_mut() else {
-                return Ok(false);
-            };
-            legacy
-                .brokers
-                .install_directory(directory)
-                .map_err(ReactorError::broker_set)
+            if let Some(cluster) = self.backend.cluster_mut() {
+                cluster
+                    .install_directory(directory)
+                    .map_err(ReactorError::host)
+            } else if let Some(legacy) = self.backend.legacy_mut() {
+                legacy
+                    .brokers
+                    .install_directory(directory)
+                    .map_err(ReactorError::broker_set)
+            } else {
+                Ok(false)
+            }
         } else {
             Ok(false)
         }?;
@@ -90,5 +93,14 @@ impl Reactor {
         self.metadata
             .as_ref()
             .is_some_and(super::super::metadata::MetadataOwner::has_pending_wait_scan)
+    }
+}
+
+fn metadata_rpc_error(
+    error: BackendRpcAccessError<crate::reactor::metadata::MetadataOwnerError>,
+) -> ReactorError {
+    match error {
+        BackendRpcAccessError::Host(error) => ReactorError::host(error),
+        BackendRpcAccessError::Owner(error) => ReactorError::metadata(error),
     }
 }

@@ -23,7 +23,8 @@ use super::{
     set_owner::DirectSetOwner,
 };
 pub(super) mod backend;
-mod endpoint_refresh;
+mod backend_host;
+pub(super) mod endpoint_refresh;
 pub(super) mod family;
 mod family_removal;
 mod family_state;
@@ -42,7 +43,7 @@ mod route_state;
 #[cfg(test)]
 mod route_test_support;
 mod route_turn;
-mod rpc_access;
+pub(super) mod rpc_access;
 mod scram_proof;
 pub(super) mod seed;
 mod seed_rotation;
@@ -55,7 +56,7 @@ struct SeedSlot {
     owner: DirectRefreshOwner,
     generation: ConnectionEpoch,
 }
-pub(super) struct ClusterRuntime<T: RegisteredTransport> {
+pub(in crate::reactor) struct ClusterRuntime<T: RegisteredTransport> {
     driver: DriverLimits,
     connections: DirectSetOwner<T>,
     identities: BorneraIdentityAllocator,

@@ -101,7 +101,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
 }
 
 impl ClusterBackend {
-    pub(in crate::reactor::direct_plaintext) fn seed_snapshot(&self) -> Option<SeedSnapshot> {
+    pub(in crate::reactor) fn seed_snapshot(&self) -> Option<SeedSnapshot> {
         match self {
             Self::Plaintext { runtime, .. } => runtime.cluster_seed_snapshot(),
             #[cfg(feature = "tls-rustls")]
@@ -109,9 +109,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn directory_generation(
-        &self,
-    ) -> Option<MetadataGeneration> {
+    pub(in crate::reactor) fn directory_generation(&self) -> Option<MetadataGeneration> {
         match self {
             Self::Plaintext { runtime, .. } => runtime.directory_generation(),
             #[cfg(feature = "tls-rustls")]
@@ -119,11 +117,33 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn lane_snapshots(&self) -> Vec<BrokerLaneSnapshot> {
+    pub(in crate::reactor) fn lane_snapshots(&self) -> Vec<BrokerLaneSnapshot> {
         match self {
             Self::Plaintext { runtime, .. } => runtime.lane_snapshots(),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls { runtime, .. } => runtime.lane_snapshots(),
+        }
+    }
+
+    pub(in crate::reactor) fn advertised_brokers(&self) -> usize {
+        match self {
+            Self::Plaintext { runtime, .. } => runtime
+                .directory
+                .as_ref()
+                .map_or(0, kafka_driver_core::BrokerDirectory::len),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls { runtime, .. } => runtime
+                .directory
+                .as_ref()
+                .map_or(0, kafka_driver_core::BrokerDirectory::len),
+        }
+    }
+
+    pub(in crate::reactor) fn allocated_lanes(&self) -> usize {
+        match self {
+            Self::Plaintext { runtime, .. } => runtime.lanes.len(),
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls { runtime, .. } => runtime.lanes.len(),
         }
     }
 }

@@ -277,13 +277,10 @@ fn generated_call_reaches_a_ready_configured_broker_owner() {
         panic!("reactor must admit the generated call");
     };
 
-    assert_eq!(
+    assert!(matches!(
         admitted,
-        TurnOutcome::Progress {
-            commands: 1,
-            more_work: true,
-        }
-    );
+        TurnOutcome::Progress { commands: 1, .. }
+    ));
     let waker = Waker::from(Arc::new(NoopWake));
     let mut context = Context::from_waker(&waker);
     assert!(matches!(

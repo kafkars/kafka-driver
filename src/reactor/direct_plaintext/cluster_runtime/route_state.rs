@@ -47,6 +47,7 @@ pub(super) struct BrokerRouteState {
     pub(super) waiting: RouteWaiting,
     pub(super) last_dns_failure: Option<DnsFailure>,
     pub(super) route_failure_at: Option<OutcomeStamp>,
+    pub(super) last_connection_failure_epoch: Option<DnsConnectionEpoch>,
 }
 
 impl BrokerRouteState {
@@ -71,6 +72,7 @@ impl BrokerRouteState {
             ),
             last_dns_failure: None,
             route_failure_at: None,
+            last_connection_failure_epoch: None,
         }
     }
 

@@ -4,7 +4,7 @@ use crate::{
     InvalidationDisposition, RouteFailureToken, api::RouteFact, completion::CompletionSender,
 };
 
-use crate::reactor::RouteInvalidation;
+use crate::reactor::{BackendRpcAccessError, RouteInvalidation};
 
 use super::{Reactor, ReactorError};
 
@@ -43,28 +43,26 @@ impl Reactor {
         now: kafka_driver_core::Moment,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
-        let Some(legacy) = self.backend.legacy_mut() else {
-            let _ = completion.complete(InvalidationDisposition::Unavailable);
-            return Ok(());
-        };
         let Some(metadata) = &mut self.metadata else {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
-        let Some(mut seed) = legacy.seed_rpc() else {
-            let _ = completion.complete(InvalidationDisposition::Unavailable);
-            return Ok(());
-        };
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
-        metadata
-            .invalidate_broker_route(
-                RouteInvalidation::new(route, observed_at, completion),
-                &mut seed,
-                now,
-                &self.call_ids,
-                evidence,
-            )
-            .map_err(ReactorError::metadata)
+        self.backend
+            .with_seed_rpc(&mut self.causality, |seed| {
+                let Some(seed) = seed else {
+                    let _ = completion.complete(InvalidationDisposition::Unavailable);
+                    return Ok(());
+                };
+                metadata.invalidate_broker_route(
+                    RouteInvalidation::new(route, observed_at, completion),
+                    seed,
+                    now,
+                    &self.call_ids,
+                    evidence,
+                )
+            })
+            .map_err(metadata_rpc_error)
     }
 
     fn invalidate_partition(
@@ -74,28 +72,26 @@ impl Reactor {
         now: kafka_driver_core::Moment,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
-        let Some(legacy) = self.backend.legacy_mut() else {
-            let _ = completion.complete(InvalidationDisposition::Unavailable);
-            return Ok(());
-        };
         let Some(metadata) = &mut self.metadata else {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
-        let Some(mut seed) = legacy.seed_rpc() else {
-            let _ = completion.complete(InvalidationDisposition::Unavailable);
-            return Ok(());
-        };
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
-        metadata
-            .invalidate_partition_route(
-                RouteInvalidation::new(route, observed_at, completion),
-                &mut seed,
-                now,
-                &self.call_ids,
-                evidence,
-            )
-            .map_err(ReactorError::metadata)
+        self.backend
+            .with_seed_rpc(&mut self.causality, |seed| {
+                let Some(seed) = seed else {
+                    let _ = completion.complete(InvalidationDisposition::Unavailable);
+                    return Ok(());
+                };
+                metadata.invalidate_partition_route(
+                    RouteInvalidation::new(route, observed_at, completion),
+                    seed,
+                    now,
+                    &self.call_ids,
+                    evidence,
+                )
+            })
+            .map_err(metadata_rpc_error)
     }
 
     fn invalidate_coordinator(
@@ -105,23 +101,43 @@ impl Reactor {
         now: kafka_driver_core::Moment,
         completion: CompletionSender<InvalidationDisposition>,
     ) -> Result<(), ReactorError> {
-        let Some(legacy) = self.backend.legacy_mut() else {
-            let _ = completion.complete(InvalidationDisposition::Unavailable);
-            return Ok(());
-        };
-        let (Some(coordinator), Some(mut seed)) = (&mut self.coordinator, legacy.seed_rpc()) else {
+        let Some(coordinator) = &mut self.coordinator else {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
-        coordinator
-            .invalidate(
-                RouteInvalidation::new(route, observed_at, completion),
-                &mut seed,
-                now,
-                &self.call_ids,
-                evidence,
-            )
-            .map_err(ReactorError::coordinator)
+        self.backend
+            .with_seed_rpc(&mut self.causality, |seed| {
+                let Some(seed) = seed else {
+                    let _ = completion.complete(InvalidationDisposition::Unavailable);
+                    return Ok(());
+                };
+                coordinator.invalidate(
+                    RouteInvalidation::new(route, observed_at, completion),
+                    seed,
+                    now,
+                    &self.call_ids,
+                    evidence,
+                )
+            })
+            .map_err(coordinator_rpc_error)
+    }
+}
+
+fn metadata_rpc_error(
+    error: BackendRpcAccessError<crate::reactor::metadata::MetadataOwnerError>,
+) -> ReactorError {
+    match error {
+        BackendRpcAccessError::Host(error) => ReactorError::host(error),
+        BackendRpcAccessError::Owner(error) => ReactorError::metadata(error),
+    }
+}
+
+fn coordinator_rpc_error(
+    error: BackendRpcAccessError<crate::reactor::coordinator::CoordinatorOwnerError>,
+) -> ReactorError {
+    match error {
+        BackendRpcAccessError::Host(error) => ReactorError::host(error),
+        BackendRpcAccessError::Owner(error) => ReactorError::coordinator(error),
     }
 }

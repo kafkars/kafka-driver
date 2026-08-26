@@ -52,7 +52,8 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         let driven = self.drive(now, causality)?;
         let seed_replaced = self.retry_pending_resolved_seed(factory, now)?;
         let installed = self.drive_route_installs(factory, now, causality)?;
-        Ok(driven || seed_replaced || installed)
+        let failures = self.sync_route_failures(causality)?;
+        Ok(driven || seed_replaced || installed || failures)
     }
 
     pub(super) fn route_install_must_defer(

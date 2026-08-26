@@ -137,7 +137,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
 }
 
 #[derive(Debug)]
-pub(in crate::reactor::direct_plaintext) enum ClusterRpcAccessError<E> {
+pub(in crate::reactor) enum ClusterRpcAccessError<E> {
     Runtime(io::Error),
     Owner(E),
 }

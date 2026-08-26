@@ -5,7 +5,7 @@ use std::time::Instant;
 use crate::{
     MetadataGeneration, TopicName, TopicView, TopicViewError,
     completion::CompletionSender,
-    reactor::{BrokerRpc, metadata::TopicViewWait},
+    reactor::{BackendRpcAccessError, metadata::TopicViewWait},
 };
 
 use super::{Reactor, ReactorError};
@@ -19,10 +19,6 @@ impl Reactor {
         result_capacity_bytes: usize,
         completion: CompletionSender<Result<TopicView, TopicViewError>>,
     ) -> Result<(), ReactorError> {
-        let Some(legacy) = self.backend.legacy_mut() else {
-            let _ = completion.complete(Err(TopicViewError::Unavailable));
-            return Ok(());
-        };
         let deadline = self
             .clock
             .moment_at(deadline)
@@ -53,21 +49,31 @@ impl Reactor {
             }
         }
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
-        let mut seed = legacy.seed_rpc();
-        metadata
-            .wait_for_topic_view(
-                TopicViewWait::new(
-                    topic,
-                    newer_than,
-                    deadline,
-                    result_capacity_bytes,
-                    completion,
-                ),
-                seed.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc),
-                now,
-                &self.call_ids,
-                evidence,
-            )
-            .map_err(ReactorError::metadata)
+        self.backend
+            .with_seed_rpc(&mut self.causality, |seed| {
+                metadata.wait_for_topic_view(
+                    TopicViewWait::new(
+                        topic,
+                        newer_than,
+                        deadline,
+                        result_capacity_bytes,
+                        completion,
+                    ),
+                    seed,
+                    now,
+                    &self.call_ids,
+                    evidence,
+                )
+            })
+            .map_err(metadata_rpc_error)
+    }
+}
+
+fn metadata_rpc_error(
+    error: BackendRpcAccessError<crate::reactor::metadata::MetadataOwnerError>,
+) -> ReactorError {
+    match error {
+        BackendRpcAccessError::Host(error) => ReactorError::host(error),
+        BackendRpcAccessError::Owner(error) => ReactorError::metadata(error),
     }
 }

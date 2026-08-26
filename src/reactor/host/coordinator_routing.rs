@@ -5,7 +5,7 @@ use kafka_driver_core::{BrokerRoute, CoordinatorKey, CoordinatorRoute, Moment};
 use crate::{
     RequestError,
     api::RouteFact,
-    reactor::{BrokerRpc, coordinator::CoordinatorWait},
+    reactor::{BackendRpcAccessError, coordinator::CoordinatorWait},
     request::ErasedRequest,
 };
 
@@ -38,38 +38,31 @@ impl Reactor {
             return Ok(());
         };
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
-        let Some(legacy) = self.backend.legacy_mut() else {
-            request.fail(RequestError::RouteUnavailable);
-            return Ok(());
-        };
-        let mut seed = legacy.seed_rpc();
-        if let Some(route) = current {
-            let Some(seed) = seed.as_mut() else {
-                request.fail(RequestError::RouteUnavailable);
-                return Ok(());
-            };
-            owner
-                .invalidate_unobserved(route, seed, now, &self.call_ids, evidence)
-                .map_err(ReactorError::coordinator)?;
-            return owner
-                .wait_for(
+        self.backend
+            .with_seed_rpc(&mut self.causality, |seed| {
+                if let Some(route) = current {
+                    let Some(seed) = seed else {
+                        request.fail(RequestError::RouteUnavailable);
+                        return Ok(());
+                    };
+                    owner.invalidate_unobserved(route, seed, now, &self.call_ids, evidence)?;
+                    return owner.wait_for(
+                        CoordinatorWait::new(key, request),
+                        Some(seed),
+                        now,
+                        &self.call_ids,
+                        evidence,
+                    );
+                }
+                owner.wait_for(
                     CoordinatorWait::new(key, request),
-                    Some(seed),
+                    seed,
                     now,
                     &self.call_ids,
                     evidence,
                 )
-                .map_err(ReactorError::coordinator);
-        }
-        owner
-            .wait_for(
-                CoordinatorWait::new(key, request),
-                seed.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc),
-                now,
-                &self.call_ids,
-                evidence,
-            )
-            .map_err(ReactorError::coordinator)
+            })
+            .map_err(coordinator_rpc_error)
     }
 
     pub(super) fn coordinator_broker_route(
@@ -80,5 +73,14 @@ impl Reactor {
         let route = directory.route_to(coordinator.broker_id())?;
         let entry = directory.resolve(route).ok()?;
         (entry.endpoint() == coordinator.endpoint()).then_some(route)
+    }
+}
+
+fn coordinator_rpc_error(
+    error: BackendRpcAccessError<crate::reactor::coordinator::CoordinatorOwnerError>,
+) -> ReactorError {
+    match error {
+        BackendRpcAccessError::Host(error) => ReactorError::host(error),
+        BackendRpcAccessError::Owner(error) => ReactorError::coordinator(error),
     }
 }

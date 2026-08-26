@@ -35,7 +35,7 @@ mod invariant_test;
 mod test_support;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ClusterEndpointRefreshAction {
+pub(in crate::reactor) enum ClusterEndpointRefreshAction {
     SeedBootstrap,
     Broker(DirectRefreshOwner),
 }

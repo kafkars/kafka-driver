@@ -13,7 +13,7 @@ impl Reactor {
         if self.resolution.is_none() {
             return Ok(ResolutionTurn::idle());
         }
-        let scheduled = self.schedule_address_refreshes()?;
+        let scheduled = self.schedule_address_refreshes(now)?;
         let Some(resolution) = &mut self.resolution else {
             return Ok(ResolutionTurn::idle());
         };
@@ -44,6 +44,19 @@ impl Reactor {
         let Some(seed) = seed else {
             return Ok(());
         };
+        if let Some(cluster) = self.backend.cluster_mut() {
+            if cluster.has_seed() {
+                cluster
+                    .replace_resolved_seed(seed, now)
+                    .map(drop)
+                    .map_err(ReactorError::host)?;
+            } else {
+                cluster
+                    .install_resolved_seed(seed, now)
+                    .map_err(ReactorError::host)?;
+            }
+            return Ok(());
+        }
         let Some(legacy) = self.backend.legacy_mut() else {
             return Err(ReactorError::host(std::io::Error::other(
                 "bootstrap resolution completed without a legacy cluster owner",
@@ -67,6 +80,14 @@ impl Reactor {
         if self.broker_dns_outcomes.is_empty() {
             return Ok(());
         }
+        if let Some(cluster) = self.backend.cluster_mut() {
+            for completed in self.broker_dns_outcomes.drain(..) {
+                cluster
+                    .complete_route_resolution(completed.lane, completed.outcome, now)
+                    .map_err(ReactorError::host)?;
+            }
+            return Ok(());
+        }
         let Some(legacy) = self.backend.legacy_mut() else {
             return Err(ReactorError::host(std::io::Error::other(
                 "legacy broker DNS completed without a legacy backend",
@@ -85,20 +106,30 @@ impl Reactor {
         if self.direct_dns_outcomes.is_empty() {
             return Ok(());
         }
-        let Some(direct) = self.backend.direct_mut() else {
-            return Err(ReactorError::host(std::io::Error::other(
-                "Direct DNS completed without a Direct backend",
-            )));
-        };
         for completed in self.direct_dns_outcomes.drain(..) {
-            let _ = direct
-                .complete_endpoint_refresh(
-                    completed.owner,
-                    completed.outcome,
-                    now,
-                    &mut self.causality,
-                )
-                .map_err(ReactorError::host)?;
+            if let Some(cluster) = self.backend.cluster_mut() {
+                let _ = cluster
+                    .complete_broker_endpoint_refresh(
+                        completed.owner,
+                        completed.outcome,
+                        now,
+                        &mut self.causality,
+                    )
+                    .map_err(ReactorError::host)?;
+            } else if let Some(direct) = self.backend.direct_mut() {
+                let _ = direct
+                    .complete_endpoint_refresh(
+                        completed.owner,
+                        completed.outcome,
+                        now,
+                        &mut self.causality,
+                    )
+                    .map_err(ReactorError::host)?;
+            } else {
+                return Err(ReactorError::host(std::io::Error::other(
+                    "endpoint DNS completed without a Bornera backend",
+                )));
+            }
         }
         Ok(())
     }

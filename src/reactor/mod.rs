@@ -58,7 +58,7 @@ mod mailbox_test;
 #[cfg(test)]
 mod wait_queue_test;
 
-pub(in crate::reactor) use backend::{LegacyBackend, ReactorBackend};
+pub(in crate::reactor) use backend::{BackendRpcAccessError, LegacyBackend, ReactorBackend};
 pub(in crate::reactor) use broker_lane::BrokerLane;
 pub(in crate::reactor) use broker_rpc::{BrokerRpc, BrokerRpcError, LegacyBrokerRpc};
 pub(crate) use clock::ReactorClock;

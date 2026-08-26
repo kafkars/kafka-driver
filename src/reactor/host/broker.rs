@@ -4,7 +4,10 @@ use std::time::Duration;
 
 use kafka_driver_core::Moment;
 
-use crate::reactor::{broker::DeadlineProgress, direct_plaintext::DirectBackend};
+use crate::reactor::{
+    broker::DeadlineProgress,
+    direct_plaintext::{ClusterBackend, DirectBackend},
+};
 
 use super::{Reactor, ReactorError};
 
@@ -29,6 +32,11 @@ impl Reactor {
     }
 
     pub(super) fn continue_broker_io(&mut self, now: Moment) -> Result<bool, ReactorError> {
+        if let Some(cluster) = self.backend.cluster_mut() {
+            return cluster
+                .drive(now, &mut self.causality)
+                .map_err(ReactorError::host);
+        }
         if let Some(direct) = self.backend.direct_mut() {
             return direct
                 .drive(now, &mut self.causality)
@@ -48,6 +56,9 @@ impl Reactor {
         &mut self,
         now: Moment,
     ) -> Result<DeadlineProgress, ReactorError> {
+        if self.backend.cluster().is_some() {
+            return Ok(DeadlineProgress::idle());
+        }
         if let Some(direct) = self.backend.direct_mut() {
             let fired = direct
                 .fire_due_session_deadline(now)
@@ -64,10 +75,16 @@ impl Reactor {
     }
 
     pub(super) fn next_deadline(&self, now: Moment) -> Option<Moment> {
-        let backend = self.backend.legacy().map_or_else(
-            || self.backend.direct().and_then(DirectBackend::next_deadline),
-            |legacy| legacy.brokers.next_deadline(),
-        );
+        let backend = self
+            .backend
+            .cluster()
+            .and_then(ClusterBackend::next_deadline)
+            .or_else(|| self.backend.direct().and_then(DirectBackend::next_deadline))
+            .or_else(|| {
+                self.backend
+                    .legacy()
+                    .and_then(|legacy| legacy.brokers.next_deadline())
+            });
         backend
             .into_iter()
             .chain(
@@ -94,13 +111,16 @@ impl Reactor {
     }
 
     pub(super) fn broker_has_local_io(&self) -> bool {
-        self.backend.legacy().map_or_else(
-            || {
-                self.backend
-                    .direct()
-                    .is_some_and(DirectBackend::has_local_work)
-            },
-            |legacy| legacy.brokers.has_local_io(),
-        )
+        self.backend
+            .cluster()
+            .is_some_and(ClusterBackend::has_local_work)
+            || self
+                .backend
+                .direct()
+                .is_some_and(DirectBackend::has_local_work)
+            || self
+                .backend
+                .legacy()
+                .is_some_and(|legacy| legacy.brokers.has_local_io())
     }
 }

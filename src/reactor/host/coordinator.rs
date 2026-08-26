@@ -1,5 +1,6 @@
 //! Host-phase integration for generated coordinator discovery and waiter routing.
 
+use crate::reactor::BackendRpcAccessError;
 use crate::{RequestError, api::RouteFact};
 use kafka_driver_core::Moment;
 
@@ -10,7 +11,7 @@ impl Reactor {
         if self.state != HostState::Running {
             return Ok(false);
         }
-        if self.backend.legacy().is_none() {
+        if self.coordinator.is_none() {
             return Ok(false);
         }
         let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
@@ -18,16 +19,13 @@ impl Reactor {
             let Some(coordinator) = &mut self.coordinator else {
                 return Ok(false);
             };
-            let Some(legacy) = self.backend.legacy_mut() else {
-                return Ok(false);
-            };
-            let progress = if let Some(mut seed) = legacy.seed_rpc() {
-                coordinator
-                    .drive(&mut seed, now, &self.call_ids, evidence)
-                    .map_err(ReactorError::coordinator)?
-            } else {
-                false
-            };
+            let progress = self
+                .backend
+                .with_seed_rpc(&mut self.causality, |seed| match seed {
+                    Some(seed) => coordinator.drive(seed, now, &self.call_ids, evidence),
+                    None => Ok(false),
+                })
+                .map_err(coordinator_rpc_error)?;
             let waiting = coordinator.drain_waiters(now);
             (progress, waiting)
         };
@@ -51,5 +49,14 @@ impl Reactor {
         self.coordinator
             .as_ref()
             .is_some_and(super::super::coordinator::CoordinatorOwner::has_local_work)
+    }
+}
+
+fn coordinator_rpc_error(
+    error: BackendRpcAccessError<crate::reactor::coordinator::CoordinatorOwnerError>,
+) -> ReactorError {
+    match error {
+        BackendRpcAccessError::Host(error) => ReactorError::host(error),
+        BackendRpcAccessError::Owner(error) => ReactorError::coordinator(error),
     }
 }

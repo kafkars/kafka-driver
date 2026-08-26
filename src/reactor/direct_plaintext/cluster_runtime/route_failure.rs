@@ -3,13 +3,55 @@
 use std::io;
 
 use bornera::RegisteredTransport;
-use kafka_driver_core::{BrokerRoute, DnsFailure, OutcomeStamp};
+use kafka_driver_core::{BrokerRoute, BrokerState, ConnectionEpoch, DnsFailure, OutcomeStamp};
 
 use crate::{RequestError, reactor::BrokerLane};
 
 use super::{ClusterRuntime, route_resolution::RouteResolutionProgress};
 
 impl<T: RegisteredTransport> ClusterRuntime<T> {
+    pub(super) fn sync_route_failures(
+        &mut self,
+        causality: &mut crate::reactor::causality::CausalSequence,
+    ) -> io::Result<bool> {
+        let probes = self
+            .routes
+            .iter()
+            .map(|(&lane, state)| {
+                let broker = state
+                    .installed
+                    .as_ref()
+                    .and_then(|installed| self.slots.get(&installed.owner))
+                    .and_then(|&index| self.lanes.get(index))
+                    .map(|physical| physical.lifecycle.state());
+                (lane, broker)
+            })
+            .collect::<Vec<_>>();
+        let mut progress = false;
+        for (lane, broker) in probes {
+            let Some(state) = self.routes.get_mut(&lane) else {
+                continue;
+            };
+            if let Some(epoch) = broker.and_then(failed_epoch) {
+                if state.last_connection_failure_epoch != Some(epoch) {
+                    state.last_connection_failure_epoch = Some(epoch);
+                    state.route_failure_at = Some(
+                        causality
+                            .outcome()
+                            .map_err(|error| io::Error::other(error.to_string()))?,
+                    );
+                    progress = true;
+                }
+            } else if matches!(broker, Some(BrokerState::Available { .. }))
+                && state.waiting.is_empty()
+                && state.route_failure_at.take().is_some()
+            {
+                progress = true;
+            }
+        }
+        Ok(progress)
+    }
+
     pub(super) fn finish_resolution_failure(
         &mut self,
         lane: BrokerLane,
@@ -121,6 +163,18 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
                 lane.can_admit_public() || lane.terminal_admission_failure().is_some()
             })
         })
+    }
+}
+
+const fn failed_epoch(state: BrokerState) -> Option<ConnectionEpoch> {
+    match state {
+        BrokerState::Backoff { failed_epoch, .. }
+        | BrokerState::Refreshing { failed_epoch, .. } => Some(failed_epoch),
+        BrokerState::Dormant { .. }
+        | BrokerState::Connecting { .. }
+        | BrokerState::Available { .. }
+        | BrokerState::Draining { .. }
+        | BrokerState::Closed { .. } => None,
     }
 }
 

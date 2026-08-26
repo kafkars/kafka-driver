@@ -23,6 +23,9 @@ pub(crate) fn complete_negotiation(peer: &mut TcpStream, reactor: &mut Reactor) 
     peer.write_all(&negotiation_response(correlation))
         .unwrap_or_else(|error| panic!("write negotiation response: {error}"));
     drive(reactor);
+    // Bornera publishes session readiness and admission opening in separate
+    // bounded turns; honor the reactor's reported local work before proceeding.
+    drive(reactor);
 }
 
 fn drive(reactor: &mut Reactor) {

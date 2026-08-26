@@ -117,7 +117,7 @@ fn configured_numeric_rustls_with_scram_selects_direct_and_requires_one_proof_wo
 }
 
 #[test]
-fn bootstrap_scram_remains_on_the_legacy_backend() {
+fn bootstrap_scram_selects_the_cluster_backend() {
     let host = HostName::new("broker.test")
         .unwrap_or_else(|error| panic!("construct bootstrap host: {error}"));
     let endpoint = BrokerEndpoint::new(host, NonZeroU16::new(9_092).unwrap_or(NonZeroU16::MIN));
@@ -130,7 +130,7 @@ fn bootstrap_scram_remains_on_the_legacy_backend() {
 
     assert!(matches!(
         target.select_direct(),
-        DirectTargetSelection::Legacy(DriverTarget::Bootstrap(_))
+        DirectTargetSelection::Cluster(_)
     ));
 }
 

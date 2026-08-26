@@ -8,8 +8,10 @@ impl Reactor {
     pub(super) fn snapshot(&self) -> DriverSnapshot {
         let observation = self.observation.snapshot();
         let legacy = self.backend.legacy();
-        let seed = legacy
-            .and_then(|legacy| legacy.brokers.seed_snapshot())
+        let cluster = self.backend.cluster();
+        let seed = cluster
+            .and_then(super::super::direct_plaintext::ClusterBackend::seed_snapshot)
+            .or_else(|| legacy.and_then(|legacy| legacy.brokers.seed_snapshot()))
             .or_else(|| {
                 self.backend
                     .direct()
@@ -23,9 +25,14 @@ impl Reactor {
         );
         DriverSnapshot::new(
             self.commands.snapshot(),
-            legacy.and_then(|legacy| legacy.brokers.directory_generation()),
+            cluster
+                .and_then(super::super::direct_plaintext::ClusterBackend::directory_generation)
+                .or_else(|| legacy.and_then(|legacy| legacy.brokers.directory_generation())),
             bootstrap,
-            legacy.map_or_else(Vec::new, |legacy| legacy.brokers.lane_snapshots()),
+            cluster.map_or_else(
+                || legacy.map_or_else(Vec::new, |legacy| legacy.brokers.lane_snapshots()),
+                super::super::direct_plaintext::ClusterBackend::lane_snapshots,
+            ),
             observation.calls,
             observation.failures,
             observation.latency,

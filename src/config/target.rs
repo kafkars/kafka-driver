@@ -20,7 +20,7 @@ impl DriverTarget {
                     DirectTargetSelection::Legacy(Self::Direct(config))
                 }
             },
-            target @ Self::Bootstrap(_) => DirectTargetSelection::Legacy(target),
+            Self::Bootstrap(config) => DirectTargetSelection::Cluster(config),
         }
     }
 
@@ -48,5 +48,6 @@ impl DriverTarget {
 
 pub(crate) enum DirectTargetSelection {
     Direct(DirectBrokerConfig),
+    Cluster(BootstrapConfig),
     Legacy(DriverTarget),
 }

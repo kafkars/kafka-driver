@@ -95,6 +95,9 @@ impl Reactor {
         if let Some(legacy) = self.backend.legacy_mut() {
             legacy.brokers.release_scram_proof_senders();
         }
+        if let Some(cluster) = self.backend.cluster_mut() {
+            cluster.release_scram_proof_sender();
+        }
         if let Some(direct) = self.backend.direct_mut() {
             direct.release_scram_proof_sender();
         }
@@ -110,7 +113,11 @@ impl Reactor {
             coordinator.fail_waiters(&draining());
         }
         self.coordinator = None;
-        if let Some(direct) = self.backend.direct_mut() {
+        if let Some(cluster) = self.backend.cluster_mut() {
+            cluster
+                .begin_cluster_drain(now, &mut self.causality)
+                .map_err(ReactorError::host)?;
+        } else if let Some(direct) = self.backend.direct_mut() {
             direct
                 .begin_session_drain(now, &mut self.causality)
                 .map_err(ReactorError::host)?;

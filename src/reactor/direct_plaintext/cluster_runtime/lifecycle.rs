@@ -135,7 +135,7 @@ pub(in crate::reactor::direct_plaintext) fn reclaimable<T: RegisteredTransport>(
 }
 
 impl ClusterBackend {
-    pub(in crate::reactor::direct_plaintext) fn begin_cluster_drain(
+    pub(in crate::reactor) fn begin_cluster_drain(
         &mut self,
         now: Moment,
         causality: &mut CausalSequence,
@@ -147,7 +147,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn is_terminal(&self) -> io::Result<bool> {
+    pub(in crate::reactor) fn is_terminal(&self) -> io::Result<bool> {
         match self {
             Self::Plaintext { runtime, .. } => runtime.cluster_is_terminal(),
             #[cfg(feature = "tls-rustls")]

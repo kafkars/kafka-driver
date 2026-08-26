@@ -30,7 +30,7 @@ use crate::reactor::direct_plaintext::rustls_transport::DirectRustlsTransport;
 use super::{ClusterRuntime, rpc_access::ClusterRpcAccessError, seed::ResolvedSeedReplacement};
 
 /// One transport family chosen before its sole Bornera selector is constructed.
-pub(in crate::reactor::direct_plaintext) enum ClusterBackend {
+pub(in crate::reactor) enum ClusterBackend {
     Plaintext {
         runtime: Box<ClusterRuntime<TcpTransport>>,
         factory: PlaintextLanePlanFactory,
@@ -43,7 +43,7 @@ pub(in crate::reactor::direct_plaintext) enum ClusterBackend {
 }
 
 impl ClusterBackend {
-    pub(in crate::reactor::direct_plaintext) fn new(
+    pub(in crate::reactor) fn new(
         driver: &DriverLimits,
         template: BrokerTemplate,
     ) -> io::Result<Self> {
@@ -62,7 +62,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn install_resolved_seed(
+    pub(in crate::reactor) fn install_resolved_seed(
         &mut self,
         seed: ResolvedSeed,
         now: Moment,
@@ -78,7 +78,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn replace_resolved_seed(
+    pub(in crate::reactor) fn replace_resolved_seed(
         &mut self,
         seed: ResolvedSeed,
         now: Moment,
@@ -92,7 +92,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn drive(
+    pub(in crate::reactor) fn drive(
         &mut self,
         now: Moment,
         causality: &mut CausalSequence,
@@ -108,10 +108,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn wait(
-        &mut self,
-        maximum: Span,
-    ) -> io::Result<WaitOutcome> {
+    pub(in crate::reactor) fn wait(&mut self, maximum: Span) -> io::Result<WaitOutcome> {
         match self {
             Self::Plaintext { runtime, .. } => runtime.wait(maximum),
             #[cfg(feature = "tls-rustls")]
@@ -119,7 +116,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn wake_handle(&self) -> calandria::WakeHandle {
+    pub(in crate::reactor) fn wake_handle(&self) -> calandria::WakeHandle {
         match self {
             Self::Plaintext { runtime, .. } => runtime.connections.wake_handle(),
             #[cfg(feature = "tls-rustls")]
@@ -127,9 +124,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn pulse_handle(
-        &self,
-    ) -> bornera::ConnectionPulseHandle {
+    pub(in crate::reactor) fn pulse_handle(&self) -> bornera::ConnectionPulseHandle {
         match self {
             Self::Plaintext { runtime, .. } => runtime.connections.pulse_handle(),
             #[cfg(feature = "tls-rustls")]
@@ -137,7 +132,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn next_deadline(&self) -> Option<Moment> {
+    pub(in crate::reactor) fn next_deadline(&self) -> Option<Moment> {
         match self {
             Self::Plaintext { runtime, .. } => runtime.next_deadline(),
             #[cfg(feature = "tls-rustls")]
@@ -145,7 +140,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn has_local_work(&self) -> bool {
+    pub(in crate::reactor) fn has_local_work(&self) -> bool {
         match self {
             Self::Plaintext { runtime, .. } => runtime.has_local_work(),
             #[cfg(feature = "tls-rustls")]
@@ -153,7 +148,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn with_seed_rpc<R, E>(
+    pub(in crate::reactor) fn with_seed_rpc<R, E>(
         &mut self,
         causality: &mut CausalSequence,
         use_rpc: impl FnOnce(Option<&mut dyn BrokerRpc>) -> Result<R, E>,
@@ -165,7 +160,7 @@ impl ClusterBackend {
         }
     }
 
-    pub(in crate::reactor::direct_plaintext) fn with_route_rpc<R, E>(
+    pub(in crate::reactor) fn with_route_rpc<R, E>(
         &mut self,
         route: BrokerRoute,
         traffic: TrafficClass,

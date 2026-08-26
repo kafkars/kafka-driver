@@ -31,12 +31,18 @@ impl Reactor {
                         .map_err(ReactorError::broker_set)?
                 }
                 ScramProofTarget::Direct { .. } => {
-                    let Some(direct) = self.backend.direct_mut() else {
-                        continue;
-                    };
-                    direct
-                        .complete_scram_proof(outcome, now)
-                        .map_err(ReactorError::host)?
+                    if let Some(cluster) = self.backend.cluster_mut() {
+                        cluster
+                            .complete_scram_proof(outcome, now)
+                            .map_err(ReactorError::host)?
+                    } else {
+                        let Some(direct) = self.backend.direct_mut() else {
+                            continue;
+                        };
+                        direct
+                            .complete_scram_proof(outcome, now)
+                            .map_err(ReactorError::host)?
+                    }
                 }
             };
             delivered += usize::from(settled);

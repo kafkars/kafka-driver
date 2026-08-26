@@ -3,6 +3,7 @@
 mod address_refresh;
 mod broker;
 mod broker_route;
+mod cluster_address_refresh;
 mod commands;
 mod construction;
 mod coordinator;

@@ -20,14 +20,15 @@ impl Reactor {
         &mut self,
         commands: usize,
     ) -> Result<Option<TurnOutcome>, ReactorError> {
-        let backend_terminal = self.backend.legacy().map_or_else(
-            || {
-                self.backend
-                    .direct()
-                    .is_some_and(DirectBackend::is_terminal)
-            },
-            |legacy| legacy.brokers.is_terminal(),
-        );
+        let backend_terminal = if let Some(cluster) = self.backend.cluster() {
+            cluster.is_terminal().map_err(ReactorError::host)?
+        } else if let Some(direct) = self.backend.direct() {
+            DirectBackend::is_terminal(direct)
+        } else {
+            self.backend
+                .legacy()
+                .is_some_and(|legacy| legacy.brokers.is_terminal())
+        };
         if self.state != HostState::Draining || !backend_terminal {
             return Ok(None);
         }
