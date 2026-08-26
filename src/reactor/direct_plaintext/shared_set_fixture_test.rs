@@ -38,13 +38,6 @@ use super::{
 pub(super) const NOW: Moment = Moment::from_nanos(1);
 pub(super) type NegotiationGate = (mpsc::SyncSender<()>, mpsc::Receiver<()>);
 
-pub(super) struct ResponseControl {
-    pub(super) request_seen: mpsc::Receiver<()>,
-    pub(super) release_response: mpsc::SyncSender<()>,
-    pub(super) response_written: mpsc::Receiver<()>,
-    pub(super) finish: mpsc::SyncSender<()>,
-}
-
 pub(super) fn listener() -> TcpListener {
     TcpListener::bind("127.0.0.1:0").unwrap_or_else(|error| panic!("bind shared broker: {error}"))
 }
@@ -61,35 +54,6 @@ pub(super) fn spawn_lane(
     public_error_code: i16,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || serve_lane(&listener, gate, public_error_code))
-}
-
-pub(super) fn spawn_controlled_lane(
-    listener: TcpListener,
-    public_error_code: i16,
-) -> (ResponseControl, thread::JoinHandle<()>) {
-    let (request_seen, await_request) = mpsc::sync_channel(1);
-    let (release_response, response_release) = mpsc::sync_channel(1);
-    let (response_written, await_response) = mpsc::sync_channel(1);
-    let (finish, await_finish) = mpsc::sync_channel(1);
-    let server = thread::spawn(move || {
-        serve_controlled_lane(
-            &listener,
-            public_error_code,
-            &request_seen,
-            &response_release,
-            &response_written,
-            &await_finish,
-        );
-    });
-    (
-        ResponseControl {
-            request_seen: await_request,
-            release_response,
-            response_written: await_response,
-            finish,
-        },
-        server,
-    )
 }
 
 pub(super) fn shared_set(driver: &DriverLimits) -> DirectSetOwner<TcpTransport> {
@@ -236,37 +200,6 @@ fn serve_lane(listener: &TcpListener, gate: Option<NegotiationGate>, public_erro
     write_response(&mut peer, negotiation, &negotiation_response());
     let public = read_correlation(&mut peer);
     write_response(&mut peer, public, &response(public_error_code));
-}
-
-fn serve_controlled_lane(
-    listener: &TcpListener,
-    public_error_code: i16,
-    request_seen: &mpsc::SyncSender<()>,
-    release_response: &mpsc::Receiver<()>,
-    response_written: &mpsc::SyncSender<()>,
-    finish: &mpsc::Receiver<()>,
-) {
-    let (mut peer, _) = listener
-        .accept()
-        .unwrap_or_else(|error| panic!("accept controlled shared broker: {error}"));
-    peer.set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap_or_else(|error| panic!("bound controlled shared broker read: {error}"));
-    let negotiation = read_correlation(&mut peer);
-    write_response(&mut peer, negotiation, &negotiation_response());
-    let public = read_correlation(&mut peer);
-    request_seen
-        .send(())
-        .unwrap_or_else(|error| panic!("publish controlled shared request: {error}"));
-    release_response
-        .recv()
-        .unwrap_or_else(|error| panic!("release controlled shared response: {error}"));
-    write_response(&mut peer, public, &response(public_error_code));
-    response_written
-        .send(())
-        .unwrap_or_else(|error| panic!("publish controlled shared response: {error}"));
-    finish
-        .recv()
-        .unwrap_or_else(|error| panic!("finish controlled shared broker: {error}"));
 }
 
 fn read_correlation(peer: &mut TcpStream) -> i32 {
