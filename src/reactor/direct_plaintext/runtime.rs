@@ -1,17 +1,13 @@
-//! Capacity-one hosting facade over one shared set and one reusable Kafka lane.
+//! Capacity-one public facade over the reusable shared-set lane coordinator.
 
-use std::{
-    io,
-    ops::{Deref, DerefMut},
-};
+use std::io;
 
-use bornera::{ConnectionSet, ConnectionSetConfig, RegisteredTransport};
-use calandria::{Next, ResourceOwnerId, Span, Turn, WaitOutcome};
+use bornera::RegisteredTransport;
+use calandria::{Span, WaitOutcome};
 use kafka_driver_core::Moment;
 
 use crate::{
     SeedSnapshot,
-    config::DriverLimits,
     reactor::{
         causality::CausalSequence,
         scram_proof::{ScramProofOutcome, ScramProofSender},
@@ -20,39 +16,22 @@ use crate::{
 };
 
 use super::{
-    limits::set_limits,
-    owner::{
-        DirectLane, DirectLaneAccess, DirectLaneView, DirectSet, ID, calandria_moment, message,
-    },
+    owner::{DirectLane, DirectLaneAccess, DirectLaneView},
+    set_owner::DirectSetOwner,
 };
 
-pub(super) fn new_set<T: RegisteredTransport>(driver: &DriverLimits) -> io::Result<DirectSet<T>> {
-    ConnectionSet::new(
-        ConnectionSetConfig::new(ResourceOwnerId::new(ID)),
-        set_limits(driver),
-    )
-    .map_err(message)
-}
-
 pub(in crate::reactor) struct DirectRuntime<T: RegisteredTransport> {
-    pub(super) set: DirectSet<T>,
+    pub(super) connections: DirectSetOwner<T>,
     pub(super) lane: DirectLane<T>,
-    pub(super) last_turn: Turn,
 }
 
 impl<T: RegisteredTransport> DirectRuntime<T> {
     pub(super) fn access(&mut self) -> DirectLaneAccess<'_, T> {
-        DirectLaneAccess {
-            lane: &mut self.lane,
-            set: &mut self.set,
-        }
+        self.connections.access(&mut self.lane)
     }
 
     pub(super) fn view(&self) -> DirectLaneView<'_, T> {
-        DirectLaneView {
-            lane: &self.lane,
-            set: &self.set,
-        }
+        self.connections.view(&self.lane)
     }
 
     pub(in crate::reactor) fn submit(
@@ -69,96 +48,31 @@ impl<T: RegisteredTransport> DirectRuntime<T> {
         now: Moment,
         causality: &mut CausalSequence,
     ) -> io::Result<bool> {
-        let preparation = self.access().prepare_drive(now, causality)?;
-        if !preparation.should_turn {
-            return Ok(preparation.progress);
-        }
-        let (turn_succeeded, set_progress) =
-            if let Ok(turn) = self.set.turn_component(calandria_moment(now)) {
-                let progress = turn.work().get() != 0;
-                self.last_turn = turn;
-                (true, progress)
-            } else {
-                self.last_turn = Turn::waiting();
-                self.access().capture_turn_failure(now, causality)?;
-                (false, true)
-            };
-        let lane_progress =
-            self.access()
-                .finish_drive(&preparation, turn_succeeded, now, causality)?;
-        Ok(set_progress || lane_progress)
+        self.connections
+            .drive(std::slice::from_mut(&mut self.lane), now, causality)
     }
 
     pub(in crate::reactor) fn wait(&mut self, maximum: Span) -> io::Result<WaitOutcome> {
-        match self.set.poll_io(maximum) {
-            Ok(outcome) => Ok(outcome),
-            Err(error) => {
-                let primary = message(error);
-                let Some(connection) = self.lane.connection else {
-                    let _ = self.access().generation_invariant_fatal(
-                        Moment::ORIGIN,
-                        None,
-                        "Bornera readiness failed without a live direct generation",
-                    );
-                    return Err(primary);
-                };
-                match self
-                    .access()
-                    .recover_failed_generation(connection, Moment::ORIGIN, None)
-                {
-                    Ok(report) => {
-                        self.access().capture_recovery(report);
-                        Ok(WaitOutcome::Notified)
-                    }
-                    Err(_) => Err(primary),
-                }
-            }
-        }
+        self.connections
+            .wait(std::slice::from_mut(&mut self.lane), maximum)
     }
 
     pub(in crate::reactor) fn wake_handle(&self) -> calandria::WakeHandle {
-        self.set.wake_handle()
+        self.connections.wake_handle()
     }
 
     pub(in crate::reactor) fn pulse_handle(&self) -> bornera::ConnectionPulseHandle {
-        self.set.pulse_handle()
+        self.connections.pulse_handle()
     }
 
     pub(in crate::reactor) fn next_deadline(&self) -> Option<Moment> {
-        if self.lane.is_terminal() {
-            return None;
-        }
-        let engine = self
-            .lane
-            .lifecycle
-            .has_live_generation()
-            .then(|| match self.last_turn.next() {
-                Next::Now => Some(Moment::from_nanos(0)),
-                Next::WakeOr(deadline) => Some(Moment::from_nanos(deadline.moment().as_nanos())),
-                Next::Wake | Next::Stop => None,
-            })
-            .flatten();
-        engine
-            .into_iter()
-            .chain(self.lane.lifecycle.next_deadline())
-            .chain(
-                self.lane
-                    .lifecycle
-                    .has_live_generation()
-                    .then_some(self.lane.session_deadline)
-                    .flatten(),
-            )
-            .chain(self.lane.pending.next_deadline())
-            .min()
+        self.connections
+            .next_deadline(std::slice::from_ref(&self.lane))
     }
 
     pub(in crate::reactor) fn has_local_work(&self) -> bool {
-        !self.lane.is_terminal()
-            && (self.lane.pending_recovery.is_some()
-                || self.lane.runnable
-                || (self.lane.lifecycle.has_live_generation()
-                    && matches!(self.last_turn.next(), Next::Now))
-                || (self.lane.admission_open && !self.lane.pending.is_empty()))
+        self.connections
+            .has_local_work(std::slice::from_ref(&self.lane))
     }
 
     pub(in crate::reactor) fn is_terminal(&self) -> bool {
@@ -202,20 +116,6 @@ impl<T: RegisteredTransport> DirectRuntime<T> {
 
     #[cfg(test)]
     pub(in crate::reactor) fn selector_registrations(&self) -> usize {
-        self.set.snapshot().poller.registrations()
-    }
-}
-
-impl<T: RegisteredTransport> Deref for DirectRuntime<T> {
-    type Target = DirectLane<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.lane
-    }
-}
-
-impl<T: RegisteredTransport> DerefMut for DirectRuntime<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.lane
+        self.connections.snapshot().poller.registrations()
     }
 }

@@ -45,13 +45,15 @@ fn loopback_session_round_trip_releases_every_semantic_context() {
 
     for _ in 0..32 {
         drive(owner, now, &mut causality);
-        if owner.session.state().phase() == KafkaSessionPhase::Ready && owner.admission_open {
+        if owner.lane.session.state().phase() == KafkaSessionPhase::Ready
+            && owner.lane.admission_open
+        {
             break;
         }
         wait_if_idle(owner);
     }
-    assert_eq!(owner.session.state().phase(), KafkaSessionPhase::Ready);
-    assert!(owner.admission_open);
+    assert_eq!(owner.lane.session.state().phase(), KafkaSessionPhase::Ready);
+    assert!(owner.lane.admission_open);
 
     let (call, request) = erased_request(
         CallId::from_raw(7),
@@ -73,7 +75,7 @@ fn loopback_session_round_trip_releases_every_semantic_context() {
     let result = result.unwrap_or_else(|| panic!("direct request did not finish within 64 turns"));
 
     assert_eq!(result, Ok(Ok(ApiVersionsResponse::default())));
-    let contexts = owner.contexts.snapshot();
+    let contexts = owner.lane.contexts.snapshot();
     assert_eq!(contexts.reserved(), 0);
     assert_eq!(contexts.published(), 0);
     assert_eq!(contexts.retained_bytes().get(), 0);
@@ -82,14 +84,14 @@ fn loopback_session_round_trip_releases_every_semantic_context() {
         .join()
         .unwrap_or_else(|_| panic!("join private direct broker"));
     for _ in 0..32 {
-        if matches!(owner.lifecycle.state(), BrokerState::Backoff { .. }) {
+        if matches!(owner.lane.lifecycle.state(), BrokerState::Backoff { .. }) {
             break;
         }
         drive(owner, now, &mut causality);
         wait_if_idle(owner);
     }
     assert!(matches!(
-        owner.lifecycle.state(),
+        owner.lane.lifecycle.state(),
         BrokerState::Backoff { .. }
     ));
     assert!(!owner.is_terminal());
@@ -134,7 +136,7 @@ fn drain_rejects_pre_admission_request_as_not_sent_immediately() {
             delivery: Delivery::NotSent,
         })))
     );
-    assert!(owner.pending.is_empty());
+    assert!(owner.lane.pending.is_empty());
 }
 
 fn drive(owner: &mut DirectPlaintextOwner, now: Moment, causality: &mut CausalSequence) {

@@ -42,27 +42,24 @@ fn synchronous_endpoint_failures_retain_owner_and_queue_until_epoch_three() {
         NOW,
     )
     .unwrap_or_else(|error| panic!("retain initial endpoint failure: {error}"));
-
     let first_deadline = assert_backoff(&owner, 1, 2);
-    assert!(owner.connection.is_none());
+    assert!(owner.lane.connection.is_none());
     assert_eq!(owner.selector_registrations(), 0);
-    assert!(owner.authentication_session.is_none());
+    assert!(owner.lane.authentication_session.is_none());
     assert!(matches!(
-        owner.session.state(),
+        owner.lane.session.state(),
         KafkaSessionState::Closed { .. }
     ));
     assert_eq!(
-        owner.last_close_reason,
+        owner.lane.last_close_reason,
         Some(CloseReason::OpenFailed(TransportFailure::Refused))
     );
-
     let (call, request) = request(81);
     let mut causality = CausalSequence::new();
     owner
         .submit(request, NOW, &mut causality)
         .unwrap_or_else(|error| panic!("queue across initial endpoint failure: {error}"));
     assert!(call.try_result().is_none());
-
     assert!(
         owner
             .access()
@@ -70,10 +67,9 @@ fn synchronous_endpoint_failures_retain_owner_and_queue_until_epoch_three() {
             .unwrap_or_else(|error| panic!("attempt synchronous epoch two: {error}"))
     );
     let second_deadline = assert_backoff(&owner, 2, 3);
-    assert!(owner.connection.is_none());
+    assert!(owner.lane.connection.is_none());
     assert_eq!(owner.selector_registrations(), 0);
     assert!(call.try_result().is_none());
-
     assert!(
         owner
             .access()
@@ -81,12 +77,15 @@ fn synchronous_endpoint_failures_retain_owner_and_queue_until_epoch_three() {
             .unwrap_or_else(|error| panic!("open real epoch three: {error}"))
     );
     assert!(matches!(
-        owner.lifecycle.state(),
+        owner.lane.lifecycle.state(),
         BrokerState::Connecting { epoch, .. } if epoch == ConnectionEpoch::from_raw(3)
     ));
-    assert_eq!(owner.connection_for_test().epoch(), BorneraEpoch::new(3));
+    assert_eq!(
+        owner.lane.connection_for_test().epoch(),
+        BorneraEpoch::new(3)
+    );
     assert_eq!(owner.selector_registrations(), 1);
-    assert!(owner.authentication_session.is_some());
+    assert!(owner.lane.authentication_session.is_some());
     assert!(call.try_result().is_none());
 }
 
@@ -109,12 +108,14 @@ fn recovered_admission_resets_retry_before_generation_failure() {
         .fire_due_reconnect(deadline, &mut causality)
         .unwrap_or_else(|error| panic!("open admission-recovery epoch: {error}"));
     drive_transport_open(&mut owner, deadline);
-    let connection = owner.connection_for_test();
+    let connection = owner.lane.connection_for_test();
     owner
+        .connections
         .set
         .open_admission(connection)
         .unwrap_or_else(|error| panic!("publish recovered admission edge: {error}"));
     let report = owner
+        .connections
         .set
         .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
         .unwrap_or_else(|error| panic!("recover admitted epoch: {error}"));
@@ -127,17 +128,16 @@ fn recovered_admission_resets_retry_before_generation_failure() {
     owner
         .submit(queued, deadline, &mut causality)
         .unwrap_or_else(|error| panic!("queue behind captured recovery: {error}"));
-    assert!(owner.connection.is_none());
+    assert!(owner.lane.connection.is_none());
     assert!(queued_call.try_result().is_none());
-
     owner
         .drive(deadline, &mut causality)
         .unwrap_or_else(|error| panic!("settle recovered admission: {error}"));
-    let BrokerState::Backoff { retry, .. } = owner.lifecycle.state() else {
+    let BrokerState::Backoff { retry, .. } = owner.lane.lifecycle.state() else {
         panic!("recovered admitted generation must enter backoff");
     };
     assert_eq!(retry.get(), 1);
-    assert!(owner.connection.is_none());
+    assert!(owner.lane.connection.is_none());
     assert!(queued_call.try_result().is_none());
 }
 
@@ -154,7 +154,6 @@ fn policy_exhaustion_fails_pending_and_later_calls_as_closed() {
             rejected(CallFailure::Closed)
         );
     }
-
     let listener = listener();
     let mut owner = DirectPlaintextOwner::new(
         &DriverLimits::default(),
@@ -184,7 +183,7 @@ fn policy_exhaustion_fails_pending_and_later_calls_as_closed() {
         Some(Ok(Err(rejected(CallFailure::Closed))))
     );
     assert!(matches!(
-        owner.lifecycle.state(),
+        owner.lane.lifecycle.state(),
         BrokerState::Closed {
             reason: BrokerCloseReason::ClockOverflow
         }
@@ -242,7 +241,7 @@ fn assert_backoff(owner: &DirectPlaintextOwner, failed: u64, next: u64) -> Momen
         next_epoch,
         deadline,
         ..
-    } = owner.lifecycle.state()
+    } = owner.lane.lifecycle.state()
     else {
         panic!("direct endpoint failure must enter backoff");
     };
@@ -253,12 +252,14 @@ fn assert_backoff(owner: &DirectPlaintextOwner, failed: u64, next: u64) -> Momen
 
 fn drive_transport_open(owner: &mut DirectPlaintextOwner, now: Moment) {
     for _ in 0..32 {
-        let connection = owner.connection_for_test();
+        let connection = owner.lane.connection_for_test();
         owner
+            .connections
             .set
             .turn_component(calandria_moment(now))
             .unwrap_or_else(|error| panic!("drive mechanical transport: {error}"));
         if owner
+            .connections
             .set
             .connection_snapshot(connection)
             .is_ok_and(|snapshot| snapshot.transport == TransportState::Open)
@@ -266,6 +267,7 @@ fn drive_transport_open(owner: &mut DirectPlaintextOwner, now: Moment) {
             return;
         }
         owner
+            .connections
             .set
             .poll_io(Span::try_from(Duration::from_millis(50)).unwrap_or(Span::ZERO))
             .unwrap_or_else(|error| panic!("wait for mechanical transport: {error}"));
@@ -274,14 +276,15 @@ fn drive_transport_open(owner: &mut DirectPlaintextOwner, now: Moment) {
 }
 
 fn detach_connection(owner: &mut DirectPlaintextOwner) {
-    let connection = owner.connection_for_test();
+    let connection = owner.lane.connection_for_test();
     drop(
         owner
+            .connections
             .set
             .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
             .unwrap_or_else(|error| panic!("detach test connection: {error}")),
     );
-    owner.connection = None;
+    owner.lane.connection = None;
 }
 
 fn listener() -> TcpListener {

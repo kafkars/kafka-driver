@@ -41,19 +41,22 @@ fn live_missing_context_recovery_keeps_predrained_suffix() {
     owner
         .submit(second_request, NOW, &mut causality)
         .unwrap_or_else(|error| panic!("submit second suffix call: {error}"));
-    let keys = owner.contexts.keys_for_test();
+    let keys = owner.lane.contexts.keys_for_test();
     assert_eq!(keys.len(), 2);
     let missing = owner
+        .lane
         .contexts
         .release(keys[0])
         .unwrap_or_else(|| panic!("release missing suffix context"));
     fail_context(missing, RequestError::IdentityConflict);
-    let connection = owner.connection_for_test();
+    let connection = owner.lane.connection_for_test();
     owner
+        .connections
         .set
         .cancel(connection, keys[0].operation())
         .unwrap_or_else(|error| panic!("cancel missing suffix operation: {error}"));
     owner
+        .connections
         .set
         .cancel(connection, keys[1].operation())
         .unwrap_or_else(|error| panic!("cancel retained suffix operation: {error}"));
@@ -85,8 +88,9 @@ fn causal_exhaustion_totalizes_recovered_and_pending_calls() {
     owner
         .submit(second_request, NOW, &mut causality)
         .unwrap_or_else(|error| panic!("submit second causal call: {error}"));
-    let connection = owner.connection_for_test();
+    let connection = owner.lane.connection_for_test();
     let report = owner
+        .connections
         .set
         .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
         .unwrap_or_else(|error| panic!("capture causal recovery report: {error}"));
@@ -121,14 +125,15 @@ fn stale_commit_with_exhausted_causality_completes_current_call() {
         .prepare_bornera(
             ApiVersion::new(0),
             None,
-            owner.outbound_limits,
-            owner.decode_limits,
+            owner.lane.outbound_limits,
+            owner.lane.decode_limits,
         )
         .unwrap_or_else(|error| panic!("prepare stale causal call: {error}"));
     let measure = preparation.measure();
     let retained = preparation.context_retained_bytes();
     let (encoder, context) = preparation.into_parts();
     let mut reservation = owner
+        .lane
         .contexts
         .reserve(DirectOperationContext::Public(context), retained)
         .unwrap_or_else(|_| panic!("reserve stale causal context"));
@@ -137,8 +142,9 @@ fn stale_commit_with_exhausted_causality_completes_current_call() {
     let options = OperationOptions::until(Deadline::at(calandria_moment(Moment::from_nanos(10))))
         .retained_bytes(retained)
         .write_retained_bytes(write_retained);
-    let connection = owner.connection_for_test();
+    let connection = owner.lane.connection_for_test();
     let permit = owner
+        .connections
         .set
         .reserve(connection, calandria_moment(NOW), options)
         .unwrap_or_else(|error| panic!("reserve stale causal permit: {error}"));
@@ -154,6 +160,7 @@ fn stale_commit_with_exhausted_causality_completes_current_call() {
         .unwrap_or_else(|error| panic!("encode stale causal frame: {error}"));
     drop(
         owner
+            .connections
             .set
             .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
             .unwrap_or_else(|error| panic!("make stale causal token: {error}")),
@@ -194,7 +201,9 @@ fn ready_owner() -> (
         owner
             .drive(NOW, &mut causality)
             .unwrap_or_else(|error| panic!("drive totality owner: {error}"));
-        if owner.session.state().phase() == KafkaSessionPhase::Ready && owner.admission_open {
+        if owner.lane.session.state().phase() == KafkaSessionPhase::Ready
+            && owner.lane.admission_open
+        {
             return (owner, release, server);
         }
         if !owner.has_local_work() {
@@ -220,11 +229,11 @@ fn request(
 }
 
 fn assert_total(owner: &DirectPlaintextOwner) {
-    let contexts = owner.contexts.snapshot();
+    let contexts = owner.lane.contexts.snapshot();
     assert_eq!(contexts.reserved(), 0);
     assert_eq!(contexts.published(), 0);
     assert_eq!(contexts.retained_bytes().get(), 0);
-    assert!(owner.pending.is_empty());
+    assert!(owner.lane.pending.is_empty());
     assert!(owner.is_terminal());
 }
 

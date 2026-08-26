@@ -39,8 +39,8 @@ fn recovered_outcome_uses_the_explicit_generation_reason() {
         .prepare_bornera(
             ApiVersion::new(0),
             None,
-            owner.outbound_limits,
-            owner.decode_limits,
+            owner.lane.outbound_limits,
+            owner.lane.decode_limits,
         )
         .unwrap_or_else(|error| panic!("prepare recovered public context: {error}"));
     let (_, context) = preparation.into_parts();

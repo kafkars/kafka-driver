@@ -23,13 +23,39 @@ use super::{
 // One fixed epoch can publish each of Bornera's four lifecycle edges once.
 const LIFECYCLE_EVENTS: NonZeroUsize = nonzero(4);
 
-pub(super) fn set_limits(limits: &DriverLimits) -> ConnectionSetLimits {
+#[derive(Clone, Copy)]
+pub(super) struct DirectSetBounds {
+    max_connections: NonZeroUsize,
+    ready_connections_per_turn: NonZeroUsize,
+}
+
+impl DirectSetBounds {
+    pub(super) const fn new(
+        max_connections: NonZeroUsize,
+        ready_connections_per_turn: NonZeroUsize,
+    ) -> Self {
+        Self {
+            max_connections,
+            ready_connections_per_turn,
+        }
+    }
+
+    pub(super) const fn direct() -> Self {
+        Self::new(NonZeroUsize::MIN, NonZeroUsize::MIN)
+    }
+
+    pub(super) const fn max_connections(self) -> NonZeroUsize {
+        self.max_connections
+    }
+}
+
+pub(super) fn set_limits(limits: &DriverLimits, bounds: DirectSetBounds) -> ConnectionSetLimits {
     ConnectionSetLimits::new(
-        NonZeroUsize::MIN,
+        bounds.max_connections,
         limits.poll_event_budget(),
         limits.mailbox_capacity(),
         limits.command_budget(),
-        NonZeroUsize::MIN,
+        bounds.ready_connections_per_turn,
     )
 }
 

@@ -52,19 +52,20 @@ fn rustls_attempt_replays_a_fresh_transport_in_one_set() {
     )
     .unwrap_or_else(|error| panic!("construct first Rustls generation: {error}"));
     let first = owner
+        .lane
         .live_connection()
         .unwrap_or_else(|error| panic!("read first rustls generation: {error}"));
 
     let report = owner
+        .connections
         .set
         .abandon(first, OwnerFailure::OwnerInvariant)
         .unwrap_or_else(|error| panic!("recover first Rustls generation: {error}"));
     assert_eq!(report.epoch, ConnectionEpoch::new(1));
     let second = owner
-        .lane
-        .connection_attempt
-        .connect(
-            &mut owner.set,
+        .connections
+        .connect_lane(
+            owner.lane.connection_attempt.as_ref(),
             owner.lane.connection_owner,
             ConnectionEpoch::new(2),
             Moment::from_nanos(2),
@@ -74,8 +75,8 @@ fn rustls_attempt_replays_a_fresh_transport_in_one_set() {
     assert_ne!(second, first);
     assert_eq!(second.connection(), first.connection());
     assert_eq!(second.epoch(), ConnectionEpoch::new(2));
-    assert_eq!(owner.set.snapshot().connections.active(), 1);
-    assert_eq!(owner.set.snapshot().poller.registrations(), 1);
+    assert_eq!(owner.connections.snapshot().connections.active(), 1);
+    assert_eq!(owner.connections.snapshot().poller.registrations(), 1);
 }
 
 fn tls() -> TlsClientConfig {

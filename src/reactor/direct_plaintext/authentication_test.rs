@@ -39,16 +39,16 @@ fn plain_handshake_deadline_fires_before_engine_then_retries_exactly() {
         .unwrap_or_else(|error| panic!("queue call behind stalled PLAIN handshake: {error}"));
 
     let observed = drive_until_observed(&mut owner, now, &mut causality, &handshake_seen);
-    assert_eq!(owner.authentication_timeout, Duration::from_secs(10));
+    assert_eq!(owner.lane.authentication_timeout, Duration::from_secs(10));
     let deadline = now
         .checked_add(Duration::from_secs(10))
         .unwrap_or_else(|| panic!("authentication deadline must fit"));
-    assert_eq!(owner.session_deadline, Some(deadline));
+    assert_eq!(owner.lane.session_deadline, Some(deadline));
     assert!(call.try_result().is_none());
 
     assert!(drive(&mut owner, deadline, &mut causality));
     assert!(matches!(
-        owner.session.state(),
+        owner.lane.session.state(),
         KafkaSessionState::Closing {
             reason: KafkaSessionCloseReason::AuthenticationFailed(AuthenticationFailure::Timeout),
         } | KafkaSessionState::Closed {
@@ -60,7 +60,7 @@ fn plain_handshake_deadline_fires_before_engine_then_retries_exactly() {
     let expected_reason = CloseReason::AuthenticationFailed(AuthenticationFailure::Timeout);
     assert!(call.try_result().is_none());
     assert_eq!(
-        owner.session.state(),
+        owner.lane.session.state(),
         KafkaSessionState::Closed {
             reason: KafkaSessionCloseReason::AuthenticationFailed(AuthenticationFailure::Timeout),
         }
@@ -105,7 +105,7 @@ fn accepted_plain_handshake_followed_by_eof_retries_as_transport_loss() {
 
     let expected_reason = CloseReason::TransportLost(TransportFailure::Other);
     assert!(call.try_result().is_none());
-    assert_eq!(owner.last_close_reason, Some(expected_reason));
+    assert_eq!(owner.lane.last_close_reason, Some(expected_reason));
     assert_empty_contexts(&owner);
     let observed = server
         .join()
@@ -142,7 +142,7 @@ fn drive_until_backoff(
     causality: &mut CausalSequence,
 ) {
     for _ in 0..64 {
-        if matches!(owner.lifecycle.state(), BrokerState::Backoff { .. }) {
+        if matches!(owner.lane.lifecycle.state(), BrokerState::Backoff { .. }) {
             return;
         }
         drive(owner, now, causality);
@@ -167,7 +167,7 @@ fn wait_if_idle(owner: &mut DirectPlaintextOwner) {
 }
 
 fn assert_empty_contexts(owner: &DirectPlaintextOwner) {
-    let contexts = owner.contexts.snapshot();
+    let contexts = owner.lane.contexts.snapshot();
     assert_eq!(contexts.reserved(), 0);
     assert_eq!(contexts.published(), 0);
     assert_eq!(contexts.retained_bytes().get(), 0);

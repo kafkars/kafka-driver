@@ -37,12 +37,12 @@ fn initial_endpoint_failure_can_close_policy_without_failing_construction() {
     .unwrap_or_else(|error| panic!("construct initially policy-closed owner: {error}"));
 
     assert!(matches!(
-        owner.lifecycle.state(),
+        owner.lane.lifecycle.state(),
         BrokerState::Closed {
             reason: BrokerCloseReason::ClockOverflow
         }
     ));
-    assert!(owner.connection.is_none());
+    assert!(owner.lane.connection.is_none());
     assert_eq!(owner.selector_registrations(), 0);
     assert!(owner.is_terminal());
     let (call, request) = erased_request(
@@ -81,15 +81,16 @@ fn timer_identity_exhaustion_is_repeatable_host_fatal_without_policy_close() {
         .submit(request, NOW, &mut causality)
         .unwrap_or_else(|error| panic!("queue before timer exhaustion: {error}"));
     assert!(pending.try_result().is_none());
-    let connection = owner.connection_for_test();
+    let connection = owner.lane.connection_for_test();
     drop(
         owner
+            .connections
             .set
             .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
             .unwrap_or_else(|error| panic!("detach timer-exhaustion connection: {error}")),
     );
-    owner.connection = None;
-    owner.lifecycle.exhaust_timer_ids();
+    owner.lane.connection = None;
+    owner.lane.lifecycle.exhaust_timer_ids();
 
     for _ in 0..2 {
         let error = owner
@@ -107,13 +108,13 @@ fn timer_identity_exhaustion_is_repeatable_host_fatal_without_policy_close() {
             "direct reconnect timer identities were exhausted"
         );
         assert!(matches!(
-            owner.lifecycle.state(),
+            owner.lane.lifecycle.state(),
             BrokerState::Connecting { epoch, .. } if epoch == ConnectionEpoch::from_raw(1)
         ));
         assert!(owner.is_terminal());
         assert!(owner.seed_snapshot().is_none());
     }
-    assert!(owner.pending.is_empty());
+    assert!(owner.lane.pending.is_empty());
     assert!(matches!(pending.try_result(), Some(Ok(Err(_)))));
 }
 

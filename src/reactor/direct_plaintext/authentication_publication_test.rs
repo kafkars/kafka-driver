@@ -101,16 +101,16 @@ fn frame_too_large_is_plain_policy_failure_and_releases_both_affine_owners() {
         .unwrap_or_else(|error| panic!("settle oversized PLAIN frame: {error}"));
 
     assert_eq!(
-        owner.session.state(),
+        owner.lane.session.state(),
         KafkaSessionState::Closing {
             reason: KafkaSessionCloseReason::AuthenticationFailed(
                 AuthenticationFailure::PolicyLimitExceeded,
             ),
         }
     );
-    assert!(owner.authentication_session.is_none());
-    assert!(owner.session_deadline.is_none());
-    assert!(owner.pending_recovery.is_none());
+    assert!(owner.lane.authentication_session.is_none());
+    assert!(owner.lane.session_deadline.is_none());
+    assert!(owner.lane.pending_recovery.is_none());
     assert_empty_contexts(&owner);
     assert_empty_bornera_ownership(&owner);
 }
@@ -120,9 +120,11 @@ fn admission_closed_defers_to_lifecycle_and_releases_both_affine_owners() {
     let (mut owner, _listener) = plain_owner();
     let permit = reserve(&mut owner, retained(1));
     let reservation = reserve_context(&owner);
+    let connection = owner.lane.connection_for_test();
     owner
+        .connections
         .set
-        .finalize(owner.connection_for_test(), BorneraCloseReason::Requested)
+        .finalize(connection, BorneraCloseReason::Requested)
         .unwrap_or_else(|error| panic!("close PLAIN admission: {error}"));
 
     owner
@@ -136,8 +138,8 @@ fn admission_closed_defers_to_lifecycle_and_releases_both_affine_owners() {
         )
         .unwrap_or_else(|error| panic!("defer closed PLAIN admission: {error}"));
 
-    assert!(owner.authentication_session.is_some());
-    assert!(owner.pending_recovery.is_none());
+    assert!(owner.lane.authentication_session.is_some());
+    assert!(owner.lane.pending_recovery.is_none());
     assert_empty_contexts(&owner);
     assert_empty_bornera_ownership(&owner);
 }
@@ -160,9 +162,9 @@ fn foreign_permit_abandons_the_owner_instead_of_reporting_capacity() {
         )
         .unwrap_or_else(|error| panic!("abandon foreign PLAIN permit: {error}"));
 
-    assert!(owner.pending_recovery.is_some());
-    assert!(owner.connection.is_none());
-    assert!(!owner.admission_open);
+    assert!(owner.lane.pending_recovery.is_some());
+    assert!(owner.lane.connection.is_none());
+    assert!(!owner.lane.admission_open);
     assert_empty_bornera_ownership(&foreign);
     assert_empty_contexts(&owner);
 }
@@ -172,13 +174,12 @@ fn stale_connection_is_host_fatal_after_releasing_both_affine_owners() {
     let (mut owner, _listener) = plain_owner();
     let permit = reserve(&mut owner, retained(1));
     let reservation = reserve_context(&owner);
+    let connection = owner.lane.connection_for_test();
     drop(
         owner
+            .connections
             .set
-            .abandon(
-                owner.connection_for_test(),
-                bornera::OwnerFailure::OwnerInvariant,
-            )
+            .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
             .unwrap_or_else(|error| panic!("make PLAIN connection stale: {error}")),
     );
 
@@ -199,8 +200,8 @@ fn stale_connection_is_host_fatal_after_releasing_both_affine_owners() {
         "stale Bornera connection violated direct ownership"
     );
     assert!(owner.is_terminal());
-    assert!(owner.connection.is_none());
-    assert!(owner.pending_recovery.is_none());
+    assert!(owner.lane.connection.is_none());
+    assert!(owner.lane.pending_recovery.is_none());
     assert_empty_contexts(&owner);
 }
 
@@ -218,18 +219,17 @@ fn plain_owner() -> (DirectPlaintextOwner, TcpListener) {
 }
 
 fn arm_plain_handshake(owner: &mut DirectPlaintextOwner) {
-    drop(owner.session.apply(KafkaSessionInput::TransportOpened {
+    let session = &mut owner.lane.session;
+    drop(session.apply(KafkaSessionInput::TransportOpened {
         deadline: KafkaSessionDeadline::new(NOW, DEADLINE),
     }));
     drop(
-        owner
-            .session
-            .apply(KafkaSessionInput::ApiVersionsSucceededWithAuthentication {
-                capabilities: capabilities(),
-                deadline: KafkaSessionDeadline::new(NOW, DEADLINE),
-            }),
+        session.apply(KafkaSessionInput::ApiVersionsSucceededWithAuthentication {
+            capabilities: capabilities(),
+            deadline: KafkaSessionDeadline::new(NOW, DEADLINE),
+        }),
     );
-    owner.session_deadline = Some(DEADLINE);
+    owner.lane.session_deadline = Some(DEADLINE);
 }
 
 fn capabilities() -> NegotiatedCapabilities {
@@ -251,9 +251,11 @@ fn reserve(
     let options = OperationOptions::until(Deadline::at(calandria_moment(DEADLINE)))
         .session()
         .write_retained_bytes(write_retained);
+    let connection = owner.lane.connection_for_test();
     owner
+        .connections
         .set
-        .reserve(owner.connection_for_test(), calandria_moment(NOW), options)
+        .reserve(connection, calandria_moment(NOW), options)
         .unwrap_or_else(|error| panic!("reserve PLAIN publication permit: {error}"))
 }
 
@@ -261,6 +263,7 @@ fn reserve_context(
     owner: &DirectPlaintextOwner,
 ) -> crate::reactor::bornera::ContextReservation<DirectOperationContext> {
     owner
+        .lane
         .contexts
         .reserve(
             DirectOperationContext::authentication(),
@@ -284,7 +287,7 @@ fn nonzero(value: usize) -> NonZeroUsize {
 }
 
 fn assert_empty_contexts(owner: &DirectPlaintextOwner) {
-    let snapshot = owner.contexts.snapshot();
+    let snapshot = owner.lane.contexts.snapshot();
     assert_eq!(snapshot.reserved(), 0);
     assert_eq!(snapshot.published(), 0);
     assert_eq!(snapshot.retained_bytes(), RetainedBytes::ZERO);
@@ -292,8 +295,9 @@ fn assert_empty_contexts(owner: &DirectPlaintextOwner) {
 
 fn assert_empty_bornera_ownership(owner: &DirectPlaintextOwner) {
     let snapshot = owner
+        .connections
         .set
-        .connection_snapshot(owner.connection_for_test())
+        .connection_snapshot(owner.lane.connection_for_test())
         .unwrap_or_else(|error| panic!("inspect PLAIN publication ownership: {error}"));
     assert_eq!(snapshot.connection.reserved_permits, 0);
     assert_eq!(snapshot.connection.owned_operations, 0);

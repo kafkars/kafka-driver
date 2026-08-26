@@ -9,11 +9,11 @@ use crate::reactor::{bornera::KafkaFrame, causality::CausalSequence};
 
 use super::owner::DirectLaneAccess;
 
+#[derive(Clone, Copy)]
 pub(super) struct DirectDrivePreparation {
     pub(super) progress: bool,
     pub(super) remaining: usize,
     pub(super) more_due: bool,
-    pub(super) should_turn: bool,
 }
 
 impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
@@ -34,14 +34,23 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
             progress,
             remaining: submission_budget.saturating_sub(expiration.settled()),
             more_due,
-            should_turn: !self.is_terminal() && self.lifecycle.has_live_generation(),
         })
+    }
+
+    pub(super) fn drain_after_turn(
+        &mut self,
+        now: Moment,
+        causality: &mut CausalSequence,
+    ) -> std::io::Result<bool> {
+        if self.connection.is_none() {
+            return Ok(false);
+        }
+        self.drain_engine(now, causality)
     }
 
     pub(super) fn finish_drive(
         &mut self,
         preparation: &DirectDrivePreparation,
-        turn_succeeded: bool,
         now: Moment,
         causality: &mut CausalSequence,
     ) -> std::io::Result<bool> {
@@ -49,11 +58,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
             mut progress,
             remaining,
             more_due,
-            should_turn,
         } = *preparation;
-        if turn_succeeded && should_turn {
-            progress |= self.drain_engine(now, causality)?;
-        }
         progress |= self.settle_pending_recovery(now, causality)?;
         if self.is_terminal() {
             return Ok(progress);

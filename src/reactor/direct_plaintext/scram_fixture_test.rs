@@ -74,31 +74,32 @@ impl DirectBackend {
             .dispatch_scram_proof(effect_id, first_round(), pending, NOW)
             .unwrap_or_else(|error| panic!("dispatch hosted direct proof: {error}"));
         owner
+            .lane
             .pending_scram_proof
             .unwrap_or_else(|| panic!("hosted direct proof fence missing"))
     }
 
     pub(in crate::reactor) fn has_scram_sender_for_test(&self) -> bool {
         match self {
-            Self::Plaintext(owner) => owner.scram_proof_sender.is_some(),
+            Self::Plaintext(owner) => owner.lane.scram_proof_sender.is_some(),
             #[cfg(feature = "tls-rustls")]
-            Self::Rustls(owner) => owner.scram_proof_sender.is_some(),
+            Self::Rustls(owner) => owner.lane.scram_proof_sender.is_some(),
         }
     }
 
     pub(in crate::reactor) fn has_pending_scram_proof_for_test(&self) -> bool {
         match self {
-            Self::Plaintext(owner) => owner.pending_scram_proof.is_some(),
+            Self::Plaintext(owner) => owner.lane.pending_scram_proof.is_some(),
             #[cfg(feature = "tls-rustls")]
-            Self::Rustls(owner) => owner.pending_scram_proof.is_some(),
+            Self::Rustls(owner) => owner.lane.pending_scram_proof.is_some(),
         }
     }
 
     pub(in crate::reactor) fn scram_round_for_test(&self) -> Option<AuthenticationRound> {
         let state = match self {
-            Self::Plaintext(owner) => owner.session.state(),
+            Self::Plaintext(owner) => owner.lane.session.state(),
             #[cfg(feature = "tls-rustls")]
-            Self::Rustls(owner) => owner.session.state(),
+            Self::Rustls(owner) => owner.lane.session.state(),
         };
         match state {
             KafkaSessionState::Authenticating {
@@ -111,11 +112,17 @@ impl DirectBackend {
 }
 
 fn arm_first_proof(owner: &mut DirectPlaintextOwner) -> PendingDerivation {
-    drop(owner.session.apply(KafkaSessionInput::TransportOpened {
-        deadline: KafkaSessionDeadline::new(NOW, DEADLINE),
-    }));
     drop(
         owner
+            .lane
+            .session
+            .apply(KafkaSessionInput::TransportOpened {
+                deadline: KafkaSessionDeadline::new(NOW, DEADLINE),
+            }),
+    );
+    drop(
+        owner
+            .lane
             .session
             .apply(KafkaSessionInput::ApiVersionsSucceededWithAuthentication {
                 capabilities: capabilities(),
@@ -124,12 +131,13 @@ fn arm_first_proof(owner: &mut DirectPlaintextOwner) -> PendingDerivation {
     );
     drop(
         owner
+            .lane
             .session
             .apply(KafkaSessionInput::AuthenticationHandshakeSucceeded),
     );
-    owner.session_deadline = Some(DEADLINE);
+    owner.lane.session_deadline = Some(DEADLINE);
     assert!(matches!(
-        owner.session.state(),
+        owner.lane.session.state(),
         KafkaSessionState::Authenticating {
             authentication: KafkaSessionAuthenticationState::Exchanging { round, .. },
             ..
@@ -137,6 +145,7 @@ fn arm_first_proof(owner: &mut DirectPlaintextOwner) -> PendingDerivation {
     ));
     pending(
         owner
+            .lane
             .authentication_session
             .as_mut()
             .unwrap_or_else(|| panic!("direct SCRAM session must remain owned")),
@@ -189,14 +198,17 @@ fn capabilities() -> NegotiatedCapabilities {
 fn open_transport(owner: &mut DirectPlaintextOwner) {
     let wait = Span::try_from(Duration::from_millis(100)).unwrap_or(Span::ZERO);
     for _ in 0..16 {
-        owner.last_turn = owner
+        owner.connections.last_turn = owner
+            .connections
             .set
             .turn_component(calandria_moment(NOW))
             .unwrap_or_else(|error| panic!("drive direct SCRAM transport: {error}"));
         if owner
+            .connections
             .set
             .connection_snapshot(
                 owner
+                    .lane
                     .live_connection()
                     .unwrap_or_else(|error| panic!("read SCRAM fixture connection: {error}")),
             )
@@ -205,6 +217,7 @@ fn open_transport(owner: &mut DirectPlaintextOwner) {
             return;
         }
         owner
+            .connections
             .set
             .poll_io(wait)
             .unwrap_or_else(|error| panic!("poll direct SCRAM transport: {error}"));

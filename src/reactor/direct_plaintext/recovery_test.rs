@@ -47,20 +47,24 @@ fn missing_recovery_context_settles_everything_then_fails_the_host() {
         .submit(recovered, now, &mut causality)
         .unwrap_or_else(|error| panic!("submit live recovery request: {error}"));
     drive(&mut owner, now, &mut causality);
-    assert_eq!(owner.contexts.snapshot().published(), 2);
+    assert_eq!(owner.lane.contexts.snapshot().published(), 2);
     let (settled_key, settled_context) = owner
+        .lane
         .contexts
         .release_next()
         .unwrap_or_else(|| panic!("recovery test requires one published context"));
     fail_context(settled_context, RequestError::IdentityConflict);
     let connection = owner
+        .lane
         .live_connection()
         .unwrap_or_else(|error| panic!("read recoverable connection: {error}"));
     owner
+        .connections
         .set
         .cancel(connection, settled_key.operation())
         .unwrap_or_else(|error| panic!("publish cancelled recovery outcome: {error}"));
     let report = owner
+        .connections
         .set
         .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
         .unwrap_or_else(|error| panic!("abandon recovery owner: {error}"));
@@ -72,7 +76,7 @@ fn missing_recovery_context_settles_everything_then_fails_the_host() {
         .submit(queued, now, &mut causality)
         .unwrap_or_else(|error| panic!("queue request behind pending recovery: {error}"));
     assert!(queued_call.try_result().is_none());
-    assert!(!owner.pending.is_empty());
+    assert!(!owner.lane.pending.is_empty());
 
     let error = owner
         .drive(now, &mut causality)
@@ -93,7 +97,7 @@ fn missing_recovery_context_settles_everything_then_fails_the_host() {
         recovered_call.try_result(),
         Some(Ok(Err(recovered_failure(Delivery::PossiblySent))))
     );
-    let contexts = owner.contexts.snapshot();
+    let contexts = owner.lane.contexts.snapshot();
     assert_eq!(contexts.reserved(), 0);
     assert_eq!(contexts.published(), 0);
     assert_eq!(contexts.retained_bytes().get(), 0);
@@ -101,7 +105,7 @@ fn missing_recovery_context_settles_everything_then_fails_the_host() {
         queued_call.try_result(),
         Some(Ok(Err(recovered_failure(Delivery::NotSent))))
     );
-    assert!(owner.pending.is_empty());
+    assert!(owner.lane.pending.is_empty());
     assert!(owner.is_terminal());
     assert!(!owner.has_local_work());
     assert_eq!(
@@ -126,8 +130,9 @@ fn shutdown_settles_captured_recovery_before_cancelling_backoff() {
         now,
     )
     .unwrap_or_else(|error| panic!("construct recovery-shutdown owner: {error}"));
-    let connection = owner.connection_for_test();
+    let connection = owner.lane.connection_for_test();
     let report = owner
+        .connections
         .set
         .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
         .unwrap_or_else(|error| panic!("abandon recovery-shutdown owner: {error}"));
@@ -143,8 +148,8 @@ fn shutdown_settles_captured_recovery_before_cancelling_backoff() {
         .unwrap_or_else(|error| panic!("drain captured recovery: {error}"));
 
     assert!(owner.is_terminal());
-    assert!(owner.connection.is_none());
-    assert!(owner.pending_recovery.is_none());
+    assert!(owner.lane.connection.is_none());
+    assert!(owner.lane.pending_recovery.is_none());
     assert_eq!(call.try_result(), Some(Ok(Err(draining()))));
 }
 
@@ -164,9 +169,11 @@ fn divergent_recovery_settles_pending_work_then_fails_the_host() {
         .submit(request, now, &mut causality)
         .unwrap_or_else(|error| panic!("queue divergent recovery request: {error}"));
     let connection = owner
+        .lane
         .live_connection()
         .unwrap_or_else(|error| panic!("read divergent connection: {error}"));
     let mut report = owner
+        .connections
         .set
         .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
         .unwrap_or_else(|error| panic!("abandon divergent recovery owner: {error}"));
@@ -192,11 +199,11 @@ fn divergent_recovery_settles_pending_work_then_fails_the_host() {
             delivery: Delivery::NotSent,
         })))
     );
-    let contexts = owner.contexts.snapshot();
+    let contexts = owner.lane.contexts.snapshot();
     assert_eq!(contexts.reserved(), 0);
     assert_eq!(contexts.published(), 0);
     assert_eq!(contexts.retained_bytes().get(), 0);
-    assert_eq!(owner.set.snapshot().connections.active(), 0);
+    assert_eq!(owner.connections.snapshot().connections.active(), 0);
 }
 
 fn drive_until_ready(
@@ -206,7 +213,9 @@ fn drive_until_ready(
 ) {
     for _ in 0..32 {
         drive(owner, now, causality);
-        if owner.session.state().phase() == KafkaSessionPhase::Ready && owner.admission_open {
+        if owner.lane.session.state().phase() == KafkaSessionPhase::Ready
+            && owner.lane.admission_open
+        {
             return;
         }
         if !owner.has_local_work() {

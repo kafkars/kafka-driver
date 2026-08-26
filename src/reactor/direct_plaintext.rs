@@ -12,6 +12,7 @@ mod decoder_gate;
 mod drive;
 mod failure_translation;
 mod invariant_failure;
+mod lane_construction;
 mod lifecycle;
 mod limits;
 mod negotiation;
@@ -31,6 +32,9 @@ mod scram_proof;
 mod session_close;
 mod session_plan;
 mod session_progress;
+mod set_drive;
+mod set_owner;
+mod set_schedule;
 mod settlement;
 
 #[cfg(test)]
@@ -68,5 +72,11 @@ mod rustls_attempt_test;
 pub(in crate::reactor) mod scram_fixture_test;
 #[cfg(test)]
 mod scram_proof_test;
+#[cfg(test)]
+mod shared_set_failure_test;
+#[cfg(test)]
+mod shared_set_fixture_test;
+#[cfg(test)]
+mod shared_set_test;
 
 pub(in crate::reactor) use backend::DirectBackend;
