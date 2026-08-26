@@ -4,18 +4,14 @@ use kafka_driver_core::{
     CoordinatorEpoch, CoordinatorInput, CoordinatorState, EvidenceStamp, Moment, OperationId,
 };
 
-use crate::{
-    api::CallIds,
-    reactor::{Poller, broker::SingleBroker},
-};
+use crate::{api::CallIds, reactor::BrokerRpc};
 
 use super::{CoordinatorOwner, CoordinatorOwnerError, CoordinatorStep};
 
 impl CoordinatorOwner {
     pub(super) fn fire_due_retries(
         &mut self,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -46,27 +42,9 @@ impl CoordinatorOwner {
                 return Err(CoordinatorOwnerError::UnexpectedEffect);
             }
             if self.retry_has_demand(index, now) {
-                self.start_retry(
-                    index,
-                    operation_id,
-                    epoch,
-                    broker,
-                    poller,
-                    now,
-                    call_ids,
-                    evidence,
-                )?;
+                self.start_retry(index, operation_id, epoch, broker, now, call_ids, evidence)?;
             } else {
-                self.end_retry(
-                    index,
-                    operation_id,
-                    epoch,
-                    broker,
-                    poller,
-                    now,
-                    call_ids,
-                    evidence,
-                )?;
+                self.end_retry(index, operation_id, epoch, broker, now, call_ids, evidence)?;
             }
             fired += 1;
             self.cursor = (index + 1) % len;
@@ -80,8 +58,7 @@ impl CoordinatorOwner {
         index: usize,
         operation_id: OperationId,
         epoch: CoordinatorEpoch,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -98,7 +75,6 @@ impl CoordinatorOwner {
         self.interpret(
             CoordinatorStep::new(index, transition),
             broker,
-            poller,
             now,
             call_ids,
             evidence,
@@ -111,8 +87,7 @@ impl CoordinatorOwner {
         index: usize,
         operation_id: OperationId,
         epoch: CoordinatorEpoch,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -128,7 +103,6 @@ impl CoordinatorOwner {
         self.interpret(
             CoordinatorStep::new(index, transition),
             broker,
-            poller,
             now,
             call_ids,
             evidence,

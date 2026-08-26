@@ -109,8 +109,7 @@ impl Reactor {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
-        let (Some(coordinator), Some(seed)) = (&mut self.coordinator, legacy.brokers.seed_mut())
-        else {
+        let (Some(coordinator), Some(mut seed)) = (&mut self.coordinator, legacy.seed_rpc()) else {
             let _ = completion.complete(InvalidationDisposition::Unavailable);
             return Ok(());
         };
@@ -118,8 +117,7 @@ impl Reactor {
         coordinator
             .invalidate(
                 RouteInvalidation::new(route, observed_at, completion),
-                seed,
-                &legacy.poller,
+                &mut seed,
                 now,
                 &self.call_ids,
                 evidence,

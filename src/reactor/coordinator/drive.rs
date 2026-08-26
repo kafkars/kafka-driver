@@ -1,21 +1,16 @@
 //! Fair observation of generated coordinator discovery completions.
 
-use kafka_driver_core::{ConnectionPhase, CoordinatorInput, EvidenceStamp, Moment, OperationId};
+use kafka_driver_core::{CoordinatorInput, EvidenceStamp, Moment, OperationId};
 use kafka_wire::FindCoordinatorResponse;
 
-use crate::{
-    api::CallIds,
-    coordinator::coordinator_target,
-    reactor::{Poller, broker::SingleBroker},
-};
+use crate::{api::CallIds, coordinator::coordinator_target, reactor::BrokerRpc};
 
 use super::{CoordinatorOwner, CoordinatorOwnerError, CoordinatorStep, entry::PendingCoordinator};
 
 impl CoordinatorOwner {
     pub(in crate::reactor) fn drive(
         &mut self,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -23,7 +18,6 @@ impl CoordinatorOwner {
         let mut progress = 0;
         progress += self.fire_due_retries(
             broker,
-            poller,
             now,
             call_ids,
             evidence,
@@ -31,20 +25,18 @@ impl CoordinatorOwner {
         )?;
         let remaining = self.limits.turn_budget().get() - progress;
         if remaining != 0 {
-            progress +=
-                self.observe_completions(broker, poller, now, call_ids, evidence, remaining)?;
+            progress += self.observe_completions(broker, now, call_ids, evidence, remaining)?;
         }
         let remaining = self.limits.turn_budget().get() - progress;
         if remaining != 0 {
-            progress += self.start_requested(broker, poller, now, call_ids, evidence, remaining)?;
+            progress += self.start_requested(broker, now, call_ids, evidence, remaining)?;
         }
         Ok(progress != 0)
     }
 
     fn observe_completions(
         &mut self,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -57,7 +49,7 @@ impl CoordinatorOwner {
                 break;
             }
             let index = (self.cursor + offset) % len;
-            if self.observe(index, broker, poller, now, call_ids, evidence)? {
+            if self.observe(index, broker, now, call_ids, evidence)? {
                 completed += 1;
                 self.cursor = (index + 1) % len;
             }
@@ -67,14 +59,13 @@ impl CoordinatorOwner {
 
     pub(super) fn start_requested(
         &mut self,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
         budget: usize,
     ) -> Result<usize, CoordinatorOwnerError> {
-        if broker.state().phase() != ConnectionPhase::Ready {
+        if !broker.is_ready() {
             return Ok(0);
         }
         let len = self.entries.len();
@@ -95,7 +86,6 @@ impl CoordinatorOwner {
             self.interpret(
                 CoordinatorStep::new(index, transition),
                 broker,
-                poller,
                 now,
                 call_ids,
                 evidence,
@@ -109,8 +99,7 @@ impl CoordinatorOwner {
     fn observe(
         &mut self,
         index: usize,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -136,7 +125,6 @@ impl CoordinatorOwner {
         self.interpret(
             CoordinatorStep::new(index, transition),
             broker,
-            poller,
             now,
             call_ids,
             evidence,

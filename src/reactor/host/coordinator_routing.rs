@@ -3,7 +3,10 @@
 use kafka_driver_core::{BrokerRoute, CoordinatorKey, CoordinatorRoute, Moment};
 
 use crate::{
-    RequestError, api::RouteFact, reactor::coordinator::CoordinatorWait, request::ErasedRequest,
+    RequestError,
+    api::RouteFact,
+    reactor::{BrokerRpc, coordinator::CoordinatorWait},
+    request::ErasedRequest,
 };
 
 use super::{Reactor, ReactorError, routing::bind_route};
@@ -39,20 +42,19 @@ impl Reactor {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());
         };
-        let seed = legacy.brokers.seed_mut();
+        let mut seed = legacy.seed_rpc();
         if let Some(route) = current {
-            let Some(seed) = seed else {
+            let Some(seed) = seed.as_mut() else {
                 request.fail(RequestError::RouteUnavailable);
                 return Ok(());
             };
             owner
-                .invalidate_unobserved(route, seed, &legacy.poller, now, &self.call_ids, evidence)
+                .invalidate_unobserved(route, seed, now, &self.call_ids, evidence)
                 .map_err(ReactorError::coordinator)?;
             return owner
                 .wait_for(
                     CoordinatorWait::new(key, request),
                     Some(seed),
-                    &legacy.poller,
                     now,
                     &self.call_ids,
                     evidence,
@@ -62,8 +64,7 @@ impl Reactor {
         owner
             .wait_for(
                 CoordinatorWait::new(key, request),
-                seed,
-                &legacy.poller,
+                seed.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc),
                 now,
                 &self.call_ids,
                 evidence,

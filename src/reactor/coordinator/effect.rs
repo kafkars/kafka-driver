@@ -7,9 +7,7 @@ use kafka_driver_core::{
 use kafka_wire::FIND_COORDINATOR_API_DESCRIPTOR;
 
 use crate::{
-    api::CallIds,
-    coordinator::find_coordinator_request,
-    reactor::{Poller, broker::SingleBroker},
+    api::CallIds, coordinator::find_coordinator_request, reactor::BrokerRpc,
     request::erased_request_in,
 };
 
@@ -19,8 +17,7 @@ impl CoordinatorOwner {
     pub(super) fn interpret(
         &mut self,
         step: CoordinatorStep,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -41,7 +38,6 @@ impl CoordinatorOwner {
                         key,
                     },
                     broker,
-                    poller,
                     now,
                     call_ids,
                 )?,
@@ -76,8 +72,7 @@ impl CoordinatorOwner {
         &mut self,
         index: usize,
         find: CoordinatorFind,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
     ) -> Result<(), CoordinatorOwnerError> {
@@ -107,7 +102,7 @@ impl CoordinatorOwner {
             self.limits.request_timeout(),
         );
         broker
-            .submit(poller, request, now)
+            .submit(request, now)
             .map_err(CoordinatorOwnerError::Broker)?;
         self.entries[index].pending = Some(PendingCoordinator {
             operation_id,

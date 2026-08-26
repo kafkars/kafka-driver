@@ -7,7 +7,7 @@ use kafka_driver_core::{
 use crate::{
     InvalidationDisposition,
     api::CallIds,
-    reactor::{Poller, RouteInvalidation, broker::SingleBroker},
+    reactor::{BrokerRpc, RouteInvalidation},
 };
 
 use super::{
@@ -19,8 +19,7 @@ impl CoordinatorOwner {
     pub(in crate::reactor) fn invalidate(
         &mut self,
         invalidation: RouteInvalidation<CoordinatorRoute>,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -66,7 +65,6 @@ impl CoordinatorOwner {
         self.interpret(
             CoordinatorStep::new(index, transition),
             broker,
-            poller,
             now,
             call_ids,
             evidence,
@@ -77,8 +75,7 @@ impl CoordinatorOwner {
     pub(in crate::reactor) fn invalidate_unobserved(
         &mut self,
         route: CoordinatorRoute,
-        broker: &mut SingleBroker,
-        poller: &Poller,
+        broker: &mut dyn BrokerRpc,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -97,7 +94,6 @@ impl CoordinatorOwner {
         self.interpret(
             CoordinatorStep::new(index, transition),
             broker,
-            poller,
             now,
             call_ids,
             evidence,

@@ -2,11 +2,7 @@
 
 use kafka_driver_core::{EvidenceStamp, Moment};
 
-use crate::{
-    RequestError,
-    api::CallIds,
-    reactor::{Poller, broker::SingleBroker},
-};
+use crate::{RequestError, api::CallIds, reactor::BrokerRpc};
 
 use super::{CoordinatorOwner, CoordinatorOwnerError, CoordinatorWait};
 
@@ -14,8 +10,7 @@ impl CoordinatorOwner {
     pub(in crate::reactor) fn wait_for(
         &mut self,
         waiting: CoordinatorWait,
-        broker: Option<&mut SingleBroker>,
-        poller: &Poller,
+        broker: Option<&mut dyn BrokerRpc>,
         now: Moment,
         call_ids: &CallIds,
         evidence: EvidenceStamp,
@@ -44,7 +39,6 @@ impl CoordinatorOwner {
         };
         self.start_requested(
             broker,
-            poller,
             now,
             call_ids,
             evidence,
