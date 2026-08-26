@@ -105,6 +105,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         self.start_activation(broker_id, traffic, activation, endpoint, plan, now)
     }
 
+    #[cfg(test)]
     pub(super) fn family_owner(
         &self,
         broker_id: BrokerId,

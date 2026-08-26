@@ -1,6 +1,4 @@
-//! Unreachable cluster-wide Bornera set and stable lane ownership.
-
-#![allow(dead_code, reason = "pending atomic Bornera cluster cutover")]
+//! Live cluster-wide Bornera set and stable lane ownership.
 
 use std::{collections::BTreeMap, io, num::NonZeroUsize};
 
@@ -15,12 +13,8 @@ use crate::reactor::{
 use crate::{DriverLimits, TrafficClass};
 
 use super::{
-    endpoint_refresh::DirectRefreshOwner,
-    lane_plan::BorneraLanePlan,
-    limits::DirectSetBounds,
-    owner::{DirectLane, DirectLaneAccess, DirectLaneView},
-    pending::PendingRequests,
-    set_owner::DirectSetOwner,
+    endpoint_refresh::DirectRefreshOwner, lane_plan::BorneraLanePlan, limits::DirectSetBounds,
+    owner::DirectLane, pending::PendingRequests, set_owner::DirectSetOwner,
 };
 pub(super) mod backend;
 mod backend_host;
@@ -146,6 +140,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         Ok(key)
     }
 
+    #[cfg(test)]
     pub(super) fn remove_terminal(&mut self, owner: DirectRefreshOwner) -> io::Result<bool> {
         if self.seed.is_some_and(|seed| seed.owner == owner) {
             return Err(io::Error::other(
@@ -173,11 +168,13 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn access(&mut self, owner: DirectRefreshOwner) -> Option<DirectLaneAccess<'_, T>> {
         let index = *self.slots.get(&owner)?;
         Some(self.connections.access(self.lanes.get_mut(index)?))
     }
 
+    #[cfg(test)]
     pub(super) fn view(&self, owner: DirectRefreshOwner) -> Option<DirectLaneView<'_, T>> {
         let index = *self.slots.get(&owner)?;
         Some(self.connections.view(self.lanes.get(index)?))
@@ -190,6 +187,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             .ok_or_else(|| io::Error::other("Bornera cluster lane owner is stale"))
     }
 }
+
+#[cfg(test)]
+use super::owner::{DirectLaneAccess, DirectLaneView};
 
 fn cluster_bounds(driver: &DriverLimits) -> io::Result<DirectSetBounds> {
     let brokers = driver.metadata().broker_directory().max_brokers().get();

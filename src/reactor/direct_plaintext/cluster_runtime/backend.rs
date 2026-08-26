@@ -1,18 +1,13 @@
-//! Transport-erased ownership of one typed cluster runtime and its plan factory.
-
-#![allow(
-    dead_code,
-    reason = "activated with the pending Bornera cluster backend cutover"
-)]
+//! Transport-erased ownership of the live typed cluster runtime and its plan factory.
 
 use std::io;
 
 use bornera::TcpTransport;
 use calandria::{Span, WaitOutcome};
-use kafka_driver_core::{BrokerRoute, Moment};
+use kafka_driver_core::Moment;
 
 use crate::{
-    DriverLimits, TrafficClass,
+    DriverLimits,
     config::BrokerTemplate,
     reactor::{
         BrokerRpc, bootstrap::ResolvedSeed, broker::BrokerLimits, causality::CausalSequence,
@@ -157,24 +152,6 @@ impl ClusterBackend {
             Self::Plaintext { runtime, .. } => runtime.with_seed_rpc(causality, use_rpc),
             #[cfg(feature = "tls-rustls")]
             Self::Rustls { runtime, .. } => runtime.with_seed_rpc(causality, use_rpc),
-        }
-    }
-
-    pub(in crate::reactor) fn with_route_rpc<R, E>(
-        &mut self,
-        route: BrokerRoute,
-        traffic: TrafficClass,
-        causality: &mut CausalSequence,
-        use_rpc: impl FnOnce(Option<&mut dyn BrokerRpc>) -> Result<R, E>,
-    ) -> Result<R, ClusterRpcAccessError<E>> {
-        match self {
-            Self::Plaintext { runtime, .. } => {
-                runtime.with_route_rpc(route, traffic, causality, use_rpc)
-            }
-            #[cfg(feature = "tls-rustls")]
-            Self::Rustls { runtime, .. } => {
-                runtime.with_route_rpc(route, traffic, causality, use_rpc)
-            }
         }
     }
 }

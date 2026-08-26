@@ -15,6 +15,7 @@ use crate::reactor::{
 };
 
 /// Result of offering one generation-fenced seed replacement.
+#[cfg(test)]
 pub(in crate::reactor::direct_plaintext) enum SeedReplacement<T: RegisteredTransport> {
     Replaced,
     Stale,
@@ -166,6 +167,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         self.finish_host_result(result)
     }
 
+    #[cfg(test)]
     pub(super) fn replace_terminal_seed(
         &mut self,
         generation: ConnectionEpoch,

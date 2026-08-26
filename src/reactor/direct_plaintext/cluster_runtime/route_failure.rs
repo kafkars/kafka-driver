@@ -3,7 +3,9 @@
 use std::io;
 
 use bornera::RegisteredTransport;
-use kafka_driver_core::{BrokerRoute, BrokerState, ConnectionEpoch, DnsFailure, OutcomeStamp};
+use kafka_driver_core::{BrokerRoute, BrokerState, ConnectionEpoch, DnsFailure};
+#[cfg(test)]
+use kafka_driver_core::OutcomeStamp;
 
 use crate::{RequestError, reactor::BrokerLane};
 
@@ -80,6 +82,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         Ok(RouteResolutionProgress::Failed(failure))
     }
 
+    #[cfg(test)]
     pub(super) fn record_route_failure(&mut self, lane: BrokerLane, observed_at: OutcomeStamp) {
         if let Some(state) = self.routes.get_mut(&lane) {
             state.route_failure_at = Some(observed_at);

@@ -85,6 +85,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         self.finish_host_result(result)
     }
 
+    #[cfg(test)]
     pub(super) fn seed_bootstrap_restart_pending(&mut self) -> io::Result<bool> {
         let result =
             self.capture_seed_terminal_failure()
@@ -142,6 +143,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
 }
 
 impl ClusterBackend {
+    #[cfg(test)]
     pub(in crate::reactor) fn prepare_seed_bootstrap_restart(
         &mut self,
         now: Moment,
@@ -156,6 +158,7 @@ impl ClusterBackend {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) fn seed_bootstrap_restart_pending(&mut self) -> io::Result<bool> {
         match self {
             Self::Plaintext { runtime, .. } => runtime.seed_bootstrap_restart_pending(),
