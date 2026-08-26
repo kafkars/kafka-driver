@@ -5,11 +5,11 @@ use kafka_wire_core::DecodeLimits;
 
 use crate::{
     config::BrokerConfig,
-    reactor::{Poller, timer::TimerHeap},
+    reactor::{Poller, address_rotation::AddressRotation, timer::TimerHeap},
     response::ResponseRegistry,
 };
 
-use super::{BrokerError, address_rotation::AddressRotation, owner::SingleBroker};
+use super::{BrokerError, owner::SingleBroker};
 
 impl SingleBroker {
     pub(in crate::reactor) fn replace_exhausted_endpoint(

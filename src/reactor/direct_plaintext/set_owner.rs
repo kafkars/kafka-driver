@@ -1,6 +1,6 @@
 //! Sole Bornera selector ownership shared by bounded Kafka lanes.
 
-use std::io;
+use std::{io, net::SocketAddr};
 
 use bornera::{ConnectionSet, ConnectionSetConfig, ConnectionToken, RegisteredTransport};
 use bornera_core::ConnectionEpoch;
@@ -63,10 +63,11 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
         &mut self,
         attempt: &dyn DirectConnectionAttempt<T>,
         owner: DirectConnectionOwner,
+        address: SocketAddr,
         epoch: ConnectionEpoch,
         now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError> {
-        attempt.connect(&mut self.set, owner, epoch, now)
+        attempt.connect(&mut self.set, owner, address, epoch, now)
     }
 
     pub(super) fn ensure_lane_capacity(&self, lanes: usize) -> io::Result<()> {

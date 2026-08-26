@@ -24,6 +24,7 @@ fn unexpected_close_waits_for_its_exact_deadline_then_opens_epoch_two() {
             ConnectionEpoch::from_raw(1),
             CloseReason::TransportLost(TransportFailure::Reset),
             NOW,
+            false,
         )
         .unwrap_or_else(|error| panic!("close first direct generation: {error}"));
     let BrokerState::Backoff {
@@ -85,6 +86,7 @@ fn shutdown_owns_backoff_and_prevents_a_later_open() {
             ConnectionEpoch::from_raw(1),
             CloseReason::TransportLost(TransportFailure::Other),
             NOW,
+            false,
         )
         .unwrap_or_else(|error| panic!("schedule direct reconnect: {error}"));
     assert!(matches!(
@@ -111,7 +113,10 @@ fn shutdown_owns_backoff_and_prevents_a_later_open() {
 fn lifecycle() -> DirectLifecycle {
     DirectLifecycle::started(
         BrokerLimits::default().backoff(),
-        SocketAddr::from(([127, 0, 0, 1], 9092)),
+        crate::reactor::entropy::JitterEntropy::for_value(&SocketAddr::from((
+            [127, 0, 0, 1],
+            9092,
+        ))),
     )
     .unwrap_or_else(|error| panic!("start direct lifecycle: {error}"))
 }

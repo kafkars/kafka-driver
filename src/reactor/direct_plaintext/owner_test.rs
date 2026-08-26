@@ -7,9 +7,12 @@ use std::{
     time::Duration,
 };
 
+use bornera::ConnectionEvent;
 use bytes::BytesMut;
 use calandria::Span;
-use kafka_driver_core::{BrokerState, CallFailure, CallId, Delivery, KafkaSessionPhase, Moment};
+use kafka_driver_core::{
+    BrokerPhase, BrokerState, CallFailure, CallId, Delivery, KafkaSessionPhase, Moment,
+};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, ResponseHeader,
     api_versions_response::ApiVersion as AdvertisedApi,
@@ -137,6 +140,41 @@ fn drain_rejects_pre_admission_request_as_not_sent_immediately() {
         })))
     );
     assert!(owner.lane.pending.is_empty());
+}
+
+#[test]
+fn delayed_admission_event_after_drain_does_not_reopen_admission() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .unwrap_or_else(|error| panic!("bind delayed-admission broker: {error}"));
+    let address = listener
+        .local_addr()
+        .unwrap_or_else(|error| panic!("read delayed-admission address: {error}"));
+    let now = Moment::from_nanos(1);
+    let mut owner = DirectPlaintextOwner::new(&DriverLimits::default(), address, None, None, now)
+        .unwrap_or_else(|error| panic!("construct delayed-admission owner: {error}"));
+    let connection = owner.lane.connection_for_test();
+
+    owner
+        .access()
+        .begin_lifecycle_drain(now)
+        .unwrap_or_else(|error| panic!("begin delayed-admission drain: {error}"));
+    assert!(matches!(
+        owner.lane.lifecycle.phase(),
+        BrokerPhase::Draining | BrokerPhase::Closed
+    ));
+    owner
+        .access()
+        .settle_event(
+            ConnectionEvent::AdmissionOpened {
+                sequence: 1,
+                epoch: connection.epoch(),
+            },
+            now,
+            &mut CausalSequence::new(),
+        )
+        .unwrap_or_else(|error| panic!("settle delayed admission: {error}"));
+
+    assert!(!owner.lane.admission_open);
 }
 
 fn drive(owner: &mut DirectPlaintextOwner, now: Moment, causality: &mut CausalSequence) {

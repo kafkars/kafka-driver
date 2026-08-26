@@ -60,6 +60,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
                 let connection = self.live_connection()?;
                 self.clear_authentication_ownership();
                 self.session_deadline = None;
+                self.mark_generation_ready(super::reconnect::core_epoch(connection.epoch()))?;
                 match self.set.open_admission(connection) {
                     Ok(_) => {}
                     Err(ConnectionAccessError::StaleConnection) => {

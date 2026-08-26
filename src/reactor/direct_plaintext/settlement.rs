@@ -27,8 +27,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
                 self.transport_opened(now)?;
             }
             ConnectionEvent::AdmissionOpened { epoch, .. } if epoch == connection.epoch() => {
-                self.lifecycle.ready(core_epoch(epoch))?;
-                self.admission_open = true;
+                self.settle_admission_opened(core_epoch(epoch))?;
             }
             ConnectionEvent::Closing { epoch, reason, .. } if epoch == connection.epoch() => {
                 self.admission_open = false;

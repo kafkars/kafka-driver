@@ -13,6 +13,7 @@ use kafka_wire_core::{ApiKey, ApiVersion};
 use crate::negotiation::{NegotiationExchange, NegotiationLimits};
 use crate::reactor::{
     PollEvent, Poller,
+    address_rotation::AddressRotation,
     entropy::JitterEntropy,
     resource::{ResourceIdentity, ResourceToken, TransportResources},
     tcp::ConnectProgress,
@@ -26,8 +27,8 @@ use crate::{
 };
 
 use super::{
-    BrokerError, BrokerIds, address_refresh::AddressRefresh, address_rotation::AddressRotation,
-    failure::transport_failure, limits::BrokerLimits, terminal::expect_no_effects,
+    BrokerError, BrokerIds, address_refresh::AddressRefresh, failure::transport_failure,
+    limits::BrokerLimits, terminal::expect_no_effects,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

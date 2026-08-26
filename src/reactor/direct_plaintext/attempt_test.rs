@@ -45,6 +45,7 @@ fn clean_retirement_replays_transport_and_fresh_plain_session_in_one_set() {
         .connect_lane(
             owner.lane.connection_attempt.as_ref(),
             owner.lane.connection_owner,
+            address(&listener),
             ConnectionEpoch::new(2),
             LATER,
         )
@@ -90,6 +91,7 @@ fn fatal_recovery_replays_a_distinct_generation_in_the_same_running_set() {
         .connect_lane(
             owner.lane.connection_attempt.as_ref(),
             owner.lane.connection_owner,
+            address(&listener),
             ConnectionEpoch::new(2),
             LATER,
         )

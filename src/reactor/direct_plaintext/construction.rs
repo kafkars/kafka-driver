@@ -7,7 +7,7 @@ use bornera_core::{ConnectionId, EndpointId, LaneId};
 use calandria::TimerOwnerId;
 use kafka_driver_core::Moment;
 
-use crate::config::{ClientId, DriverLimits, SaslConfig};
+use crate::config::{BrokerAddresses, ClientId, DriverLimits, SaslConfig};
 use crate::reactor::broker::BrokerLimits;
 
 #[cfg(feature = "tls-rustls")]
@@ -33,7 +33,7 @@ impl DirectRuntime<TcpTransport> {
         let broker = BrokerLimits::default();
         let session_plan = DirectSessionPlan::new(sasl, broker);
         let connection_attempt: Box<dyn DirectConnectionAttempt<TcpTransport>> =
-            Box::new(PlaintextAttempt::new(driver, broker, address));
+            Box::new(PlaintextAttempt::new(driver, broker));
         start(
             driver,
             broker,
@@ -79,7 +79,7 @@ impl DirectRuntime<DirectRustlsTransport> {
         let broker = BrokerLimits::default();
         let session_plan = DirectSessionPlan::new(sasl, broker);
         let connection_attempt: Box<dyn DirectConnectionAttempt<DirectRustlsTransport>> =
-            Box::new(RustlsAttempt::new(driver, broker, address, tls));
+            Box::new(RustlsAttempt::new(driver, broker, tls));
         start(
             driver,
             broker,
@@ -112,7 +112,7 @@ fn start<T: RegisteredTransport>(
         &mut connections,
         driver,
         broker,
-        address,
+        BrokerAddresses::Direct(address),
         client_id,
         session_plan,
         connection_attempt,

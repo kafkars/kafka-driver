@@ -38,7 +38,7 @@ fn synchronous_endpoint_failures_retain_owner_and_queue_until_epoch_three() {
         &DriverLimits::default(),
         address,
         Some(sasl),
-        Box::new(FailThroughEpoch::new(address, 2)),
+        Box::new(FailThroughEpoch::new(2)),
         NOW,
     )
     .unwrap_or_else(|error| panic!("retain initial endpoint failure: {error}"));
@@ -97,7 +97,7 @@ fn recovered_admission_resets_retry_before_generation_failure() {
         &DriverLimits::default(),
         address,
         None,
-        Box::new(FailThroughEpoch::new(address, 1)),
+        Box::new(FailThroughEpoch::new(1)),
         NOW,
     )
     .unwrap_or_else(|error| panic!("construct admission-recovery owner: {error}"));
@@ -205,14 +205,13 @@ struct FailThroughEpoch {
 }
 
 impl FailThroughEpoch {
-    fn new(address: SocketAddr, through: u64) -> Self {
+    fn new(through: u64) -> Self {
         let driver = DriverLimits::default();
         Self {
             through,
             delegate: PlaintextAttempt::new(
                 &driver,
                 crate::reactor::broker::BrokerLimits::default(),
-                address,
             ),
         }
     }
@@ -223,6 +222,7 @@ impl DirectConnectionAttempt<TcpTransport> for FailThroughEpoch {
         &self,
         set: &mut DirectSet<TcpTransport>,
         owner: DirectConnectionOwner,
+        address: SocketAddr,
         epoch: BorneraEpoch,
         now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError> {
@@ -231,7 +231,7 @@ impl DirectConnectionAttempt<TcpTransport> for FailThroughEpoch {
                 io::ErrorKind::ConnectionRefused.into(),
             ));
         }
-        self.delegate.connect(set, owner, epoch, now)
+        self.delegate.connect(set, owner, address, epoch, now)
     }
 }
 

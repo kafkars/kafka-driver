@@ -31,6 +31,24 @@ fn given_resolver_order_when_epochs_open_then_each_address_is_tried_before_wrapp
     assert_eq!(rotation.next(), Some(socket([127, 0, 0, 2])));
 }
 
+#[test]
+fn given_a_ready_candidate_when_it_later_fails_then_it_is_preferred_again() {
+    let addresses = ResolvedAddressSet::try_from_iter(
+        [resolved([127, 0, 0, 2]), resolved([127, 0, 0, 1])],
+        ResolutionLimits::default(),
+    )
+    .unwrap_or_else(|error| panic!("valid test addresses: {error}"));
+    let mut rotation = AddressRotation::new(BrokerAddresses::Resolved {
+        endpoint: endpoint(),
+        addresses,
+    });
+
+    assert_eq!(rotation.next(), Some(socket([127, 0, 0, 2])));
+    rotation.ready();
+    assert!(rotation.failed().is_none());
+    assert_eq!(rotation.next(), Some(socket([127, 0, 0, 2])));
+}
+
 fn resolved(octets: [u8; 4]) -> ResolvedAddress {
     ResolvedAddress::new(
         IpAddress::V4(octets),

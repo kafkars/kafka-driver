@@ -125,6 +125,7 @@ impl DirectConnectionAttempt<TcpTransport> for ImmediateEndpointFailure {
         &self,
         _set: &mut DirectSet<TcpTransport>,
         _owner: DirectConnectionOwner,
+        _address: SocketAddr,
         _epoch: BorneraEpoch,
         _now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError> {

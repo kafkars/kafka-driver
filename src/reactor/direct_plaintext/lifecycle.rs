@@ -1,6 +1,6 @@
-//! Long-lived fixed-address policy across replaceable Bornera generations.
+//! Long-lived broker policy across replaceable Bornera generations.
 
-use std::{io, net::SocketAddr};
+use std::io;
 
 use kafka_driver_core::{
     AuthenticationFailureDisposition, BackoffPolicy, BrokerDisposition, BrokerEffect, BrokerInput,
@@ -20,12 +20,12 @@ pub(super) struct DirectLifecycle {
 }
 
 impl DirectLifecycle {
-    pub(super) fn started(backoff: BackoffPolicy, address: SocketAddr) -> io::Result<Self> {
+    pub(super) fn started(backoff: BackoffPolicy, entropy: JitterEntropy) -> io::Result<Self> {
         let epoch = ConnectionEpoch::from_raw(ID);
         let mut owner = Self {
             broker: BrokerMachine::new(epoch, backoff),
             next_timer: Some(1),
-            entropy: JitterEntropy::for_value(&address),
+            entropy,
         };
         let effects = owner.apply(BrokerInput::Start)?;
         if effects.as_slice() != [BrokerEffect::OpenConnection { epoch }] {
@@ -67,6 +67,7 @@ impl DirectLifecycle {
         epoch: ConnectionEpoch,
         reason: CloseReason,
         now: Moment,
+        endpoint_exhausted: bool,
     ) -> io::Result<Vec<BrokerEffect>> {
         let input = match self.phase() {
             BrokerPhase::Connecting | BrokerPhase::Available => match reason {
@@ -78,6 +79,10 @@ impl DirectLifecycle {
                 {
                     BrokerInput::ConnectionRejected { epoch, failure }
                 }
+                _ if endpoint_exhausted => BrokerInput::EndpointExhausted {
+                    epoch,
+                    reconnect: self.reserve_reconnect(now)?,
+                },
                 _ => BrokerInput::ConnectionFailed {
                     epoch,
                     reconnect: self.reserve_reconnect(now)?,
@@ -91,6 +96,24 @@ impl DirectLifecycle {
             }
         };
         self.apply(input)
+    }
+
+    #[allow(
+        dead_code,
+        reason = "endpoint-refresh ownership is consumed by the pending bootstrap cutover"
+    )]
+    pub(super) fn begin_endpoint_refresh(
+        &mut self,
+        failed_epoch: ConnectionEpoch,
+    ) -> io::Result<()> {
+        let effects = self.apply(BrokerInput::EndpointRefreshStarted { failed_epoch })?;
+        if effects.is_empty() {
+            Ok(())
+        } else {
+            Err(invariant(
+                "direct endpoint refresh emitted an unexpected effect",
+            ))
+        }
     }
 
     fn close_requested_generation(

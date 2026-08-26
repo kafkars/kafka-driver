@@ -111,11 +111,7 @@ pub(super) fn plaintext_lane(
         driver,
         address,
         id,
-        Box::new(PlaintextAttempt::new(
-            driver,
-            BrokerLimits::default(),
-            address,
-        )),
+        Box::new(PlaintextAttempt::new(driver, BrokerLimits::default())),
     )
 }
 
@@ -145,7 +141,7 @@ fn test_lane(
         set,
         driver,
         broker,
-        address,
+        crate::config::BrokerAddresses::Direct(address),
         None,
         DirectSessionPlan::new(None, broker),
         attempt,
@@ -213,6 +209,7 @@ impl DirectConnectionAttempt<TcpTransport> for ImmediateEndpointFailure {
         &self,
         _set: &mut DirectSet<TcpTransport>,
         _owner: DirectConnectionOwner,
+        _address: SocketAddr,
         _epoch: ConnectionEpoch,
         _now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError> {

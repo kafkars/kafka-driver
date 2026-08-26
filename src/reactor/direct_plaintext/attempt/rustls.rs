@@ -25,7 +25,6 @@ use crate::reactor::direct_plaintext::{
 pub(in crate::reactor::direct_plaintext) struct RustlsAttempt {
     driver: DriverLimits,
     broker: BrokerLimits,
-    address: SocketAddr,
     tls: TlsClientConfig,
 }
 
@@ -33,15 +32,20 @@ impl RustlsAttempt {
     pub(in crate::reactor::direct_plaintext) const fn new(
         driver: &DriverLimits,
         broker: BrokerLimits,
-        address: SocketAddr,
         tls: TlsClientConfig,
     ) -> Self {
         Self {
             driver: *driver,
             broker,
-            address,
             tls,
         }
+    }
+
+    #[cfg(test)]
+    pub(in crate::reactor::direct_plaintext) const fn server_name_for_test(
+        &self,
+    ) -> &rustls::pki_types::ServerName<'static> {
+        self.tls.server_name_for_test()
     }
 }
 
@@ -50,6 +54,7 @@ impl DirectConnectionAttempt<DirectRustlsTransport> for RustlsAttempt {
         &self,
         set: &mut DirectSet<DirectRustlsTransport>,
         owner: DirectConnectionOwner,
+        address: SocketAddr,
         epoch: ConnectionEpoch,
         now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError> {
@@ -67,7 +72,7 @@ impl DirectConnectionAttempt<DirectRustlsTransport> for RustlsAttempt {
             decoder_gate,
         );
         set.connect_with(
-            connection_config(owner, self.address, epoch, now, self.broker)
+            connection_config(owner, address, epoch, now, self.broker)
                 .map_err(DirectConnectError::fatal)?,
             slot,
             decoder,

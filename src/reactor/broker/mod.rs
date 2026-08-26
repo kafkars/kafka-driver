@@ -1,7 +1,6 @@
 //! Single-broker ownership above deterministic policy and below the host.
 
 mod address_refresh;
-mod address_rotation;
 mod authentication;
 mod construction;
 mod deadline;
@@ -27,8 +26,6 @@ mod write_admission;
 
 #[cfg(test)]
 mod address_refresh_terminal_test;
-#[cfg(test)]
-mod address_rotation_test;
 #[cfg(test)]
 pub(in crate::reactor) mod authentication_fixture_test;
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! One connection-local Kafka lane installed into an existing shared set.
 
-use std::{io, net::SocketAddr};
+use std::io;
 
 use bornera::{ConnectionToken, RegisteredTransport};
 use calandria::RetainedBytes;
@@ -10,12 +10,16 @@ use kafka_driver_core::{
 use kafka_wire_core::DecodeLimits;
 
 use crate::{
-    config::{ClientId, DriverLimits},
-    reactor::{bornera::OperationContexts, broker::BrokerLimits},
+    config::{BrokerAddresses, ClientId, DriverLimits},
+    reactor::{
+        address_rotation::AddressRotation, bornera::OperationContexts, broker::BrokerLimits,
+        entropy::JitterEntropy,
+    },
 };
 
 use super::{
     attempt::{DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner},
+    endpoint_refresh::{DirectEndpointRefresh, failed_endpoint},
     failure_translation::synchronous_open_failure,
     lifecycle::DirectLifecycle,
     operation_owner::DirectOperationContext,
@@ -33,7 +37,7 @@ pub(super) fn start_lane<T: RegisteredTransport>(
     set: &mut DirectSetOwner<T>,
     driver: &DriverLimits,
     broker: BrokerLimits,
-    address: SocketAddr,
+    addresses: BrokerAddresses,
     client_id: Option<ClientId>,
     session_plan: DirectSessionPlan,
     connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
@@ -41,34 +45,52 @@ pub(super) fn start_lane<T: RegisteredTransport>(
     now: Moment,
 ) -> io::Result<DirectLane<T>> {
     let mut session = session_plan.start()?;
-    let mut lifecycle = DirectLifecycle::started(broker.backoff(), address)?;
+    let mut addresses = AddressRotation::new(addresses);
+    let primary = addresses
+        .primary()
+        .ok_or_else(|| io::Error::other("direct lane has no connection address"))?;
+    let entropy = JitterEntropy::for_value(&primary);
+    let address = addresses
+        .next()
+        .ok_or_else(|| io::Error::other("direct lane has no connection address"))?;
+    let mut lifecycle = DirectLifecycle::started(broker.backoff(), entropy)?;
     let attempt = set.connect_lane(
         connection_attempt.as_ref(),
         connection_owner,
+        address,
         bornera_core::ConnectionEpoch::new(ID),
         now,
     );
-    let (connection, last_close_reason) = match attempt {
-        Ok(connection) => (Some(connection), None),
+    let (connection, last_close_reason, endpoint_refresh) = match attempt {
+        Ok(connection) => (Some(connection), None, None),
         Err(DirectConnectError::Endpoint(source)) => {
             let reason = synchronous_open_failure(&source);
             drop(session.machine.apply(KafkaSessionInput::Closed));
             session.authentication = None;
             let epoch = ConnectionEpoch::from_raw(ID);
-            let effects = lifecycle.generation_ended(epoch, reason, now)?;
+            let endpoint = failed_endpoint(&mut addresses, reason);
+            let effects = lifecycle.generation_ended(epoch, reason, now, endpoint.is_some())?;
+            let endpoint_refresh =
+                DirectEndpointRefresh::after_failure(endpoint, lifecycle.state(), epoch)?;
             let valid = matches!(
-                (lifecycle.state(), effects.as_slice()),
+                (
+                    lifecycle.state(),
+                    effects.as_slice(),
+                    endpoint_refresh.as_ref()
+                ),
                 (
                     BrokerState::Backoff { .. },
-                    [BrokerEffect::ScheduleReconnect { .. }]
-                ) | (BrokerState::Closed { .. }, [])
+                    [BrokerEffect::ScheduleReconnect { .. }],
+                    None
+                ) | (BrokerState::Refreshing { .. }, [], Some(_))
+                    | (BrokerState::Closed { .. }, [], None)
             );
             if !valid {
                 return Err(io::Error::other(
                     "initial direct endpoint failure produced invalid lifecycle policy",
                 ));
             }
-            (None, Some(reason))
+            (None, Some(reason), endpoint_refresh)
         }
         Err(DirectConnectError::Fatal(source)) => return Err(source),
     };
@@ -82,6 +104,8 @@ pub(super) fn start_lane<T: RegisteredTransport>(
             connection_attempt,
             connection_owner,
             connection,
+            addresses,
+            endpoint_refresh,
             lifecycle,
             last_close_reason,
         },
@@ -94,6 +118,8 @@ struct InitialDirect<T: RegisteredTransport> {
     connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
     connection_owner: DirectConnectionOwner,
     connection: Option<ConnectionToken>,
+    addresses: AddressRotation,
+    endpoint_refresh: Option<DirectEndpointRefresh>,
     lifecycle: DirectLifecycle,
     last_close_reason: Option<CloseReason>,
 }
@@ -110,6 +136,8 @@ fn finish_lane<T: RegisteredTransport>(
         connection_attempt,
         connection_owner,
         connection,
+        addresses,
+        endpoint_refresh,
         lifecycle,
         last_close_reason,
     } = initial;
@@ -120,6 +148,8 @@ fn finish_lane<T: RegisteredTransport>(
         connection_attempt,
         connection_owner,
         connection,
+        addresses,
+        endpoint_refresh,
         lifecycle,
         session_plan,
         session: session.machine,

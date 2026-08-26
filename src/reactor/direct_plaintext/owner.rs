@@ -28,6 +28,8 @@ use super::{
     session_plan::DirectSessionPlan,
 };
 
+use super::DirectEndpointRefresh;
+
 pub(super) type DirectSet<T> = ConnectionSet<DirectFrameDecoder, KafkaReplyClassifier, T>;
 
 pub(super) const ID: u64 = 1;
@@ -37,6 +39,8 @@ pub(in crate::reactor) struct DirectLane<T: RegisteredTransport> {
     pub(super) connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
     pub(super) connection_owner: DirectConnectionOwner,
     pub(super) connection: Option<ConnectionToken>,
+    pub(super) addresses: crate::reactor::address_rotation::AddressRotation,
+    pub(super) endpoint_refresh: Option<DirectEndpointRefresh>,
     pub(super) lifecycle: DirectLifecycle,
     #[allow(dead_code, reason = "replayed by the direct reconnect lifecycle")]
     pub(super) session_plan: DirectSessionPlan,

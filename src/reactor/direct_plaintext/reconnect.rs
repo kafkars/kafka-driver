@@ -13,8 +13,7 @@ use crate::RequestError;
 use crate::reactor::causality::CausalSequence;
 
 use super::{
-    attempt::DirectConnectError,
-    failure_translation::{not_sent, recovery, synchronous_open_failure},
+    failure_translation::{not_sent, recovery},
     owner::DirectLaneAccess,
 };
 
@@ -27,8 +26,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         causality: &mut CausalSequence,
     ) -> io::Result<()> {
         let result = self
-            .lifecycle
-            .generation_ended(epoch, reason, now)
+            .end_generation(epoch, reason, now)
             .and_then(|effects| self.interpret_lifecycle_effects(effects, now, Some(causality)))
             .and_then(|()| self.settle_policy_close(reason, Some(causality)));
         result.map_err(|error| self.host_fatal(error))
@@ -59,6 +57,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         self.interpret_lifecycle_effects(effects, now, None)
             .map_err(|error| self.host_fatal(error))?;
         if self.lifecycle.is_closed() {
+            self.endpoint_refresh = None;
             self.terminal = true;
             self.mark_waiting();
         }
@@ -78,8 +77,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
                     Ok(None) => {}
                     Ok(Some(reason)) => {
                         let follow = self
-                            .lifecycle
-                            .generation_ended(epoch, reason, now)
+                            .end_generation(epoch, reason, now)
                             .map_err(|error| self.host_fatal(error))?;
                         effects.extend(follow);
                         self.settle_policy_close(reason, causality.as_deref_mut())?;
@@ -129,60 +127,6 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
             }
         }
         Ok(())
-    }
-
-    fn open_generation(
-        &mut self,
-        epoch: ConnectionEpoch,
-        now: Moment,
-    ) -> io::Result<Option<CloseReason>> {
-        if self.connection.is_some() {
-            return Err(io::Error::other(
-                "direct reconnect opened before retiring its prior generation",
-            ));
-        }
-        let contexts = self.contexts.snapshot();
-        if contexts.reserved() != 0
-            || contexts.published() != 0
-            || contexts.retained_bytes() != calandria::RetainedBytes::ZERO
-            || contexts.is_poisoned()
-        {
-            return Err(io::Error::other(
-                "direct reconnect retained invalid semantic context ownership",
-            ));
-        }
-        let session = self.session_plan.start()?;
-        let connection = match self.lane.connection_attempt.connect(
-            self.set,
-            self.lane.connection_owner,
-            bornera_epoch(epoch),
-            now,
-        ) {
-            Ok(connection) => connection,
-            Err(DirectConnectError::Endpoint(source)) => {
-                let reason = synchronous_open_failure(&source);
-                self.last_close_reason = Some(reason);
-                self.mark_waiting();
-                return Ok(Some(reason));
-            }
-            Err(DirectConnectError::Fatal(source)) => return Err(source),
-        };
-        if connection.epoch() != bornera_epoch(epoch) {
-            return Err(io::Error::other(
-                "direct attempt returned the wrong connection epoch",
-            ));
-        }
-        self.connection = Some(connection);
-        self.session = session.machine;
-        self.authentication_session = session.authentication;
-        self.pending_scram_proof = None;
-        self.session_deadline = None;
-        self.generation_close_reason = None;
-        self.admission_open = false;
-        self.pending_recovery = None;
-        self.terminal = false;
-        self.mark_runnable();
-        Ok(None)
     }
 
     fn settle_policy_close(

@@ -52,7 +52,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         {
             record_error(
                 &mut first_error,
-                self.lifecycle.ready(super::reconnect::core_epoch(epoch)),
+                self.mark_generation_ready(super::reconnect::core_epoch(epoch)),
             );
         }
         let semantic_reason = self.generation_close_reason;

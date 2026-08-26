@@ -1,5 +1,6 @@
 //! Single-owner host, bounded command mailbox, and cross-thread wake contract.
 
+mod address_rotation;
 mod backend;
 mod bootstrap;
 #[allow(
@@ -35,6 +36,8 @@ mod wait_queue;
 mod waiter;
 mod wake;
 
+#[cfg(test)]
+mod address_rotation_test;
 #[cfg(test)]
 mod causality_test;
 #[cfg(test)]

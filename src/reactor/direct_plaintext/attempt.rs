@@ -28,6 +28,7 @@ pub(super) trait DirectConnectionAttempt<T: RegisteredTransport> {
         &self,
         set: &mut DirectSet<T>,
         owner: DirectConnectionOwner,
+        address: SocketAddr,
         epoch: ConnectionEpoch,
         now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError>;

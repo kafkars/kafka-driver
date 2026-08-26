@@ -69,6 +69,11 @@ impl TlsClientConfig {
     ) -> bornera_rustls::RustlsTransportConfig {
         bornera_rustls::RustlsTransportConfig::new(self.policy.client, self.server_name, limits)
     }
+
+    #[cfg(test)]
+    pub(crate) const fn server_name_for_test(&self) -> &ServerName<'static> {
+        &self.server_name
+    }
 }
 
 impl fmt::Debug for TlsClientConfig {

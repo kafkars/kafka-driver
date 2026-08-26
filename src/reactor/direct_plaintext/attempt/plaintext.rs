@@ -21,19 +21,16 @@ use crate::reactor::direct_plaintext::{limits::slot_limits, owner::DirectSet};
 pub(in crate::reactor::direct_plaintext) struct PlaintextAttempt {
     driver: DriverLimits,
     broker: BrokerLimits,
-    address: SocketAddr,
 }
 
 impl PlaintextAttempt {
     pub(in crate::reactor::direct_plaintext) const fn new(
         driver: &DriverLimits,
         broker: BrokerLimits,
-        address: SocketAddr,
     ) -> Self {
         Self {
             driver: *driver,
             broker,
-            address,
         }
     }
 }
@@ -43,6 +40,7 @@ impl DirectConnectionAttempt<TcpTransport> for PlaintextAttempt {
         &self,
         set: &mut DirectSet<TcpTransport>,
         owner: DirectConnectionOwner,
+        address: SocketAddr,
         epoch: ConnectionEpoch,
         now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError> {
@@ -54,7 +52,7 @@ impl DirectConnectionAttempt<TcpTransport> for PlaintextAttempt {
         )
         .map_err(DirectConnectError::fatal)?;
         set.connect(
-            connection_config(owner, self.address, epoch, now, self.broker)
+            connection_config(owner, address, epoch, now, self.broker)
                 .map_err(DirectConnectError::fatal)?,
             slot,
             decoder,

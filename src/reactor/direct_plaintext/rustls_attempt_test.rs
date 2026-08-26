@@ -11,10 +11,24 @@ use rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
 use crate::{DriverLimits, TlsClientConfig};
 
 use super::{
-    attempt::{DirectConnectError, rustls_connect_error},
+    attempt::{DirectConnectError, RustlsAttempt, rustls_connect_error},
     runtime::DirectRuntime,
     rustls_transport::DirectRustlsTransport,
 };
+
+#[test]
+fn rustls_attempt_keeps_its_logical_identity_separate_from_socket_selection() {
+    let driver = DriverLimits::default();
+    let attempt = RustlsAttempt::new(
+        &driver,
+        crate::reactor::broker::BrokerLimits::default(),
+        tls(),
+    );
+    let expected = ServerName::try_from("replay.test".to_owned())
+        .unwrap_or_else(|error| panic!("construct expected Rustls name: {error}"));
+
+    assert_eq!(attempt.server_name_for_test(), &expected);
+}
 
 #[test]
 fn rustls_connect_classifies_only_raw_socket_io_as_endpoint_local() {
@@ -67,6 +81,7 @@ fn rustls_attempt_replays_a_fresh_transport_in_one_set() {
         .connect_lane(
             owner.lane.connection_attempt.as_ref(),
             owner.lane.connection_owner,
+            address,
             ConnectionEpoch::new(2),
             Moment::from_nanos(2),
         )

@@ -6,6 +6,7 @@ use kafka_wire_core::DecodeLimits;
 use crate::{
     config::BrokerConfig,
     reactor::{
+        address_rotation::AddressRotation,
         entropy::JitterEntropy,
         resource::{ResourceNamespace, TransportResources},
         scram_proof::ScramProofSender,
@@ -14,7 +15,6 @@ use crate::{
     response::ResponseRegistry,
 };
 
-use super::address_rotation::AddressRotation;
 use super::{BrokerLimits, owner::SingleBroker};
 
 impl SingleBroker {

@@ -1,4 +1,4 @@
-//! Interpretation of direct addresses and deterministic resolved-endpoint policy.
+//! Deterministic socket selection for one direct or resolved broker endpoint.
 
 use std::net::SocketAddr;
 
@@ -6,10 +6,9 @@ use kafka_driver_core::{
     BrokerEndpoint, EndpointDialer, EndpointDialerEffect, EndpointDialerInput, ResolvedAddressSet,
 };
 
-use crate::{
-    config::BrokerAddresses,
-    reactor::{entropy::JitterEntropy, resolver::socket_address},
-};
+use crate::config::BrokerAddresses;
+
+use super::{entropy::JitterEntropy, resolver::socket_address};
 
 /// Reactor-local adapter over one direct address or deterministic DNS policy.
 #[derive(Debug)]

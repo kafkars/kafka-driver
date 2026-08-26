@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use bornera::{ConnectionToken, OwnerFailure, TcpTransport};
-use calandria::{RetainedBytes, Span};
+use calandria::{RetainedBytes, Span, WaitOutcome};
 use kafka_driver_core::{CallFailure, CloseReason, Delivery, TransportFailure};
 
 use crate::{DriverLimits, RequestError, reactor::causality::CausalSequence};
@@ -65,11 +65,15 @@ fn stale_lane_drain_does_not_short_circuit_peer_outcome_settlement() {
     assert!(first_seen && second_seen);
     assert_eq!(lanes[0].contexts.snapshot().published(), 1);
     assert_eq!(lanes[1].contexts.snapshot().published(), 1);
-    release_responses(&first_control, &second_control);
+    release_response(&second_control, "peer");
     let wait = Span::try_from(Duration::from_millis(100)).unwrap_or(Span::ZERO);
-    connections
-        .wait(&mut lanes, wait)
-        .unwrap_or_else(|error| panic!("poll written shared responses: {error}"));
+    assert_eq!(
+        connections
+            .wait(&mut lanes, wait)
+            .unwrap_or_else(|error| panic!("poll written peer response: {error}")),
+        WaitOutcome::Notified
+    );
+    release_response(&first_control, "stale");
 
     let first_connection = lanes[0].connection_for_test();
     let second_connection = lanes[1].connection_for_test();
@@ -121,23 +125,15 @@ fn assert_clean_semantics(lanes: &[DirectLane<TcpTransport>]) {
     }
 }
 
-fn release_responses(first: &ResponseControl, second: &ResponseControl) {
-    first
+fn release_response(control: &ResponseControl, name: &str) {
+    control
         .release_response
         .send(())
-        .unwrap_or_else(|error| panic!("release stale lane response: {error}"));
-    second
-        .release_response
-        .send(())
-        .unwrap_or_else(|error| panic!("release peer lane response: {error}"));
-    first
+        .unwrap_or_else(|error| panic!("release {name} lane response: {error}"));
+    control
         .response_written
         .recv()
-        .unwrap_or_else(|error| panic!("await stale lane response: {error}"));
-    second
-        .response_written
-        .recv()
-        .unwrap_or_else(|error| panic!("await peer lane response: {error}"));
+        .unwrap_or_else(|error| panic!("await {name} lane response: {error}"));
 }
 
 fn assert_clean_peer(connections: &DirectSetOwner<TcpTransport>, connection: ConnectionToken) {
