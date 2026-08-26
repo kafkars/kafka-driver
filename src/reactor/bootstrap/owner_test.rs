@@ -26,6 +26,34 @@ fn numeric_bootstrap_returns_external_resolution_without_owning_the_worker() {
 }
 
 #[test]
+fn completed_resolution_preserves_raw_generation_endpoint_and_addresses() {
+    let config = BootstrapConfig::plaintext(bootstrap_set());
+    let Ok((mut owner, request)) = BootstrapOwner::start(config, EffectId::from_raw(1)) else {
+        panic!("bootstrap must start");
+    };
+    let resolved = addresses();
+    let action = owner
+        .complete(
+            DnsOutcome::new(
+                ConnectionEpoch::from_raw(1),
+                request.effect_id(),
+                Ok(resolved.clone()),
+            ),
+            EffectId::from_raw(2),
+            Moment::ORIGIN,
+            JitterSample::from_raw(0),
+        )
+        .unwrap_or_else(|error| panic!("complete bootstrap resolution: {error}"));
+    let BootstrapAction::Install(seed) = action else {
+        panic!("successful resolution must install a seed");
+    };
+    let (generation, endpoint, addresses) = seed.into_parts();
+    assert_eq!(generation, ConnectionEpoch::from_raw(1));
+    assert_eq!(&endpoint, request.endpoint());
+    assert_eq!(addresses, resolved);
+}
+
+#[test]
 fn a_new_dial_generation_rotates_to_the_next_configured_endpoint() {
     let config = BootstrapConfig::plaintext(bootstrap_set());
     let Ok((mut owner, first)) = BootstrapOwner::start(config, EffectId::from_raw(1)) else {

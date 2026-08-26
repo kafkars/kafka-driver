@@ -2,11 +2,11 @@
 
 use kafka_driver_core::{
     BackoffPolicy, BootstrapEffect, BootstrapInput, BootstrapMachine, BootstrapRetryEffect,
-    BootstrapRetryInput, BootstrapRetryMachine, ConnectionEpoch, DnsOutcome, EffectId,
-    JitterSample, Moment,
+    BootstrapRetryInput, BootstrapRetryMachine, BrokerEndpoint, ConnectionEpoch, DnsOutcome,
+    EffectId, JitterSample, Moment, ResolvedAddressSet,
 };
 
-use crate::config::{BootstrapConfig, BrokerConfig, BrokerTemplate};
+use crate::config::BootstrapConfig;
 
 use super::BootstrapOwnerError;
 
@@ -17,23 +17,34 @@ pub(in crate::reactor) enum BootstrapAction {
     RetryScheduled,
 }
 
-/// Complete endpoint-bound seed configuration fenced by its bootstrap generation.
+/// Transport-neutral resolved seed evidence fenced by its bootstrap generation.
 pub(in crate::reactor) struct ResolvedSeed {
     generation: ConnectionEpoch,
-    config: BrokerConfig,
+    endpoint: BrokerEndpoint,
+    addresses: ResolvedAddressSet,
 }
 
 impl ResolvedSeed {
-    pub(in crate::reactor) const fn new(generation: ConnectionEpoch, config: BrokerConfig) -> Self {
-        Self { generation, config }
+    pub(in crate::reactor) const fn new(
+        generation: ConnectionEpoch,
+        endpoint: BrokerEndpoint,
+        addresses: ResolvedAddressSet,
+    ) -> Self {
+        Self {
+            generation,
+            endpoint,
+            addresses,
+        }
     }
 
     pub(in crate::reactor) const fn generation(&self) -> ConnectionEpoch {
         self.generation
     }
 
-    pub(in crate::reactor) fn into_config(self) -> BrokerConfig {
-        self.config
+    pub(in crate::reactor) fn into_parts(
+        self,
+    ) -> (ConnectionEpoch, BrokerEndpoint, ResolvedAddressSet) {
+        (self.generation, self.endpoint, self.addresses)
     }
 }
 
@@ -42,7 +53,6 @@ impl ResolvedSeed {
 pub(in crate::reactor) struct BootstrapOwner {
     machine: BootstrapMachine,
     retry: BootstrapRetryMachine,
-    broker: BrokerTemplate,
     next_epoch: Option<u64>,
 }
 
@@ -51,11 +61,10 @@ impl BootstrapOwner {
         config: BootstrapConfig,
         effect_id: EffectId,
     ) -> Result<(Self, kafka_driver_core::DnsRequest), BootstrapOwnerError> {
-        let (endpoints, broker) = config.into_parts();
+        let (endpoints, _broker) = config.into_parts();
         let mut owner = Self {
             machine: BootstrapMachine::new(endpoints),
             retry: BootstrapRetryMachine::new(BackoffPolicy::default()),
-            broker,
             next_epoch: Some(2),
         };
         let transition = owner.machine.apply(BootstrapInput::Start {
@@ -150,9 +159,8 @@ impl BootstrapOwner {
                 let _ = self.retry.apply(BootstrapRetryInput::Succeeded)?;
                 Ok(BootstrapAction::Install(ResolvedSeed::new(
                     *epoch,
-                    self.broker
-                        .clone()
-                        .at_resolved(endpoint.clone(), addresses.clone()),
+                    endpoint.clone(),
+                    addresses.clone(),
                 )))
             }
             _ => Err(BootstrapOwnerError::UnexpectedEffect),

@@ -68,8 +68,13 @@ impl BrokerSet {
         poller: &Poller,
         now: Moment,
     ) -> Result<(), BrokerSetError> {
-        let generation = seed.generation();
-        self.install_seed(seed.into_config(), poller, now)?;
+        let (generation, endpoint, addresses) = seed.into_parts();
+        let config = self
+            .broker_template
+            .clone()
+            .ok_or(BrokerSetError::BrokerTemplateMissing)?
+            .at_resolved(endpoint, addresses);
+        self.install_seed(config, poller, now)?;
         self.seed_generation = Some(generation);
         Ok(())
     }
@@ -114,7 +119,12 @@ impl BrokerSet {
         if generation <= current {
             return Ok(false);
         }
-        let config = seed.into_config();
+        let (_, endpoint, addresses) = seed.into_parts();
+        let config = self
+            .broker_template
+            .clone()
+            .ok_or(BrokerSetError::BrokerTemplateMissing)?
+            .at_resolved(endpoint, addresses);
         let Some(current_seed) = &mut self.seed else {
             return Err(BrokerSetError::SeedMissing);
         };

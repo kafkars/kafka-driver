@@ -117,7 +117,8 @@ fn seed(generation: u64, host: &str, port: u16) -> ResolvedSeed {
     );
     ResolvedSeed::new(
         ConnectionEpoch::from_raw(generation),
-        BrokerTemplate::plaintext().at_resolved(endpoint, addresses(port)),
+        endpoint,
+        addresses(port),
     )
 }
 
