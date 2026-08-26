@@ -53,6 +53,10 @@ pub(super) fn start_lane<T: RegisteredTransport>(
         .next()
         .ok_or_else(|| io::Error::other("direct lane has no connection address"))?;
     let mut lifecycle = DirectLifecycle::started(broker.backoff(), entropy)?;
+    // Keep every fallible lane-local allocation ahead of shared-set mutation so
+    // a family installer only needs to roll back successfully registered peers.
+    let retained =
+        RetainedBytes::try_from(driver.mailbox_byte_capacity().get()).map_err(message)?;
     let attempt = set.connect_lane(
         connection_attempt.as_ref(),
         connection_owner,
@@ -97,10 +101,11 @@ pub(super) fn start_lane<T: RegisteredTransport>(
         }
         Err(DirectConnectError::Fatal(source)) => return Err(source),
     };
-    finish_lane(
+    Ok(finish_lane(
         driver,
         broker,
         client_id,
+        retained,
         InitialDirect {
             session_plan,
             session,
@@ -112,7 +117,7 @@ pub(super) fn start_lane<T: RegisteredTransport>(
             lifecycle,
             last_close_reason,
         },
-    )
+    ))
 }
 
 struct InitialDirect<T: RegisteredTransport> {
@@ -131,8 +136,9 @@ fn finish_lane<T: RegisteredTransport>(
     driver: &DriverLimits,
     broker: BrokerLimits,
     client_id: Option<ClientId>,
+    retained: RetainedBytes,
     initial: InitialDirect<T>,
-) -> io::Result<DirectLane<T>> {
+) -> DirectLane<T> {
     let InitialDirect {
         session_plan,
         session,
@@ -144,10 +150,8 @@ fn finish_lane<T: RegisteredTransport>(
         lifecycle,
         last_close_reason,
     } = initial;
-    let retained =
-        RetainedBytes::try_from(driver.mailbox_byte_capacity().get()).map_err(message)?;
     let terminal = lifecycle.is_closed();
-    Ok(DirectLane {
+    DirectLane {
         connection_attempt,
         connection_owner,
         connection,
@@ -183,5 +187,5 @@ fn finish_lane<T: RegisteredTransport>(
         admission_open: false,
         terminal,
         pending_recovery: None,
-    })
+    }
 }

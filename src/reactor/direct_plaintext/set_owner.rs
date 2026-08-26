@@ -2,7 +2,9 @@
 
 use std::{io, net::SocketAddr};
 
-use bornera::{ConnectionSet, ConnectionSetConfig, ConnectionToken, RegisteredTransport};
+use bornera::{
+    ConnectionSet, ConnectionSetConfig, ConnectionToken, OwnerFailure, RegisteredTransport,
+};
 use bornera_core::ConnectionEpoch;
 use calandria::{ResourceOwnerId, Turn};
 use kafka_driver_core::Moment;
@@ -74,6 +76,24 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
         if lanes > self.lane_capacity {
             return Err(io::Error::other(
                 "direct lane collection exceeds the shared set capacity",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Abandons a connection created by a lane that never became observable.
+    pub(super) fn abandon_unpublished(&mut self, connection: ConnectionToken) -> io::Result<()> {
+        let report = self
+            .set
+            .abandon(connection, OwnerFailure::OwnerInvariant)
+            .map_err(message)?;
+        if report.ownership_diverged
+            || !report.operations.is_empty()
+            || !report.unmatched_writes.is_empty()
+            || !report.outcomes.is_empty()
+        {
+            return Err(io::Error::other(
+                "unpublished Bornera connection rollback diverged",
             ));
         }
         Ok(())

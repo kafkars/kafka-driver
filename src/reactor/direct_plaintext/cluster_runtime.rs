@@ -10,7 +10,7 @@ use std::{collections::BTreeMap, io, num::NonZeroUsize};
 use bornera::RegisteredTransport;
 use bornera_core::EndpointId;
 use calandria::{RetainedBytes, Span, WaitOutcome};
-use kafka_driver_core::{ConnectionEpoch, Moment};
+use kafka_driver_core::{BrokerId, ConnectionEpoch, Moment};
 
 use crate::reactor::bornera::{BorneraIdentityAllocator, BorneraIdentityError, BorneraLaneOwner};
 use crate::{DriverLimits, TrafficClass, reactor::causality::CausalSequence};
@@ -24,6 +24,7 @@ use super::{
     set_owner::DirectSetOwner,
 };
 
+pub(super) mod family;
 pub(super) mod seed;
 
 #[derive(Clone, Copy)]
@@ -38,6 +39,7 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     identities: BorneraIdentityAllocator,
     lanes: Vec<DirectLane<T>>,
     slots: BTreeMap<DirectRefreshOwner, usize>,
+    families: BTreeMap<BrokerId, [DirectRefreshOwner; TrafficClass::COUNT]>,
     seed: Option<SeedSlot>,
     lane_turn_budget: NonZeroUsize,
     drive_cursor: usize,
@@ -52,6 +54,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             identities: BorneraIdentityAllocator::new(),
             lanes: Vec::new(),
             slots: BTreeMap::new(),
+            families: BTreeMap::new(),
             seed: None,
             lane_turn_budget: driver.metadata().lane_turn_budget(),
             drive_cursor: 0,
@@ -95,16 +98,25 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
                 "Bornera cluster seed can only change through replacement",
             ));
         }
+        if self.families.values().any(|family| family.contains(&owner)) {
+            return Err(io::Error::other(
+                "Bornera broker-family lanes must be removed together",
+            ));
+        }
         let index = self.index(owner)?;
         if !reclaimable(&self.lanes[index]) {
             return Ok(false);
         }
+        self.remove_at(owner, index);
+        Ok(true)
+    }
+
+    fn remove_at(&mut self, owner: DirectRefreshOwner, index: usize) {
         self.slots.remove(&owner);
         self.lanes.swap_remove(index);
         if let Some(moved) = self.lanes.get(index) {
             self.slots.insert(moved.refresh_owner(), index);
         }
-        Ok(true)
     }
 
     pub(super) fn access(&mut self, owner: DirectRefreshOwner) -> Option<DirectLaneAccess<'_, T>> {

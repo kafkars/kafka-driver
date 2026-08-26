@@ -8,6 +8,7 @@ use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
 #[cfg(feature = "tls-rustls")]
 use crate::config::{TlsClientConfig, TlsClientPolicy, TlsSessionError};
 use crate::{
+    TrafficClass,
     config::{
         BrokerAddresses, BrokerTemplate, BrokerTemplateParts, ClientId, DriverLimits, SaslConfig,
     },
@@ -61,6 +62,19 @@ pub(in crate::reactor::direct_plaintext) trait BorneraLanePlanFactory<T: Registe
         endpoint: BrokerEndpoint,
         addresses: ResolvedAddressSet,
     ) -> io::Result<BorneraLanePlan<T>>;
+
+    fn family_at_resolved(
+        &self,
+        endpoint: BrokerEndpoint,
+        addresses: ResolvedAddressSet,
+    ) -> io::Result<[BorneraLanePlan<T>; TrafficClass::COUNT]> {
+        Ok([
+            self.at_resolved(endpoint.clone(), addresses.clone())?,
+            self.at_resolved(endpoint.clone(), addresses.clone())?,
+            self.at_resolved(endpoint.clone(), addresses.clone())?,
+            self.at_resolved(endpoint, addresses)?,
+        ])
+    }
 }
 
 pub(in crate::reactor::direct_plaintext) struct PlaintextLanePlanFactory {
