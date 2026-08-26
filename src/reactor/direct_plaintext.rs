@@ -7,6 +7,7 @@ mod authentication_publication;
 mod authentication_reserve;
 mod authentication_settlement;
 mod backend;
+mod cluster_runtime;
 mod construction;
 mod decoder_gate;
 mod drive;

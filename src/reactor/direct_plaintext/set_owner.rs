@@ -19,7 +19,7 @@ use super::{
 pub(super) struct DirectSetOwner<T: RegisteredTransport> {
     pub(super) set: DirectSet<T>,
     pub(super) last_turn: Turn,
-    pub(super) preparations: Vec<Option<DirectDrivePreparation>>,
+    pub(super) preparations: Vec<(usize, Option<DirectDrivePreparation>)>,
     pub(super) lane_capacity: usize,
     pub(super) deferred_failure: Option<io::Error>,
     #[cfg(test)]
@@ -37,7 +37,7 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
         Ok(Self {
             set,
             last_turn: Turn::waiting(),
-            preparations: Vec::with_capacity(lane_capacity),
+            preparations: Vec::new(),
             lane_capacity,
             deferred_failure: None,
             #[cfg(test)]

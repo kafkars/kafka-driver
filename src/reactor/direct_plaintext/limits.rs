@@ -47,6 +47,11 @@ impl DirectSetBounds {
     pub(super) const fn max_connections(self) -> NonZeroUsize {
         self.max_connections
     }
+
+    #[cfg(test)]
+    pub(super) const fn ready_connections_per_turn(self) -> NonZeroUsize {
+        self.ready_connections_per_turn
+    }
 }
 
 pub(super) fn set_limits(limits: &DriverLimits, bounds: DirectSetBounds) -> ConnectionSetLimits {

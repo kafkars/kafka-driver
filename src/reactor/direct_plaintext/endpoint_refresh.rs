@@ -14,7 +14,7 @@ use crate::reactor::address_rotation::AddressRotation;
 use super::owner::DirectLane;
 
 /// Stable shared-set lane identity for endpoint-resolution ownership.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(in crate::reactor) struct DirectRefreshOwner {
     endpoint: EndpointId,
     lane: LaneId,

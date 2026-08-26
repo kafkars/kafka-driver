@@ -1,6 +1,6 @@
-//! One set turn followed by non-short-circuit per-token Kafka settlement.
+//! Bounded local policy, one set turn, then total Kafka publication settlement.
 
-use std::io;
+use std::{io, num::NonZeroUsize};
 
 use bornera::RegisteredTransport;
 use calandria::Turn;
@@ -20,17 +20,47 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
         now: Moment,
         causality: &mut CausalSequence,
     ) -> io::Result<bool> {
+        let budget = NonZeroUsize::new(lanes.len()).unwrap_or(NonZeroUsize::MIN);
+        self.drive_bounded(lanes, 0, budget, now, causality)
+    }
+
+    pub(super) fn drive_bounded(
+        &mut self,
+        lanes: &mut [DirectLane<T>],
+        start: usize,
+        budget: NonZeroUsize,
+        now: Moment,
+        causality: &mut CausalSequence,
+    ) -> io::Result<bool> {
+        // Only this round-robin window runs timers, expiry, reconnect, and
+        // admission. The Bornera turn independently bounds ready connections;
+        // the later full scan must drain every publication it emitted.
         self.ensure_lane_capacity(lanes.len())?;
         self.preparations.clear();
         let mut progress = false;
         let mut first_error = self.deferred_failure.take();
-        for lane in lanes.iter_mut() {
+        let selected = lanes.len().min(budget.get());
+        let start = start.checked_rem(lanes.len()).unwrap_or(0);
+        for offset in 0..selected {
+            let tail = lanes.len() - start;
+            let index = if offset < tail {
+                start + offset
+            } else {
+                offset - tail
+            };
+            let Some(lane) = lanes.get_mut(index) else {
+                keep_first(
+                    &mut first_error,
+                    io::Error::other("bounded Bornera lane selection diverged"),
+                );
+                continue;
+            };
             let prepared = self.access(lane).prepare_drive(now, causality);
             match prepared {
-                Ok(preparation) => self.preparations.push(Some(preparation)),
+                Ok(preparation) => self.preparations.push((index, Some(preparation))),
                 Err(error) => {
                     keep_first(&mut first_error, error);
-                    self.preparations.push(None);
+                    self.preparations.push((index, None));
                 }
             }
         }
@@ -49,8 +79,16 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
         } else {
             self.last_turn = Turn::waiting();
         }
-        for (index, lane) in lanes.iter_mut().enumerate() {
-            let Some(preparation) = self.preparations.get(index).copied().flatten() else {
+        for preparation_index in 0..self.preparations.len() {
+            let (index, preparation) = self.preparations[preparation_index];
+            let Some(preparation) = preparation else {
+                continue;
+            };
+            let Some(lane) = lanes.get_mut(index) else {
+                keep_first(
+                    &mut first_error,
+                    io::Error::other("prepared Bornera lane selection diverged"),
+                );
                 continue;
             };
             let finished = self.access(lane).finish_drive(&preparation, now, causality);
