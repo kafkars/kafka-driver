@@ -9,11 +9,11 @@ use std::{collections::BTreeMap, io, num::NonZeroUsize};
 
 use bornera::RegisteredTransport;
 use bornera_core::EndpointId;
-use calandria::{RetainedBytes, Span, WaitOutcome};
+use calandria::RetainedBytes;
 use kafka_driver_core::{BrokerId, ConnectionEpoch, Moment};
 
 use crate::reactor::bornera::{BorneraIdentityAllocator, BorneraIdentityError, BorneraLaneOwner};
-use crate::{DriverLimits, TrafficClass, reactor::causality::CausalSequence};
+use crate::{DriverLimits, TrafficClass};
 
 use super::{
     endpoint_refresh::DirectRefreshOwner,
@@ -21,12 +21,14 @@ use super::{
     lane_plan::BorneraLanePlan,
     limits::DirectSetBounds,
     owner::{DirectLane, DirectLaneAccess, DirectLaneView},
+    pending::PendingRequests,
     set_owner::DirectSetOwner,
 };
 
 pub(super) mod backend;
 pub(super) mod family;
 pub(super) mod seed;
+mod seed_waiting;
 
 #[derive(Clone, Copy)]
 struct SeedSlot {
@@ -42,6 +44,7 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     slots: BTreeMap<DirectRefreshOwner, usize>,
     families: BTreeMap<BrokerId, [DirectRefreshOwner; TrafficClass::COUNT]>,
     seed: Option<SeedSlot>,
+    seed_waiting: PendingRequests,
     lane_turn_budget: NonZeroUsize,
     drive_cursor: usize,
 }
@@ -57,6 +60,10 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             slots: BTreeMap::new(),
             families: BTreeMap::new(),
             seed: None,
+            seed_waiting: PendingRequests::new(
+                driver.metadata().waiting_calls(),
+                driver.metadata().waiting_bytes(),
+            ),
             lane_turn_budget: driver.metadata().lane_turn_budget(),
             drive_cursor: 0,
         })
@@ -128,38 +135,6 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
     pub(super) fn view(&self, owner: DirectRefreshOwner) -> Option<DirectLaneView<'_, T>> {
         let index = *self.slots.get(&owner)?;
         Some(self.connections.view(self.lanes.get(index)?))
-    }
-
-    pub(super) fn drive(
-        &mut self,
-        now: Moment,
-        causality: &mut CausalSequence,
-    ) -> io::Result<bool> {
-        // Local Kafka policy and Bornera readiness are separate bounded phases.
-        // The set admits at most the same configured number of ready connections;
-        // every lane is then scanned only to totalize those bounded publications.
-        let selected = self.lanes.len().min(self.lane_turn_budget.get());
-        let result = self.connections.drive_bounded(
-            &mut self.lanes,
-            self.drive_cursor,
-            self.lane_turn_budget,
-            now,
-            causality,
-        );
-        self.drive_cursor = advance_cursor(self.drive_cursor, selected, self.lanes.len());
-        result
-    }
-
-    pub(super) fn wait(&mut self, maximum: Span) -> io::Result<WaitOutcome> {
-        self.connections.wait(&mut self.lanes, maximum)
-    }
-
-    pub(super) fn next_deadline(&self) -> Option<Moment> {
-        self.connections.next_deadline(&self.lanes)
-    }
-
-    pub(super) fn has_local_work(&self) -> bool {
-        self.connections.has_local_work(&self.lanes)
     }
 
     fn index(&self, owner: DirectRefreshOwner) -> io::Result<usize> {

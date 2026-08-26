@@ -10,7 +10,7 @@ use crate::{RequestError, request::ErasedRequest};
 use super::{
     failure_translation::{context_reserve, fail_context, not_sent, operation_reserve, recovery},
     operation_owner::DirectOperationContext,
-    owner::{DirectLaneAccess, calandria_moment},
+    owner::{DirectLane, DirectLaneAccess, calandria_moment},
 };
 use crate::reactor::{
     bornera::{ContextReserveFailure, correlation_id},
@@ -34,7 +34,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
             request.fail(failure);
             return Ok(());
         }
-        if !self.can_admit_public() {
+        if !self.lane.can_admit_public() {
             self.pending.push(request, now);
             return Ok(());
         }
@@ -47,7 +47,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         causality: &mut CausalSequence,
         budget: usize,
     ) -> std::io::Result<usize> {
-        if !self.can_admit_public() {
+        if !self.lane.can_admit_public() {
             return Ok(0);
         }
         let mut admitted = 0;
@@ -63,7 +63,9 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         }
         Ok(admitted)
     }
+}
 
+impl<T: RegisteredTransport> DirectLane<T> {
     pub(super) fn can_admit_public(&self) -> bool {
         self.pending_recovery.is_none()
             && self.connection.is_some()
@@ -71,7 +73,9 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
             && self.session.state().phase() == KafkaSessionPhase::Ready
             && self.admission_open
     }
+}
 
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     fn admit_ready(
         &mut self,
         mut request: Box<dyn ErasedRequest>,
