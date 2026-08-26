@@ -23,6 +23,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             self.remove_at(owner, index);
         }
         self.families.remove(&broker_id);
+        self.normalize_refresh_cursor();
         self.routes
             .retain(|lane, state| lane.broker_id() != broker_id || state.advertised.is_some());
         for state in self

@@ -11,7 +11,7 @@ use kafka_driver_core::{BrokerDirectory, BrokerId, ConnectionEpoch, Moment};
 
 use crate::reactor::{
     BrokerLane,
-    bornera::{BorneraIdentityAllocator, BorneraIdentityError, BorneraLaneOwner},
+    bornera::{BorneraIdentityAllocator, BorneraLaneOwner},
 };
 use crate::{DriverLimits, TrafficClass};
 
@@ -26,6 +26,7 @@ use super::{
 };
 
 pub(super) mod backend;
+mod endpoint_refresh;
 pub(super) mod family;
 mod family_removal;
 mod family_state;
@@ -65,7 +66,9 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     routes: BTreeMap<BrokerLane, route_state::BrokerRouteState>,
     route_cursor: usize,
     route_install_cursor: usize,
+    refresh_cursor: usize,
     route_turn: Vec<BrokerLane>,
+    refresh_turn: Vec<BrokerLane>,
     routes_first: bool,
     seed: Option<SeedSlot>,
     seed_bootstrap: seed_rotation::SeedBootstrapState,
@@ -89,7 +92,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             routes: BTreeMap::new(),
             route_cursor: 0,
             route_install_cursor: 0,
+            refresh_cursor: 0,
             route_turn: Vec::new(),
+            refresh_turn: Vec::new(),
             routes_first: false,
             seed: None,
             seed_bootstrap: seed_rotation::SeedBootstrapState::Inactive,
@@ -108,7 +113,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
     ) -> io::Result<(EndpointId, [BorneraLaneOwner; N])> {
         self.identities
             .reserve_endpoint_lanes::<N>()
-            .map_err(identity_error)
+            .map_err(io::Error::other)
     }
 
     pub(super) fn insert_reserved(
@@ -221,10 +226,6 @@ fn reclaimable<T: RegisteredTransport>(lane: &DirectLane<T>) -> bool {
 
 const fn refresh_owner(owner: BorneraLaneOwner) -> DirectRefreshOwner {
     DirectRefreshOwner::new(owner.endpoint(), owner.lane())
-}
-
-fn identity_error(error: BorneraIdentityError) -> io::Error {
-    io::Error::other(error)
 }
 
 #[cfg(test)]
