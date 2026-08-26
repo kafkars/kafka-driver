@@ -24,7 +24,7 @@ fn public_package_metadata_is_complete() {
     let workspace = parse(&root.join("Cargo.toml"));
     assert_eq!(
         workspace["workspace"]["package"]["version"].as_str(),
-        Some("0.1.0-rc.2")
+        Some("0.1.0-rc.3")
     );
     assert_eq!(
         workspace["workspace"]["package"]["license"].as_str(),

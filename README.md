@@ -141,7 +141,7 @@ scripts/check
 
 ## Status
 
-`kafka-driver` 0.1.0-rc.2 is the second release candidate. This source consumes
+`kafka-driver` 0.1.0-rc.3 is the third release candidate. This source consumes
 `kafka-wire` 0.1.0-rc.3 and the Bornera 0.0.1-rc.3 family from the public
 registry. Public APIs may still change before 0.1.0.
 
