@@ -27,6 +27,8 @@ mod topic_view;
 mod turn;
 
 #[cfg(test)]
+mod cluster_seed_rotation_test;
+#[cfg(test)]
 mod direct_address_refresh_test;
 #[cfg(test)]
 mod resolution_test;

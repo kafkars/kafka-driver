@@ -29,10 +29,13 @@ pub(super) mod backend;
 pub(super) mod family;
 mod family_removal;
 pub(super) mod seed;
+mod seed_rotation;
+#[cfg(test)]
+pub(super) mod seed_rotation_host_test_bridge;
 mod seed_waiting;
 mod seed_waiting_settlement;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct SeedSlot {
     owner: DirectRefreshOwner,
     generation: ConnectionEpoch,
@@ -46,6 +49,7 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     slots: BTreeMap<DirectRefreshOwner, usize>,
     families: BTreeMap<BrokerId, family::BrokerFamily>,
     seed: Option<SeedSlot>,
+    seed_bootstrap: seed_rotation::SeedBootstrapState,
     seed_waiting: PendingRequests,
     seed_waiting_state: seed_waiting_settlement::SeedWaitingState,
     lane_turn_budget: NonZeroUsize,
@@ -63,6 +67,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             slots: BTreeMap::new(),
             families: BTreeMap::new(),
             seed: None,
+            seed_bootstrap: seed_rotation::SeedBootstrapState::Inactive,
             seed_waiting: PendingRequests::new(
                 driver.metadata().waiting_calls(),
                 driver.metadata().waiting_bytes(),

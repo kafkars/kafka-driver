@@ -5,7 +5,7 @@ use std::num::{NonZeroU16, NonZeroUsize};
 use bornera_core::{EndpointId, LaneId};
 use kafka_driver_core::{
     BootstrapSet, BrokerEndpoint, BrokerId, ConnectionEpoch, DnsFailure, DnsOutcome, DnsRequest,
-    EffectId, HostName, Moment,
+    EffectId, HostName, IpAddress, Moment, ResolutionLimits, ResolvedAddress, ResolvedAddressSet,
 };
 
 use crate::{
@@ -33,6 +33,52 @@ fn ownership_saturation_rejects_a_permit_before_dns_policy_can_advance() {
     assert_eq!(resolution.capacity(), 1);
     assert!(requests.try_recv().is_ok());
     assert!(requests.try_recv().is_err());
+}
+
+#[test]
+fn resolved_bootstrap_restart_waits_for_capacity_then_rotates_membership() {
+    let limits = resolver_limits().with_pending_capacity(NonZeroUsize::MIN);
+    let (mut resolution, requests, outcomes) =
+        NameResolution::isolated(bootstrap_membership(), limits);
+    let first = requests
+        .try_recv()
+        .unwrap_or_else(|error| panic!("initial bootstrap request: {error}"));
+    outcomes
+        .send(DnsOutcome::new(
+            first.epoch(),
+            first.effect_id(),
+            Ok(addresses()),
+        ))
+        .unwrap_or_else(|error| panic!("complete initial bootstrap: {error}"));
+    let mut broker_outcomes = Vec::new();
+    let mut direct_outcomes = Vec::new();
+    let installed = resolution
+        .drive_for_test(&mut broker_outcomes, &mut direct_outcomes, Moment::ORIGIN)
+        .unwrap_or_else(|error| panic!("install initial bootstrap seed: {error}"));
+    assert!(installed.broker.is_some());
+    let occupied = resolution
+        .try_reserve_broker(lane())
+        .unwrap_or_else(|error| panic!("reserve competing DNS owner: {error}"))
+        .unwrap_or_else(|| panic!("competing DNS owner must fit"));
+
+    assert!(
+        !resolution
+            .restart_bootstrap()
+            .unwrap_or_else(|error| panic!("observe bootstrap backpressure: {error}"))
+    );
+    assert!(requests.try_recv().is_err());
+    resolution.cancel(occupied);
+    assert!(
+        resolution
+            .restart_bootstrap()
+            .unwrap_or_else(|error| panic!("restart bootstrap membership: {error}"))
+    );
+    let rotated = requests
+        .try_recv()
+        .unwrap_or_else(|error| panic!("rotated bootstrap request: {error}"));
+    assert_eq!(first.endpoint().host().as_str(), "127.0.0.1");
+    assert_eq!(rotated.endpoint().host().as_str(), "127.0.0.2");
+    assert_eq!(rotated.epoch(), ConnectionEpoch::from_raw(2));
 }
 
 #[test]
@@ -181,7 +227,24 @@ fn bootstrap() -> BootstrapConfig {
     BootstrapConfig::plaintext(endpoints)
 }
 
-fn resolver_limits() -> ResolverLimits {
+pub(super) fn bootstrap_membership() -> BootstrapConfig {
+    let endpoints = BootstrapSet::try_from_iter(
+        [endpoint(), endpoint_at("127.0.0.2")],
+        BootstrapLimits::default(),
+    )
+    .unwrap_or_else(|error| panic!("valid bootstrap membership: {error}"));
+    BootstrapConfig::plaintext(endpoints)
+}
+
+pub(super) fn addresses() -> ResolvedAddressSet {
+    ResolvedAddressSet::try_from_iter(
+        [ResolvedAddress::new(IpAddress::V4([127, 0, 0, 1]), port())],
+        ResolutionLimits::default(),
+    )
+    .unwrap_or_else(|error| panic!("valid bootstrap addresses: {error}"))
+}
+
+pub(super) fn resolver_limits() -> ResolverLimits {
     ResolverLimits::new(NonZeroUsize::MIN, nonzero(2), nonzero(2), NonZeroUsize::MIN)
 }
 
@@ -193,13 +256,17 @@ fn request(raw: u64) -> DnsRequest {
     )
 }
 
-fn endpoint() -> BrokerEndpoint {
-    let host = HostName::new("127.0.0.1")
-        .unwrap_or_else(|error| panic!("numeric host must be valid: {error}"));
+pub(super) fn endpoint() -> BrokerEndpoint {
+    endpoint_at("127.0.0.1")
+}
+
+fn endpoint_at(host: &str) -> BrokerEndpoint {
+    let host =
+        HostName::new(host).unwrap_or_else(|error| panic!("numeric host must be valid: {error}"));
     BrokerEndpoint::new(host, port())
 }
 
-fn lane() -> BrokerLane {
+pub(super) fn lane() -> BrokerLane {
     let broker_id = BrokerId::new(7).unwrap_or_else(|error| panic!("valid broker ID: {error}"));
     BrokerLane::new(broker_id, TrafficClass::Interactive)
 }

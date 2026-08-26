@@ -1,19 +1,36 @@
 //! Direct numeric broker ownership on one Bornera selector.
-
 mod admission;
 mod attempt;
+#[cfg(test)]
+mod attempt_test;
 mod authentication_admission;
+#[cfg(test)]
+mod authentication_fixture_test;
 mod authentication_publication;
+#[cfg(test)]
+mod authentication_publication_test;
 mod authentication_reserve;
 mod authentication_settlement;
+#[cfg(test)]
+mod authentication_test;
 mod backend;
 mod cluster_runtime;
 mod construction;
 mod decoder_gate;
+#[cfg(all(test, feature = "tls-rustls"))]
+mod decoder_gate_test;
 mod drive;
+#[cfg(test)]
+mod drive_test;
+#[cfg(test)]
+mod endpoint_failure_policy_test;
 pub(in crate::reactor) mod endpoint_refresh;
 mod endpoint_refresh_completion;
 mod endpoint_refresh_routing;
+#[cfg(test)]
+mod endpoint_refresh_test;
+#[cfg(test)]
+mod endpoint_selection_test;
 mod failure_translation;
 mod generation;
 mod invariant_failure;
@@ -22,73 +39,54 @@ mod lane_plan;
 mod lifecycle;
 mod lifecycle_drain;
 mod lifecycle_refresh;
+#[cfg(test)]
+mod lifecycle_test;
 mod limits;
 mod negotiation;
 mod observation;
 mod operation_owner;
 mod owner;
-mod pending;
-mod public_settlement;
-mod publication;
-mod reconnect;
-mod recovery_owners;
-mod recovery_settlement;
-mod rpc;
-mod runtime;
-#[cfg(feature = "tls-rustls")]
-mod rustls_transport;
-mod scram_proof;
-mod session_close;
-mod session_progress;
-mod set_drive;
-mod set_owner;
-mod set_schedule;
-mod settlement;
-
-#[cfg(test)]
-mod attempt_test;
-#[cfg(test)]
-mod authentication_fixture_test;
-#[cfg(test)]
-mod authentication_publication_test;
-#[cfg(test)]
-mod authentication_test;
-#[cfg(all(test, feature = "tls-rustls"))]
-mod decoder_gate_test;
-#[cfg(test)]
-mod drive_test;
-#[cfg(test)]
-mod endpoint_failure_policy_test;
-#[cfg(test)]
-mod endpoint_refresh_test;
-#[cfg(test)]
-mod endpoint_selection_test;
-#[cfg(test)]
-mod lifecycle_test;
 #[cfg(test)]
 mod owner_test;
+mod pending;
 #[cfg(test)]
 mod pending_test;
+mod public_settlement;
 #[cfg(test)]
 mod public_settlement_test;
+mod publication;
+mod reconnect;
 #[cfg(test)]
 mod reconnect_edge_test;
 #[cfg(test)]
 mod reconnect_fatal_test;
+mod recovery_owners;
+mod recovery_settlement;
 #[cfg(test)]
 mod recovery_test;
 #[cfg(test)]
 mod recovery_totality_test;
 #[cfg(test)]
 mod resolved_recovery_test;
+mod rpc;
+mod runtime;
 #[cfg(all(test, feature = "tls-rustls"))]
 mod rustls_attempt_test;
+#[cfg(feature = "tls-rustls")]
+mod rustls_transport;
 #[cfg(test)]
 pub(in crate::reactor) mod scram_fixture_test;
+mod scram_proof;
 #[cfg(test)]
 mod scram_proof_test;
 #[cfg(test)]
 mod semantic_readiness_test;
+mod session_close;
+mod session_progress;
+mod set_drive;
+mod set_owner;
+mod set_schedule;
+mod settlement;
 #[cfg(test)]
 mod shared_set_failure_test;
 #[cfg(test)]
@@ -97,4 +95,6 @@ mod shared_set_fixture_test;
 mod shared_set_test;
 
 pub(in crate::reactor) use backend::DirectBackend;
+#[cfg(test)]
+pub(in crate::reactor) use cluster_runtime::seed_rotation_host_test_bridge::ClusterSeedFatalFixture;
 pub(in crate::reactor) use rpc::DirectBrokerRpc;

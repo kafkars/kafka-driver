@@ -67,6 +67,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             let current = self
                 .seed
                 .ok_or_else(|| io::Error::other("Bornera cluster seed is not installed"))?;
+            if self.seed_bootstrap_blocks_replacement(current)? {
+                return Ok(ResolvedSeedReplacement::Busy(Box::new(seed)));
+            }
             if seed.generation() <= current.generation {
                 return Ok(ResolvedSeedReplacement::Stale);
             }
@@ -118,6 +121,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             let current = self
                 .seed
                 .ok_or_else(|| io::Error::other("Bornera cluster seed is not installed"))?;
+            if self.seed_bootstrap_blocks_replacement(current)? {
+                return Ok(SeedReplacement::Busy(Box::new(plan)));
+            }
             if generation <= current.generation {
                 return Ok(SeedReplacement::Stale);
             }
@@ -153,6 +159,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             generation,
         });
         self.reopen_seed_waiting_after_replacement();
+        self.commit_seed_bootstrap_replacement(current);
         Ok(())
     }
 }
