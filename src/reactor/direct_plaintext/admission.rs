@@ -24,13 +24,7 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
         now: Moment,
         causality: &mut CausalSequence,
     ) -> std::io::Result<()> {
-        if self.is_terminal() {
-            let failure = match self.last_close_reason {
-                Some(reason @ CloseReason::AuthenticationFailed(_)) => {
-                    recovery(reason, Delivery::NotSent)
-                }
-                _ => not_sent(CallFailure::Closed),
-            };
+        if let Some(failure) = self.lane.terminal_admission_failure() {
             request.fail(failure);
             return Ok(());
         }
@@ -66,6 +60,15 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
 }
 
 impl<T: RegisteredTransport> DirectLane<T> {
+    pub(super) fn terminal_admission_failure(&self) -> Option<RequestError> {
+        self.is_terminal().then(|| match self.last_close_reason {
+            Some(reason @ CloseReason::AuthenticationFailed(_)) => {
+                recovery(reason, Delivery::NotSent)
+            }
+            _ => not_sent(CallFailure::Closed),
+        })
+    }
+
     pub(super) fn can_admit_public(&self) -> bool {
         self.pending_recovery.is_none()
             && self.connection.is_some()

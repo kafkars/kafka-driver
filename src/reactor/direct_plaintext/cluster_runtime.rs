@@ -29,6 +29,7 @@ pub(super) mod backend;
 pub(super) mod family;
 pub(super) mod seed;
 mod seed_waiting;
+mod seed_waiting_settlement;
 
 #[derive(Clone, Copy)]
 struct SeedSlot {
@@ -45,6 +46,7 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     families: BTreeMap<BrokerId, [DirectRefreshOwner; TrafficClass::COUNT]>,
     seed: Option<SeedSlot>,
     seed_waiting: PendingRequests,
+    seed_waiting_state: seed_waiting_settlement::SeedWaitingState,
     lane_turn_budget: NonZeroUsize,
     drive_cursor: usize,
 }
@@ -64,6 +66,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
                 driver.metadata().waiting_calls(),
                 driver.metadata().waiting_bytes(),
             ),
+            seed_waiting_state: seed_waiting_settlement::SeedWaitingState::open(),
             lane_turn_budget: driver.metadata().lane_turn_budget(),
             drive_cursor: 0,
         })

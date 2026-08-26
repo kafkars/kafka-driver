@@ -52,10 +52,11 @@ fn pre_seed_waiting_uses_metadata_route_capacity() {
 }
 
 #[test]
-fn stale_seed_mapping_settles_the_incoming_call_before_returning_error() {
-    let driver = driver(1, 1);
+fn stale_seed_mapping_totalizes_the_suffix_and_incoming_call() {
+    let driver = driver(2, 1);
     let mut runtime = ClusterRuntime::<TcpTransport>::new(&driver)
         .unwrap_or_else(|error| panic!("cluster runtime: {error}"));
+    let mut causality = CausalSequence::new();
     let owner = runtime
         .install_seed(
             kafka_driver_core::ConnectionEpoch::from_raw(1),
@@ -63,21 +64,26 @@ fn stale_seed_mapping_settles_the_incoming_call_before_returning_error() {
             NOW,
         )
         .unwrap_or_else(|error| panic!("install seed: {error}"));
+    let (queued_call, queued) = request(30, Duration::from_secs(1));
+    runtime
+        .submit_seed(queued, NOW, &mut causality)
+        .unwrap_or_else(|error| panic!("retain queued suffix: {error}"));
     assert!(runtime.slots.remove(&owner).is_some());
     let (call, request) = request(3, Duration::from_secs(1));
 
     let error = runtime
-        .submit_seed(request, NOW, &mut CausalSequence::new())
+        .submit_seed(request, NOW, &mut causality)
         .err()
         .unwrap_or_else(|| panic!("stale seed mapping must fail"));
 
     assert_eq!(error.to_string(), "Bornera cluster seed owner is stale");
     assert_eq!(call.wait(), Ok(Err(RequestError::IdentityConflict)));
+    assert_eq!(queued_call.try_result(), Some(Ok(Err(closed()))));
     assert!(runtime.seed_waiting.is_empty());
 }
 
 #[test]
-fn stale_seed_mapping_remains_local_work_without_releasing_a_waiter() {
+fn stale_seed_mapping_totalizes_a_waiter_before_failing_the_host() {
     let driver = driver(1, 1);
     let mut runtime = ClusterRuntime::<TcpTransport>::new(&driver)
         .unwrap_or_else(|error| panic!("cluster runtime: {error}"));
@@ -93,10 +99,7 @@ fn stale_seed_mapping_remains_local_work_without_releasing_a_waiter() {
     runtime
         .submit_seed(request, NOW, &mut causality)
         .unwrap_or_else(|error| panic!("retain seed waiter: {error}"));
-    let index = runtime
-        .slots
-        .remove(&owner)
-        .unwrap_or_else(|| panic!("seed slot"));
+    assert!(runtime.slots.remove(&owner).is_some());
 
     assert!(runtime.has_local_work());
     let error = runtime
@@ -104,16 +107,8 @@ fn stale_seed_mapping_remains_local_work_without_releasing_a_waiter() {
         .err()
         .unwrap_or_else(|| panic!("stale seed mapping must fail"));
     assert_eq!(error.to_string(), "Bornera cluster seed owner is stale");
-    assert!(call.try_result().is_none());
-    assert!(!runtime.seed_waiting.is_empty());
-
-    runtime.slots.insert(owner, index);
-    assert!(
-        runtime
-            .drive(Moment::from_nanos(1_000_000_001), &mut causality)
-            .unwrap_or_else(|error| panic!("expire restored seed waiter: {error}"))
-    );
-    assert_eq!(call.wait(), Ok(Err(deadline_exceeded())));
+    assert_eq!(call.try_result(), Some(Ok(Err(closed()))));
+    assert!(runtime.seed_waiting.is_empty());
 }
 
 #[test]
@@ -287,6 +282,13 @@ fn make_reclaimable(
 fn deadline_exceeded() -> RequestError {
     RequestError::Rejected {
         failure: CallFailure::DeadlineExceeded,
+        delivery: Delivery::NotSent,
+    }
+}
+
+fn closed() -> RequestError {
+    RequestError::Rejected {
+        failure: CallFailure::Closed,
         delivery: Delivery::NotSent,
     }
 }

@@ -44,14 +44,17 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         seed: ResolvedSeed,
         now: Moment,
     ) -> io::Result<DirectRefreshOwner> {
-        if self.seed.is_some() {
-            return Err(io::Error::other(
-                "Bornera cluster seed is already installed",
-            ));
-        }
-        let (generation, endpoint, addresses) = seed.into_parts();
-        let plan = factory.at_resolved(endpoint, addresses)?;
-        self.install_seed(generation, plan, now)
+        let result = (|| {
+            if self.seed.is_some() {
+                return Err(io::Error::other(
+                    "Bornera cluster seed is already installed",
+                ));
+            }
+            let (generation, endpoint, addresses) = seed.into_parts();
+            let plan = factory.at_resolved(endpoint, addresses)?;
+            self.install_seed(generation, plan, now)
+        })();
+        self.finish_seed_host_result(result)
     }
 
     pub(super) fn replace_resolved_seed(
@@ -60,20 +63,26 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         seed: ResolvedSeed,
         now: Moment,
     ) -> io::Result<ResolvedSeedReplacement> {
-        let current = self
-            .seed
-            .ok_or_else(|| io::Error::other("Bornera cluster seed is not installed"))?;
-        if seed.generation() <= current.generation {
-            return Ok(ResolvedSeedReplacement::Stale);
-        }
-        let index = self.index(current.owner)?;
-        if !reclaimable(&self.lanes[index]) {
-            return Ok(ResolvedSeedReplacement::Busy(Box::new(seed)));
-        }
-        let (generation, endpoint, addresses) = seed.into_parts();
-        let plan = factory.at_resolved(endpoint, addresses)?;
-        self.replace_reclaimable_seed(current, index, generation, plan, now)?;
-        Ok(ResolvedSeedReplacement::Replaced)
+        let result = (|| {
+            let current = self
+                .seed
+                .ok_or_else(|| io::Error::other("Bornera cluster seed is not installed"))?;
+            if seed.generation() <= current.generation {
+                return Ok(ResolvedSeedReplacement::Stale);
+            }
+            if self.seed_replacement_blocked()? {
+                return Ok(ResolvedSeedReplacement::Busy(Box::new(seed)));
+            }
+            let index = self.index(current.owner)?;
+            if !reclaimable(&self.lanes[index]) {
+                return Ok(ResolvedSeedReplacement::Busy(Box::new(seed)));
+            }
+            let (generation, endpoint, addresses) = seed.into_parts();
+            let plan = factory.at_resolved(endpoint, addresses)?;
+            self.replace_reclaimable_seed(current, index, generation, plan, now)?;
+            Ok(ResolvedSeedReplacement::Replaced)
+        })();
+        self.finish_seed_host_result(result)
     }
 
     pub(super) fn install_seed(
@@ -82,18 +91,21 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         plan: BorneraLanePlan<T>,
         now: Moment,
     ) -> io::Result<DirectRefreshOwner> {
-        if self.seed.is_some() {
-            return Err(io::Error::other(
-                "Bornera cluster seed is already installed",
-            ));
-        }
-        let (_, [owner]) = self.reserve_endpoint_lanes::<1>()?;
-        let key = self.insert_reserved(plan, owner, now)?;
-        self.seed = Some(SeedSlot {
-            owner: key,
-            generation,
-        });
-        Ok(key)
+        let result = (|| {
+            if self.seed.is_some() {
+                return Err(io::Error::other(
+                    "Bornera cluster seed is already installed",
+                ));
+            }
+            let (_, [owner]) = self.reserve_endpoint_lanes::<1>()?;
+            let key = self.insert_reserved(plan, owner, now)?;
+            self.seed = Some(SeedSlot {
+                owner: key,
+                generation,
+            });
+            Ok(key)
+        })();
+        self.finish_seed_host_result(result)
     }
 
     pub(super) fn replace_terminal_seed(
@@ -102,18 +114,24 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         plan: BorneraLanePlan<T>,
         now: Moment,
     ) -> io::Result<SeedReplacement<T>> {
-        let current = self
-            .seed
-            .ok_or_else(|| io::Error::other("Bornera cluster seed is not installed"))?;
-        if generation <= current.generation {
-            return Ok(SeedReplacement::Stale);
-        }
-        let index = self.index(current.owner)?;
-        if !reclaimable(&self.lanes[index]) {
-            return Ok(SeedReplacement::Busy(Box::new(plan)));
-        }
-        self.replace_reclaimable_seed(current, index, generation, plan, now)?;
-        Ok(SeedReplacement::Replaced)
+        let result = (|| {
+            let current = self
+                .seed
+                .ok_or_else(|| io::Error::other("Bornera cluster seed is not installed"))?;
+            if generation <= current.generation {
+                return Ok(SeedReplacement::Stale);
+            }
+            if self.seed_replacement_blocked()? {
+                return Ok(SeedReplacement::Busy(Box::new(plan)));
+            }
+            let index = self.index(current.owner)?;
+            if !reclaimable(&self.lanes[index]) {
+                return Ok(SeedReplacement::Busy(Box::new(plan)));
+            }
+            self.replace_reclaimable_seed(current, index, generation, plan, now)?;
+            Ok(SeedReplacement::Replaced)
+        })();
+        self.finish_seed_host_result(result)
     }
 
     fn replace_reclaimable_seed(
@@ -134,6 +152,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             owner: key,
             generation,
         });
+        self.reopen_seed_waiting_after_replacement();
         Ok(())
     }
 }

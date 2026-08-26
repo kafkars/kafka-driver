@@ -76,6 +76,18 @@ impl PendingRequests {
         PendingExpiration { settled, more_due }
     }
 
+    pub(super) fn fail_bounded(&mut self, failure: &RequestError, budget: usize) -> usize {
+        let mut settled = 0;
+        while settled < budget {
+            let Some(request) = self.pop() else {
+                break;
+            };
+            request.fail(failure.clone());
+            settled += 1;
+        }
+        settled
+    }
+
     pub(super) fn next_deadline(&self) -> Option<Moment> {
         self.requests.next_deadline()
     }

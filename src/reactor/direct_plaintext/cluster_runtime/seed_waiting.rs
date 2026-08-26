@@ -21,6 +21,14 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         now: Moment,
         causality: &mut CausalSequence,
     ) -> io::Result<()> {
+        if let Err(error) = self.capture_seed_terminal_failure() {
+            request.fail(RequestError::IdentityConflict);
+            return self.finish_seed_host_result(Err(error));
+        }
+        if let Some(failure) = self.seed_waiting_admission_failure() {
+            request.fail(failure);
+            return Ok(());
+        }
         let index = match self.seed_lane_index() {
             Ok(Some(index)) => index,
             Ok(None) => {
@@ -29,16 +37,18 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             }
             Err(error) => {
                 request.fail(RequestError::IdentityConflict);
-                return Err(error);
+                return self.finish_seed_host_result(Err(error));
             }
         };
         if !self.lanes[index].can_admit_public() {
             self.seed_waiting.push(request, now);
             return Ok(());
         }
-        self.connections
+        let result = self
+            .connections
             .access(&mut self.lanes[index])
-            .submit_request(request, now, causality)
+            .submit_request(request, now, causality);
+        self.finish_seed_host_result(result)
     }
 
     pub(super) fn drive(
@@ -47,9 +57,17 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         causality: &mut CausalSequence,
     ) -> io::Result<bool> {
         let budget = self.driver.metadata().admission_budget().get();
-        let expiration = self.seed_waiting.expire_due(now, budget);
-        let mut progress = expiration.settled() != 0;
-        let remaining = budget.saturating_sub(expiration.settled());
+        if let Err(error) = self.capture_seed_terminal_failure() {
+            return self.finish_seed_host_result(Err(error));
+        }
+        let mut settled = self.settle_failed_seed_waiting(budget);
+        let mut progress = settled != 0;
+        if !self.seed_waiting_is_closed() {
+            let expiration = self.seed_waiting.expire_due(now, budget);
+            settled = expiration.settled();
+            progress |= settled != 0;
+        }
+        let mut remaining = budget.saturating_sub(settled);
 
         // Local Kafka policy and Bornera readiness are separate bounded phases.
         // The set admits at most the same configured number of ready connections;
@@ -63,13 +81,30 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             causality,
         );
         self.drive_cursor = advance_cursor(self.drive_cursor, selected, self.lanes.len());
-        progress |= result?;
-        progress |= self.admit_seed_waiting(now, causality, remaining)? != 0;
+        match result {
+            Ok(observed) => progress |= observed,
+            Err(error) => return self.finish_seed_host_result(Err(error)),
+        }
+        if let Err(error) = self.capture_seed_terminal_failure() {
+            return self.finish_seed_host_result(Err(error));
+        }
+        let terminal = self.settle_failed_seed_waiting(remaining);
+        progress |= terminal != 0;
+        remaining = remaining.saturating_sub(terminal);
+        if !self.seed_waiting_is_closed() {
+            match self.admit_seed_waiting(now, causality, remaining) {
+                Ok(admitted) => progress |= admitted != 0,
+                Err(error) => return self.finish_seed_host_result(Err(error)),
+            }
+        }
         Ok(progress)
     }
 
     pub(super) fn wait(&mut self, maximum: Span) -> io::Result<WaitOutcome> {
-        self.connections.wait(&mut self.lanes, maximum)
+        match self.connections.wait(&mut self.lanes, maximum) {
+            Ok(outcome) => Ok(outcome),
+            Err(error) => self.finish_seed_host_result(Err(error)),
+        }
     }
 
     pub(super) fn next_deadline(&self) -> Option<Moment> {
@@ -81,13 +116,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
     }
 
     pub(super) fn has_local_work(&self) -> bool {
-        let seed_can_progress = match self.seed_lane_index() {
-            Ok(Some(index)) => self.lanes[index].can_admit_public(),
-            Ok(None) => false,
-            Err(_) => true,
-        };
-        self.connections.has_local_work(&self.lanes)
-            || (!self.seed_waiting.is_empty() && seed_can_progress)
+        self.connections.has_local_work(&self.lanes) || self.seed_waiting_has_local_work()
     }
 
     fn admit_seed_waiting(
@@ -115,7 +144,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         Ok(admitted)
     }
 
-    fn seed_lane_index(&self) -> io::Result<Option<usize>> {
+    pub(super) fn seed_lane_index(&self) -> io::Result<Option<usize>> {
         let Some(seed) = self.seed else {
             return Ok(None);
         };
