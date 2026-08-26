@@ -28,6 +28,14 @@ fn ci_prefetches_before_running_the_gate_offline() {
 }
 
 #[test]
+fn ci_does_not_install_unenforced_zrail() {
+    let root = workspace_root();
+    let workflow = read(&root.join(".github/workflows/ci.yml"));
+
+    assert!(!workflow.contains("zrail"));
+}
+
+#[test]
 fn functional_smoke_runs_on_pull_requests_and_main_without_performance() {
     let root = workspace_root();
     let workflow = read(&root.join(".github/workflows/smoke.yml"));

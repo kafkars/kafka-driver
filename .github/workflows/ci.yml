@@ -35,15 +35,6 @@ jobs:
         with:
           path: kafka-driver
 
-      - name: Set up zrail
-        uses: zactionsz/setup-zrail@e6f8b7b742b94d4d42ed1133df500f75eb465aa2
-        with:
-          version: "0.0.2"
-          sha256: ${{ runner.os == 'Linux' && 'fb535cf8a72cf15995f0c4d2ea640629624b300736c67c7961e058f4a12419d9' || runner.os == 'macOS' && 'efc191a76b71d75e61b195f50759f55562830a4d8ad6c3a2a3bc7b1d8c741141' || '0d1d97ae29fc532d503fb0edba3b18d02a85ce55735bd2d0ad868cbeaebb5a58' }}
-
-      - name: Verify installed zrail
-        run: zrail --version
-
       - name: Install pinned Rust toolchain
         run: |
           rustup toolchain install 1.88.0 --profile minimal --component clippy,rustfmt

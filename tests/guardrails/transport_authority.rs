@@ -1,22 +1,37 @@
-//! Executable ownership for the sole selector and registered transport adapter.
+//! Syntax-level ownership guard for the sole selector and transport adapter.
+//!
+//! This catches accidental source regressions, not semantic name resolution or macro expansion.
+//! Imports of guarded authority names therefore may not be renamed.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use syn::{Expr, ExprCall, ExprMethodCall, File, ItemImpl, Path, Type, visit::Visit};
+use syn::{ExprMethodCall, ExprPath, File, ItemImpl, ItemUse, Path, Type, UseTree, visit::Visit};
 
 use super::support::{display_path, is_test, read, rust_files, workspace_root};
 
 const SET_OWNER: &str = "src/reactor/direct_plaintext/set_owner.rs";
 const RUSTLS_ADAPTER: &str = "src/reactor/direct_plaintext/rustls_transport.rs";
-const ASSOCIATED_CALLS: [&str; 8] = [
+const ASSOCIATED_CALLS: [&str; 13] = [
     "ConnectionSet::new",
     "ConnectionSet::turn_component",
     "ConnectionSet::poll_io",
     "ConnectionSet::wake_handle",
     "ConnectionSet::pulse_handle",
+    "DirectSet::new",
+    "DirectSet::turn_component",
+    "DirectSet::poll_io",
+    "DirectSet::wake_handle",
+    "DirectSet::pulse_handle",
     "Source::register",
     "Source::reregister",
     "Source::deregister",
+];
+const GUARDED_RENAMES: [&str; 5] = [
+    "ConnectionSet",
+    "DirectSet",
+    "RegisteredTransport",
+    "SlotTransport",
+    "Source",
 ];
 const SELECTOR_METHODS: [&str; 4] = ["turn_component", "poll_io", "wake_handle", "pulse_handle"];
 
@@ -24,6 +39,7 @@ const SELECTOR_METHODS: [&str; 4] = ["turn_component", "poll_io", "wake_handle",
 struct AuthorityInventory {
     connection_set_files: BTreeSet<String>,
     associated_calls: BTreeMap<String, usize>,
+    renamed_authorities: BTreeSet<String>,
     selector_methods: BTreeMap<String, usize>,
     transport_impls: BTreeSet<String>,
 }
@@ -36,19 +52,39 @@ fn selector_and_transport_authority_matches_the_reviewed_boundary() {
         BTreeSet::from([SET_OWNER.into()])
     );
     assert_eq!(actual.associated_calls, expected_associated_calls());
+    assert_eq!(actual.renamed_authorities, BTreeSet::new());
     assert_eq!(actual.selector_methods, expected_selector_methods());
     assert_eq!(actual.transport_impls, expected_transport_impls());
 }
 
 #[test]
-fn inventory_detects_a_second_selector_and_transport_owner() {
+fn inventory_detects_alias_ufcs_and_guarded_renames() {
     let source = r"
-        fn rogue(set: &mut DirectSet<T>) {
+        use bornera::{
+            ConnectionSet as Set,
+            RegisteredTransport as Rt,
+            SlotTransport as St,
+        };
+        use crate::reactor::direct_plaintext::set_owner::DirectSet;
+        use crate::reactor::direct_plaintext::set_owner::DirectSet as SetAlias;
+        use mio::event::Source as IoSource;
+
+        fn rogue(mut set: DirectSet<T>) {
             let _ = ConnectionSet::new(config, limits);
+            let _ = DirectSet::<T>::new(config, limits);
+            let poll = DirectSet::poll_io;
+            let _ = poll(&mut set, maximum);
+            let _ = DirectSet::turn_component(&mut set, now);
+            let _ = DirectSet::wake_handle(&set);
+            let _ = DirectSet::pulse_handle(&set);
             let _ = set.poll_io(span);
+            let _ = Set::<Decoder, Classifier, T>::new(config, limits);
         }
         struct Rogue;
         impl RegisteredTransport for Rogue {}
+        impl Rt for Rogue {}
+        impl St for Rogue {}
+        impl IoSource for DirectRustlsTransport {}
     ";
     let actual = source_inventory("src/reactor/rogue.rs", source);
     assert_eq!(
@@ -57,7 +93,27 @@ fn inventory_detects_a_second_selector_and_transport_owner() {
     );
     assert_eq!(
         actual.associated_calls,
-        counts(&[("src/reactor/rogue.rs:ConnectionSet::new", 1)])
+        counts(&[
+            ("src/reactor/rogue.rs:ConnectionSet::new", 1),
+            ("src/reactor/rogue.rs:DirectSet::new", 1),
+            ("src/reactor/rogue.rs:DirectSet::poll_io", 1),
+            ("src/reactor/rogue.rs:DirectSet::turn_component", 1),
+            ("src/reactor/rogue.rs:DirectSet::wake_handle", 1),
+            ("src/reactor/rogue.rs:DirectSet::pulse_handle", 1),
+        ])
+    );
+    assert_eq!(
+        actual.renamed_authorities,
+        [
+            "ConnectionSet as Set",
+            "DirectSet as SetAlias",
+            "RegisteredTransport as Rt",
+            "SlotTransport as St",
+            "Source as IoSource",
+        ]
+        .map(|rename| format!("src/reactor/rogue.rs:{rename}"))
+        .into_iter()
+        .collect()
     );
     assert_eq!(
         actual.selector_methods,
@@ -114,16 +170,14 @@ impl<'ast> Visit<'ast> for AuthorityVisitor<'_> {
         syn::visit::visit_path(self, path);
     }
 
-    fn visit_expr_call(&mut self, call: &'ast ExprCall) {
-        if let Expr::Path(function) = call.func.as_ref()
-            && let Some(authority) = associated_authority(&function.path)
-        {
+    fn visit_expr_path(&mut self, path: &'ast ExprPath) {
+        if let Some(authority) = associated_authority(&path.path) {
             increment(
                 &mut self.inventory.associated_calls,
                 format!("{}:{authority}", self.path),
             );
         }
-        syn::visit::visit_expr_call(self, call);
+        syn::visit::visit_expr_path(self, path);
     }
 
     fn visit_expr_method_call(&mut self, call: &'ast ExprMethodCall) {
@@ -151,6 +205,33 @@ impl<'ast> Visit<'ast> for AuthorityVisitor<'_> {
                 .insert(format!("{}:{type_name}:{}", self.path, trait_name.ident));
         }
         syn::visit::visit_item_impl(self, item);
+    }
+
+    fn visit_item_use(&mut self, item: &'ast ItemUse) {
+        record_guarded_renames(
+            &item.tree,
+            self.path,
+            &mut self.inventory.renamed_authorities,
+        );
+        syn::visit::visit_item_use(self, item);
+    }
+}
+
+fn record_guarded_renames(tree: &UseTree, path: &str, renames: &mut BTreeSet<String>) {
+    match tree {
+        UseTree::Path(tree) => record_guarded_renames(&tree.tree, path, renames),
+        UseTree::Group(group) => {
+            for tree in &group.items {
+                record_guarded_renames(tree, path, renames);
+            }
+        }
+        UseTree::Rename(rename) => {
+            let authority = rename.ident.to_string();
+            if GUARDED_RENAMES.contains(&authority.as_str()) {
+                renames.insert(format!("{path}:{authority} as {}", rename.rename));
+            }
+        }
+        UseTree::Name(_) | UseTree::Glob(_) => {}
     }
 }
 
