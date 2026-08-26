@@ -92,6 +92,7 @@ impl Reactor {
         if let Some(resolution) = self.resolution.take() {
             self.resolver_shutdown = Some(resolution.begin_shutdown());
         }
+        #[cfg(test)]
         if let Some(legacy) = self.backend.legacy_mut() {
             legacy.brokers.release_scram_proof_senders();
         }
@@ -121,11 +122,14 @@ impl Reactor {
             direct
                 .begin_session_drain(now, &mut self.causality)
                 .map_err(ReactorError::host)?;
-        } else if let Some(legacy) = self.backend.legacy_mut() {
-            legacy
-                .brokers
-                .begin_drain(&legacy.poller, now)
-                .map_err(ReactorError::broker_set)?;
+        } else {
+            #[cfg(test)]
+            if let Some(legacy) = self.backend.legacy_mut() {
+                legacy
+                    .brokers
+                    .begin_drain(&legacy.poller, now)
+                    .map_err(ReactorError::broker_set)?;
+            }
         }
         self.state = HostState::Draining;
         Ok(())

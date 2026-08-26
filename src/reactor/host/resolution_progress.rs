@@ -3,8 +3,7 @@
 use kafka_driver_core::DnsOutcome;
 
 use crate::reactor::{
-    bootstrap::ResolvedSeed, broker_set::BrokerLane,
-    direct_plaintext::endpoint_refresh::DirectRefreshOwner,
+    BrokerLane, bootstrap::ResolvedSeed, direct_plaintext::endpoint_refresh::DirectRefreshOwner,
 };
 
 pub(super) struct BrokerDnsOutcome {

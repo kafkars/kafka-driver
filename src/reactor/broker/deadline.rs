@@ -1,12 +1,15 @@
 //! Fairness-bounded delivery of driver-relative deadline events to policy.
 
+#[cfg(test)]
 use kafka_driver_core::{ConnectionEffect, ConnectionInput, Moment};
 
+#[cfg(test)]
 use crate::reactor::{
     Poller,
     timer::{DeadlineSubject, DeadlineTimer},
 };
 
+#[cfg(test)]
 use super::{BrokerError, owner::SingleBroker};
 
 /// Progress from one bounded due-deadline delivery phase.
@@ -36,6 +39,7 @@ impl DeadlineProgress {
         Self { fired, more_due }
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn merge(self, other: Self) -> Self {
         Self {
             fired: self.fired.saturating_add(other.fired),
@@ -44,6 +48,7 @@ impl DeadlineProgress {
     }
 }
 
+#[cfg(test)]
 impl SingleBroker {
     pub(in crate::reactor) fn fire_due(
         &mut self,

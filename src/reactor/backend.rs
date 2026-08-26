@@ -5,13 +5,16 @@ use std::io;
 use calandria::{Span, WaitOutcome};
 
 use super::{
-    BrokerRpc, LegacyBrokerRpc, PollEvent, Poller, WakeHandle,
-    broker_set::BrokerSet,
+    BrokerRpc, WakeHandle,
     causality::CausalSequence,
     direct_plaintext::{ClusterBackend, ClusterRpcAccessError, DirectBackend},
 };
 
+#[cfg(test)]
+use super::{LegacyBrokerRpc, PollEvent, Poller, broker_set::BrokerSet};
+
 pub(in crate::reactor) enum ReactorBackend {
+    #[cfg(test)]
     Legacy(Box<LegacyBackend>),
     Cluster(Box<ClusterBackend>),
     Direct(Box<DirectBackend>),
@@ -22,12 +25,14 @@ pub(in crate::reactor) enum BackendRpcAccessError<E> {
     Owner(E),
 }
 
+#[cfg(test)]
 pub(in crate::reactor) struct LegacyBackend {
     pub(in crate::reactor) poller: Poller,
     pub(in crate::reactor) poll_events: Vec<PollEvent>,
     pub(in crate::reactor) brokers: BrokerSet,
 }
 
+#[cfg(test)]
 impl LegacyBackend {
     pub(in crate::reactor) fn new(
         poller: Poller,
@@ -49,6 +54,7 @@ impl LegacyBackend {
 }
 
 impl ReactorBackend {
+    #[cfg(test)]
     pub(in crate::reactor) fn legacy(&self) -> Option<&LegacyBackend> {
         match self {
             Self::Legacy(legacy) => Some(legacy),
@@ -56,6 +62,7 @@ impl ReactorBackend {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) fn legacy_mut(&mut self) -> Option<&mut LegacyBackend> {
         match self {
             Self::Legacy(legacy) => Some(legacy),
@@ -66,33 +73,42 @@ impl ReactorBackend {
     pub(in crate::reactor) fn cluster(&self) -> Option<&ClusterBackend> {
         match self {
             Self::Cluster(cluster) => Some(cluster),
-            Self::Legacy(_) | Self::Direct(_) => None,
+            #[cfg(test)]
+            Self::Legacy(_) => None,
+            Self::Direct(_) => None,
         }
     }
 
     pub(in crate::reactor) fn cluster_mut(&mut self) -> Option<&mut ClusterBackend> {
         match self {
             Self::Cluster(cluster) => Some(cluster),
-            Self::Legacy(_) | Self::Direct(_) => None,
+            #[cfg(test)]
+            Self::Legacy(_) => None,
+            Self::Direct(_) => None,
         }
     }
 
     pub(in crate::reactor) fn direct_mut(&mut self) -> Option<&mut DirectBackend> {
         match self {
             Self::Direct(direct) => Some(direct),
-            Self::Legacy(_) | Self::Cluster(_) => None,
+            #[cfg(test)]
+            Self::Legacy(_) => None,
+            Self::Cluster(_) => None,
         }
     }
 
     pub(in crate::reactor) fn direct(&self) -> Option<&DirectBackend> {
         match self {
             Self::Direct(direct) => Some(direct),
-            Self::Legacy(_) | Self::Cluster(_) => None,
+            #[cfg(test)]
+            Self::Legacy(_) => None,
+            Self::Cluster(_) => None,
         }
     }
 
     pub(in crate::reactor) fn wait(&mut self, maximum: Span) -> io::Result<WaitOutcome> {
         match self {
+            #[cfg(test)]
             Self::Legacy(legacy) => {
                 legacy.poll_events.clear();
                 let observed = legacy
@@ -111,6 +127,7 @@ impl ReactorBackend {
 
     pub(in crate::reactor) fn wake_handle(&self) -> calandria::WakeHandle {
         match self {
+            #[cfg(test)]
             Self::Legacy(legacy) => legacy.poller.wake_handle(),
             Self::Cluster(cluster) => cluster.wake_handle(),
             Self::Direct(direct) => direct.wake_handle(),
@@ -119,6 +136,7 @@ impl ReactorBackend {
 
     pub(in crate::reactor) fn public_wake(&self) -> WakeHandle {
         match self {
+            #[cfg(test)]
             Self::Legacy(legacy) => WakeHandle::new(legacy.poller.pulse_handle()),
             Self::Cluster(cluster) => WakeHandle::bornera(cluster.pulse_handle()),
             Self::Direct(direct) => WakeHandle::bornera(direct.pulse_handle()),
@@ -131,6 +149,7 @@ impl ReactorBackend {
         use_rpc: impl FnOnce(Option<&mut dyn BrokerRpc>) -> Result<R, E>,
     ) -> Result<R, BackendRpcAccessError<E>> {
         match self {
+            #[cfg(test)]
             Self::Legacy(legacy) => {
                 let mut rpc = legacy.seed_rpc();
                 use_rpc(rpc.as_mut().map(|rpc| rpc as &mut dyn BrokerRpc))
@@ -151,7 +170,9 @@ impl ReactorBackend {
     #[cfg(test)]
     pub(in crate::reactor) fn selector_count(&self) -> usize {
         match self {
-            Self::Legacy(_) | Self::Cluster(_) | Self::Direct(_) => 1,
+            #[cfg(test)]
+            Self::Legacy(_) => 1,
+            Self::Cluster(_) | Self::Direct(_) => 1,
         }
     }
 }

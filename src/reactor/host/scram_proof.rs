@@ -21,6 +21,7 @@ impl Reactor {
         let mut delivered = 0;
         for outcome in self.scram_proof_outcomes.drain(..) {
             let settled = match outcome.fence().target() {
+                #[cfg(test)]
                 ScramProofTarget::Legacy { .. } => {
                     let Some(legacy) = self.backend.legacy_mut() else {
                         continue;

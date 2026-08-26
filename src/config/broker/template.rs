@@ -1,11 +1,15 @@
 //! Reusable broker policy consumed after endpoint resolution.
 
+#[cfg(test)]
 use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
 
-use crate::config::{ClientId, SaslConfig};
 #[cfg(feature = "tls-rustls")]
-use crate::config::{TlsClientPolicy, TlsConnectionConfig};
+use crate::config::TlsClientPolicy;
+#[cfg(all(test, feature = "tls-rustls"))]
+use crate::config::TlsConnectionConfig;
+use crate::config::{ClientId, SaslConfig};
 
+#[cfg(test)]
 use super::{BrokerAddresses, BrokerConfig, BrokerSecurity};
 
 /// Reusable transport and authentication policy applied after address selection.
@@ -53,6 +57,7 @@ impl BrokerTemplate {
         self
     }
 
+    #[cfg(test)]
     pub(crate) fn at_resolved(
         self,
         endpoint: BrokerEndpoint,

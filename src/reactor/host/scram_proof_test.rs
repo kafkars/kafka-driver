@@ -14,7 +14,7 @@ use kafka_driver_core::{AuthenticationRound, EffectId};
 use crate::{
     DriverLimits, SaslConfig, ScramProofLimits,
     api::CallIds,
-    config::{BrokerConfig, DriverTarget},
+    config::{DirectBrokerConfig, DriverTarget},
     observation::Observation,
 };
 
@@ -98,10 +98,10 @@ fn direct_scram_reactor(limits: &DriverLimits) -> (Reactor, TcpStream) {
         .unwrap_or_else(|error| panic!("read hosted Direct SCRAM address: {error}"));
     let sasl = SaslConfig::scram_sha_256("host-user", "host-password")
         .unwrap_or_else(|error| panic!("construct hosted Direct SCRAM config: {error}"));
-    let target = DriverTarget::Direct(BrokerConfig::plaintext(address).with_sasl(Some(sasl)));
+    let target = DriverTarget::Direct(DirectBrokerConfig::plaintext(address).with_sasl(Some(sasl)));
     let (_commands, _shutdown, reactor) = Reactor::new(
         limits,
-        Some(target),
+        target,
         Arc::new(CallIds::new()),
         Arc::new(Observation::default()),
     )

@@ -4,9 +4,7 @@ use std::{collections::BTreeMap, fmt, num::NonZeroUsize};
 
 use kafka_driver_core::EffectId;
 
-use crate::reactor::{
-    broker_set::BrokerLane, direct_plaintext::endpoint_refresh::DirectRefreshOwner,
-};
+use crate::reactor::{BrokerLane, direct_plaintext::endpoint_refresh::DirectRefreshOwner};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) enum ResolutionOwner {

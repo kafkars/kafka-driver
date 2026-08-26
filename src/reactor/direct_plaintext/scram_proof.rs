@@ -68,9 +68,11 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
             return Ok(false);
         }
         self.pending_scram_proof = None;
-        if fence.target().direct_connection() != self.connection
-            || !self.scram_round_is_active(fence.round())
-        {
+        #[cfg(test)]
+        let connection = fence.target().direct_connection();
+        #[cfg(not(test))]
+        let connection = Some(fence.target().direct_connection());
+        if connection != self.connection || !self.scram_round_is_active(fence.round()) {
             return Ok(false);
         }
         let Some(session) = self.authentication_session.as_mut() else {

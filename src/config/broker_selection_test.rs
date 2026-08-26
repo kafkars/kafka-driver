@@ -4,24 +4,21 @@ use std::{net::SocketAddr, num::NonZeroU16};
 
 use kafka_driver_core::{BootstrapLimits, BootstrapSet, BrokerEndpoint, HostName, SaslMechanism};
 
-use super::{
-    BootstrapConfig, BrokerConfig, DirectBrokerConfig, DirectBrokerSelection,
-    DirectTargetSelection, DriverTarget, SaslConfig,
-};
+use super::{BootstrapConfig, DirectBrokerConfig, DriverTarget, SaslConfig};
 
 #[test]
 fn numeric_plaintext_without_sasl_selects_the_direct_backend() {
     let address = address();
 
-    let selected = BrokerConfig::plaintext(address).select_direct();
+    let selected = DirectBrokerConfig::plaintext(address);
 
     assert!(matches!(
         selected,
-        DirectBrokerSelection::Direct(DirectBrokerConfig::Plaintext {
+        DirectBrokerConfig::Plaintext {
             address: selected,
             sasl: None,
             client_id: None,
-        }) if selected == address
+        } if selected == address
     ));
 }
 
@@ -31,17 +28,15 @@ fn numeric_plaintext_with_plain_selects_the_direct_backend() {
         .unwrap_or_else(|error| panic!("construct test SASL config: {error}"));
     let address = address();
 
-    let selected = BrokerConfig::plaintext(address)
-        .with_sasl(Some(sasl))
-        .select_direct();
+    let selected = DirectBrokerConfig::plaintext(address).with_sasl(Some(sasl));
 
     assert!(matches!(
         selected,
-        DirectBrokerSelection::Direct(DirectBrokerConfig::Plaintext {
+        DirectBrokerConfig::Plaintext {
             address: selected,
             sasl: Some(sasl),
             client_id: None,
-        }) if selected == address && sasl.mechanism() == SaslMechanism::Plain
+        } if selected == address && sasl.mechanism() == SaslMechanism::Plain
     ));
 }
 
@@ -50,14 +45,9 @@ fn numeric_plaintext_with_scram_selects_direct_and_requires_one_proof_worker() {
     let sasl = SaslConfig::scram_sha_256("alice", "secret")
         .unwrap_or_else(|error| panic!("construct test SCRAM config: {error}"));
 
-    let selected = BrokerConfig::plaintext(address())
-        .with_sasl(Some(sasl))
-        .select_direct();
+    let selected = DirectBrokerConfig::plaintext(address()).with_sasl(Some(sasl));
 
-    assert!(matches!(
-        selected,
-        DirectBrokerSelection::Direct(config) if config.requires_proof_worker()
-    ));
+    assert!(selected.requires_proof_worker());
 }
 
 #[cfg(feature = "tls-rustls")]
@@ -65,16 +55,16 @@ fn numeric_plaintext_with_scram_selects_direct_and_requires_one_proof_worker() {
 fn configured_numeric_rustls_without_sasl_selects_the_direct_backend() {
     let address = address();
 
-    let selected = BrokerConfig::rustls(address, tls()).select_direct();
+    let selected = DirectBrokerConfig::rustls(address, tls());
 
     assert!(matches!(
         selected,
-        DirectBrokerSelection::Direct(DirectBrokerConfig::Rustls {
+        DirectBrokerConfig::Rustls {
             address: selected,
             sasl: None,
             client_id: None,
             ..
-        }) if selected == address
+        } if selected == address
     ));
 }
 
@@ -85,18 +75,16 @@ fn configured_numeric_rustls_with_plain_selects_the_direct_backend() {
         .unwrap_or_else(|error| panic!("construct test SASL config: {error}"));
     let address = address();
 
-    let selected = BrokerConfig::rustls(address, tls())
-        .with_sasl(Some(sasl))
-        .select_direct();
+    let selected = DirectBrokerConfig::rustls(address, tls()).with_sasl(Some(sasl));
 
     assert!(matches!(
         selected,
-        DirectBrokerSelection::Direct(DirectBrokerConfig::Rustls {
+        DirectBrokerConfig::Rustls {
             address: selected,
             sasl: Some(sasl),
             client_id: None,
             ..
-        }) if selected == address && sasl.mechanism() == SaslMechanism::Plain
+        } if selected == address && sasl.mechanism() == SaslMechanism::Plain
     ));
 }
 
@@ -106,18 +94,13 @@ fn configured_numeric_rustls_with_scram_selects_direct_and_requires_one_proof_wo
     let sasl = SaslConfig::scram_sha_512("alice", "secret")
         .unwrap_or_else(|error| panic!("construct test SCRAM config: {error}"));
 
-    let selected = BrokerConfig::rustls(address(), tls())
-        .with_sasl(Some(sasl))
-        .select_direct();
+    let selected = DirectBrokerConfig::rustls(address(), tls()).with_sasl(Some(sasl));
 
-    assert!(matches!(
-        selected,
-        DirectBrokerSelection::Direct(config) if config.requires_proof_worker()
-    ));
+    assert!(selected.requires_proof_worker());
 }
 
 #[test]
-fn bootstrap_scram_selects_the_cluster_backend() {
+fn bootstrap_scram_retains_the_cluster_target() {
     let host = HostName::new("broker.test")
         .unwrap_or_else(|error| panic!("construct bootstrap host: {error}"));
     let endpoint = BrokerEndpoint::new(host, NonZeroU16::new(9_092).unwrap_or(NonZeroU16::MIN));
@@ -128,10 +111,7 @@ fn bootstrap_scram_selects_the_cluster_backend() {
     let target =
         DriverTarget::Bootstrap(BootstrapConfig::plaintext(endpoints).with_sasl(Some(sasl)));
 
-    assert!(matches!(
-        target.select_direct(),
-        DirectTargetSelection::Cluster(_)
-    ));
+    assert!(matches!(target, DriverTarget::Bootstrap(_)));
 }
 
 fn address() -> SocketAddr {

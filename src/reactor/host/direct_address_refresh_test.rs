@@ -16,7 +16,7 @@ use kafka_driver_core::{
 use crate::{
     BootstrapLimits, DriverLimits, ResolverLimits,
     api::CallIds,
-    config::{BootstrapConfig, BrokerConfig, DriverTarget},
+    config::{BootstrapConfig, DirectBrokerConfig, DriverTarget},
     observation::Observation,
     reactor::{ReactorBackend, direct_plaintext::DirectBackend},
 };
@@ -224,10 +224,10 @@ fn fixture(
     let address = listener
         .local_addr()
         .unwrap_or_else(|error| panic!("read Direct construction target: {error}"));
-    let target = DriverTarget::Direct(BrokerConfig::plaintext(address));
+    let target = DriverTarget::Direct(DirectBrokerConfig::plaintext(address));
     let (_, _, mut reactor) = Reactor::new(
         limits,
-        Some(target),
+        target,
         Arc::new(CallIds::new()),
         Arc::new(Observation::default()),
     )

@@ -22,7 +22,8 @@ impl Reactor {
         call_ids: Arc<CallIds>,
         observation: Arc<Observation>,
     ) -> io::Result<(MailboxSender<Command>, ShutdownRequester, Self)> {
-        let (commands, shutdown, mut reactor) = Self::new(limits, None, call_ids, observation)?;
+        let (commands, shutdown, mut reactor) =
+            Self::new_legacy_test(limits, call_ids, observation)?;
         reactor.clock = super::super::clock::ReactorClock::from_origin(origin);
         let legacy = reactor
             .backend

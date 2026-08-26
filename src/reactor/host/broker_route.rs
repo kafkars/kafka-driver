@@ -2,11 +2,10 @@
 
 use kafka_driver_core::BrokerRoute;
 
-use crate::{
-    RequestError,
-    reactor::{broker_set::BrokerSetError, resolver::ResolutionOwner},
-    request::ErasedRequest,
-};
+use crate::{RequestError, reactor::resolver::ResolutionOwner, request::ErasedRequest};
+
+#[cfg(test)]
+use crate::reactor::broker_set::BrokerSetError;
 
 use super::{Reactor, ReactorError, resolution::ResolutionPermit};
 
@@ -20,6 +19,24 @@ impl Reactor {
         if self.backend.cluster().is_some() {
             return self.submit_cluster_broker_route(route, request, now);
         }
+        #[cfg(test)]
+        {
+            self.submit_legacy_broker_route(route, request, now)
+        }
+        #[cfg(not(test))]
+        {
+            request.fail(RequestError::RouteUnavailable);
+            Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    fn submit_legacy_broker_route(
+        &mut self,
+        route: BrokerRoute,
+        request: Box<dyn ErasedRequest>,
+        now: kafka_driver_core::Moment,
+    ) -> Result<(), ReactorError> {
         let Some(legacy) = self.backend.legacy_mut() else {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());

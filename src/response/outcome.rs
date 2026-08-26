@@ -1,6 +1,8 @@
 //! Typed completion observations and sanitized connection-close failures.
 
-use kafka_driver_core::{CallFailure, CallId, CorrelationId, Delivery, DnsFailure};
+use kafka_driver_core::{CallFailure, Delivery, DnsFailure};
+#[cfg(test)]
+use kafka_driver_core::{CallId, CorrelationId};
 use kafka_wire_core::{ApiKey, ApiVersion, DecodeError, EncodeError};
 
 /// Why one generated request could not complete successfully.
@@ -99,6 +101,7 @@ pub enum RequestError {
     ConnectionClosed(ResponseCloseReason),
 }
 
+#[cfg(test)]
 pub(crate) type ResponseFailure = RequestError;
 
 /// Sanitized reason all remaining typed response slots were failed.
@@ -122,6 +125,7 @@ pub(crate) enum CompletionDisposition {
     ReceiverAbandoned,
 }
 
+#[cfg(test)]
 /// Successful verified response dispatch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ResponseDispatch {

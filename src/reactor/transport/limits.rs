@@ -72,6 +72,7 @@ impl ReadBudget {
         self.bytes.get()
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn frames(self) -> usize {
         self.frames.get()
     }

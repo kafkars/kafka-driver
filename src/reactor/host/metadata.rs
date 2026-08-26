@@ -47,13 +47,22 @@ impl Reactor {
                 cluster
                     .install_directory(directory)
                     .map_err(ReactorError::host)
-            } else if let Some(legacy) = self.backend.legacy_mut() {
-                legacy
-                    .brokers
-                    .install_directory(directory)
-                    .map_err(ReactorError::broker_set)
             } else {
-                Ok(false)
+                #[cfg(test)]
+                {
+                    if let Some(legacy) = self.backend.legacy_mut() {
+                        legacy
+                            .brokers
+                            .install_directory(directory)
+                            .map_err(ReactorError::broker_set)
+                    } else {
+                        Ok(false)
+                    }
+                }
+                #[cfg(not(test))]
+                {
+                    Ok(false)
+                }
             }
         } else {
             Ok(false)

@@ -9,6 +9,7 @@ pub struct WakeHandle {
 }
 
 impl WakeHandle {
+    #[cfg(test)]
     pub(in crate::reactor) fn new(poller: calandria_mio::MioPulseHandle) -> Self {
         Self {
             pulse: PulseHandle::Legacy(poller),
@@ -29,6 +30,7 @@ impl WakeHandle {
     /// request after the selector consumed an earlier event.
     pub fn wake(&self) -> io::Result<()> {
         match &self.pulse {
+            #[cfg(test)]
             PulseHandle::Legacy(pulse) => pulse.pulse(),
             PulseHandle::Bornera(pulse) => pulse.pulse(),
         }
@@ -37,6 +39,7 @@ impl WakeHandle {
 
 #[derive(Clone)]
 enum PulseHandle {
+    #[cfg(test)]
     Legacy(calandria_mio::MioPulseHandle),
     Bornera(bornera::ConnectionPulseHandle),
 }

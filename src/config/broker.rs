@@ -5,7 +5,9 @@ use std::net::SocketAddr;
 use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
 
 #[cfg(feature = "tls-rustls")]
-use super::{TlsClientConfig, TlsConnectionConfig};
+use super::TlsClientConfig;
+#[cfg(all(test, feature = "tls-rustls"))]
+use super::TlsConnectionConfig;
 
 use super::{ClientId, SaslConfig};
 
@@ -14,6 +16,7 @@ mod template;
 pub(crate) use template::{BrokerTemplate, BrokerTemplateParts};
 
 /// Fully selected connection mechanics for one configured broker.
+#[cfg(test)]
 #[derive(Clone, Debug)]
 pub(crate) struct BrokerConfig {
     addresses: BrokerAddresses,
@@ -22,6 +25,7 @@ pub(crate) struct BrokerConfig {
     client_id: Option<ClientId>,
 }
 
+#[cfg(test)]
 impl BrokerConfig {
     pub(crate) const fn plaintext(address: SocketAddr) -> Self {
         Self {
@@ -32,23 +36,8 @@ impl BrokerConfig {
         }
     }
 
-    #[cfg(feature = "tls-rustls")]
-    pub(crate) const fn rustls(address: SocketAddr, tls: TlsClientConfig) -> Self {
-        Self {
-            addresses: BrokerAddresses::Direct(address),
-            security: BrokerSecurity::Rustls(TlsConnectionConfig::configured(tls)),
-            sasl: None,
-            client_id: None,
-        }
-    }
-
     pub(crate) fn with_sasl(mut self, sasl: Option<SaslConfig>) -> Self {
         self.sasl = sasl;
-        self
-    }
-
-    pub(crate) fn with_client_id(mut self, client_id: Option<ClientId>) -> Self {
-        self.client_id = client_id;
         self
     }
 
@@ -63,52 +52,13 @@ impl BrokerConfig {
         (self.addresses, self.security, self.sasl, self.client_id)
     }
 
-    pub(crate) fn select_direct(self) -> DirectBrokerSelection {
-        let Self {
-            addresses,
-            security,
-            sasl,
-            client_id,
-        } = self;
-        match (addresses, security) {
-            (BrokerAddresses::Direct(address), BrokerSecurity::Plaintext) => {
-                DirectBrokerSelection::Direct(DirectBrokerConfig::Plaintext {
-                    address,
-                    sasl,
-                    client_id,
-                })
-            }
-            #[cfg(feature = "tls-rustls")]
-            (
-                BrokerAddresses::Direct(address),
-                BrokerSecurity::Rustls(TlsConnectionConfig::Configured(tls)),
-            ) => DirectBrokerSelection::Direct(DirectBrokerConfig::Rustls {
-                address,
-                tls,
-                sasl,
-                client_id,
-            }),
-            (addresses, security) => DirectBrokerSelection::Legacy(Self {
-                addresses,
-                security,
-                sasl,
-                client_id,
-            }),
-        }
-    }
-
     pub(crate) const fn is_resolved(&self) -> bool {
         matches!(self.addresses, BrokerAddresses::Resolved { .. })
-    }
-
-    pub(crate) fn requires_proof_worker(&self) -> bool {
-        self.sasl
-            .as_ref()
-            .is_some_and(SaslConfig::requires_proof_worker)
     }
 }
 
 /// One fixed numeric Bornera owner with same-address reconnect generations.
+#[derive(Clone, Debug)]
 pub(crate) enum DirectBrokerConfig {
     Plaintext {
         address: SocketAddr,
@@ -125,6 +75,67 @@ pub(crate) enum DirectBrokerConfig {
 }
 
 impl DirectBrokerConfig {
+    pub(crate) const fn plaintext(address: SocketAddr) -> Self {
+        Self::Plaintext {
+            address,
+            sasl: None,
+            client_id: None,
+        }
+    }
+
+    #[cfg(feature = "tls-rustls")]
+    pub(crate) const fn rustls(address: SocketAddr, tls: TlsClientConfig) -> Self {
+        Self::Rustls {
+            address,
+            tls,
+            sasl: None,
+            client_id: None,
+        }
+    }
+
+    pub(crate) fn with_sasl(self, selected: Option<SaslConfig>) -> Self {
+        match self {
+            Self::Plaintext {
+                address, client_id, ..
+            } => Self::Plaintext {
+                address,
+                sasl: selected,
+                client_id,
+            },
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls {
+                address,
+                tls,
+                client_id,
+                ..
+            } => Self::Rustls {
+                address,
+                tls,
+                sasl: selected,
+                client_id,
+            },
+        }
+    }
+
+    pub(crate) fn with_client_id(self, selected: Option<ClientId>) -> Self {
+        match self {
+            Self::Plaintext { address, sasl, .. } => Self::Plaintext {
+                address,
+                sasl,
+                client_id: selected,
+            },
+            #[cfg(feature = "tls-rustls")]
+            Self::Rustls {
+                address, tls, sasl, ..
+            } => Self::Rustls {
+                address,
+                tls,
+                sasl,
+                client_id: selected,
+            },
+        }
+    }
+
     pub(crate) fn requires_proof_worker(&self) -> bool {
         match self {
             Self::Plaintext { sasl, .. } => {
@@ -136,11 +147,6 @@ impl DirectBrokerConfig {
             }
         }
     }
-}
-
-pub(crate) enum DirectBrokerSelection {
-    Direct(DirectBrokerConfig),
-    Legacy(BrokerConfig),
 }
 
 /// Nonempty address ownership before reactor-side socket selection.
@@ -158,6 +164,7 @@ pub(crate) enum BrokerAddresses {
 }
 
 /// Selected byte-stream protection beneath Kafka framing.
+#[cfg(test)]
 #[derive(Clone, Debug)]
 pub(crate) enum BrokerSecurity {
     Plaintext,

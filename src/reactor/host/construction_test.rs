@@ -25,7 +25,7 @@ fn bootstrap_constructs_only_the_bornera_cluster_selector() {
 
     let (_, _, reactor) = Reactor::new(
         &DriverLimits::default(),
-        Some(target),
+        target,
         Arc::new(CallIds::new()),
         Arc::new(Observation::default()),
     )

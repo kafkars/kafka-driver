@@ -3,7 +3,7 @@
 use kafka_driver_core::EffectId;
 
 use crate::reactor::{
-    broker_set::BrokerLane,
+    BrokerLane,
     direct_plaintext::endpoint_refresh::DirectRefreshOwner,
     resolver::{ResolutionOwner, ResolverOwnershipError},
 };

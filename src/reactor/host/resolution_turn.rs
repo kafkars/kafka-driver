@@ -57,23 +57,9 @@ impl Reactor {
             }
             return Ok(());
         }
-        let Some(legacy) = self.backend.legacy_mut() else {
-            return Err(ReactorError::host(std::io::Error::other(
-                "bootstrap resolution completed without a legacy cluster owner",
-            )));
-        };
-        if legacy.brokers.has_seed() {
-            legacy
-                .brokers
-                .replace_seed_endpoint(seed, &legacy.poller, now)
-                .map_err(ReactorError::broker_set)?;
-        } else {
-            legacy
-                .brokers
-                .install_resolved_seed(seed, &legacy.poller, now)
-                .map_err(ReactorError::broker_set)?;
-        }
-        Ok(())
+        Err(ReactorError::host(std::io::Error::other(
+            "bootstrap resolution completed without a Bornera cluster owner",
+        )))
     }
 
     fn complete_broker_resolutions(&mut self, now: Moment) -> Result<(), ReactorError> {
@@ -88,18 +74,9 @@ impl Reactor {
             }
             return Ok(());
         }
-        let Some(legacy) = self.backend.legacy_mut() else {
-            return Err(ReactorError::host(std::io::Error::other(
-                "legacy broker DNS completed without a legacy backend",
-            )));
-        };
-        for completed in self.broker_dns_outcomes.drain(..) {
-            legacy
-                .brokers
-                .complete_resolution(completed.lane, completed.outcome, &legacy.poller, now)
-                .map_err(ReactorError::broker_set)?;
-        }
-        Ok(())
+        Err(ReactorError::host(std::io::Error::other(
+            "broker DNS completed without a Bornera cluster owner",
+        )))
     }
 
     fn complete_direct_resolutions(&mut self, now: Moment) -> Result<(), ReactorError> {

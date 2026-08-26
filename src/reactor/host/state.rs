@@ -25,9 +25,16 @@ impl Reactor {
         } else if let Some(direct) = self.backend.direct() {
             DirectBackend::is_terminal(direct)
         } else {
-            self.backend
-                .legacy()
-                .is_some_and(|legacy| legacy.brokers.is_terminal())
+            #[cfg(test)]
+            {
+                self.backend
+                    .legacy()
+                    .is_some_and(|legacy| legacy.brokers.is_terminal())
+            }
+            #[cfg(not(test))]
+            {
+                false
+            }
         };
         if self.state != HostState::Draining || !backend_terminal {
             return Ok(None);

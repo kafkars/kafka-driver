@@ -25,7 +25,10 @@ impl Reactor {
         let resolution = self.continue_resolution(now)?;
         let more_resolution = resolution.more_work();
         progress |= resolution.made_progress();
-        progress |= self.observe_poll_events(now)?;
+        #[cfg(test)]
+        {
+            progress |= self.observe_poll_events(now)?;
+        }
         let proofs = self.continue_scram_proofs(now)?;
         let more_proofs = proofs.more_work();
         progress |= proofs.made_progress();

@@ -2,11 +2,15 @@
 
 use std::num::NonZeroUsize;
 
-use kafka_driver_core::{
-    BrokerCloseReason, CallFailure, CloseReason, Delivery, Moment, OutcomeStamp,
-};
+use kafka_driver_core::{CallFailure, Delivery, Moment, OutcomeStamp};
 
 use crate::{RequestError, reactor::wait_queue::WaitQueue, request::ErasedRequest};
+
+#[cfg(test)]
+#[path = "route_waiting_legacy_test.rs"]
+mod legacy;
+#[cfg(test)]
+pub(in crate::reactor) use legacy::terminal;
 
 pub(in crate::reactor) struct RouteWaiting {
     calls: WaitQueue<WaitingCall>,
@@ -85,6 +89,7 @@ impl RouteWaiting {
         RouteWaitingOutcome::Ready(waiting.request)
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) fn expire_due(
         &mut self,
         now: Moment,
@@ -109,11 +114,16 @@ impl RouteWaiting {
             fail(waiting.request, deadline_exceeded(), observed_at);
             settled += 1;
         }
+        #[cfg(test)]
         let more_due = self
             .calls
             .next_deadline()
             .is_some_and(|deadline| deadline <= now);
-        RouteWaitingExpiration { settled, more_due }
+        RouteWaitingExpiration {
+            settled,
+            #[cfg(test)]
+            more_due,
+        }
     }
 
     pub(in crate::reactor) fn next_deadline(&self) -> Option<Moment> {
@@ -178,6 +188,7 @@ pub(in crate::reactor) enum RouteWaitingOutcome {
 
 pub(in crate::reactor) struct RouteWaitingExpiration {
     settled: usize,
+    #[cfg(test)]
     more_due: bool,
 }
 
@@ -186,6 +197,7 @@ impl RouteWaitingExpiration {
         self.settled
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn more_due(&self) -> bool {
         self.more_due
     }
@@ -199,29 +211,6 @@ struct WaitingCall {
 fn deadline_exceeded() -> RequestError {
     RequestError::Rejected {
         failure: CallFailure::DeadlineExceeded,
-        delivery: Delivery::NotSent,
-    }
-}
-
-pub(in crate::reactor) fn terminal(reason: BrokerCloseReason) -> RequestError {
-    if let BrokerCloseReason::EndpointResolutionFailed(failure) = reason {
-        return RequestError::NameResolutionFailed { failure };
-    }
-    let failure = match reason {
-        BrokerCloseReason::AuthenticationFailed(failure) => CallFailure::ConnectionClosed {
-            reason: CloseReason::AuthenticationFailed(failure),
-        },
-        BrokerCloseReason::Requested => CallFailure::Draining,
-        BrokerCloseReason::EpochExhausted
-        | BrokerCloseReason::RetryExhausted
-        | BrokerCloseReason::RetryResourcesUnavailable
-        | BrokerCloseReason::ClockOverflow => CallFailure::Closed,
-        BrokerCloseReason::EndpointResolutionFailed(_) => {
-            unreachable!("endpoint resolution returned above")
-        }
-    };
-    RequestError::Rejected {
-        failure,
         delivery: Delivery::NotSent,
     }
 }

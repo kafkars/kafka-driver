@@ -9,6 +9,7 @@ mod footprint;
 mod policy;
 mod typed;
 mod typed_bornera;
+#[cfg(test)]
 mod typed_legacy;
 mod version;
 

@@ -3,9 +3,10 @@
 use std::{error::Error, fmt, sync::Arc};
 
 use kafka_driver_core::BrokerEndpoint;
+#[cfg(test)]
+use rustls::client::ClientConnection;
 use rustls::{
     ClientConfig,
-    client::ClientConnection,
     pki_types::{InvalidDnsNameError, ServerName},
 };
 
@@ -67,6 +68,7 @@ impl TlsClientConfig {
         TlsClientPolicy::new(client).for_server(server_name)
     }
 
+    #[cfg(test)]
     fn start_connection(&self) -> Result<ClientConnection, rustls::Error> {
         ClientConnection::new(Arc::clone(&self.policy.client), self.server_name.clone())
     }
@@ -94,20 +96,17 @@ impl fmt::Debug for TlsClientConfig {
 }
 
 /// Complete TLS identity ownership for one transport connection.
+#[cfg(test)]
 #[derive(Clone, Debug)]
 pub(crate) enum TlsConnectionConfig {
-    Configured(TlsClientConfig),
     Endpoint {
         policy: TlsClientPolicy,
         endpoint: BrokerEndpoint,
     },
 }
 
+#[cfg(test)]
 impl TlsConnectionConfig {
-    pub(crate) const fn configured(config: TlsClientConfig) -> Self {
-        Self::Configured(config)
-    }
-
     pub(crate) const fn endpoint(policy: TlsClientPolicy, endpoint: BrokerEndpoint) -> Self {
         Self::Endpoint { policy, endpoint }
     }
@@ -121,7 +120,6 @@ impl TlsConnectionConfig {
 
     fn bound_config(&self) -> Result<TlsClientConfig, InvalidDnsNameError> {
         match self {
-            Self::Configured(config) => Ok(config.clone()),
             Self::Endpoint { policy, endpoint } => policy.for_endpoint(endpoint),
         }
     }
@@ -136,6 +134,7 @@ impl TlsConnectionConfig {
 #[derive(Debug)]
 pub(crate) enum TlsSessionError {
     ServerIdentity(InvalidDnsNameError),
+    #[cfg(test)]
     Session(rustls::Error),
 }
 
@@ -145,6 +144,7 @@ impl fmt::Display for TlsSessionError {
             Self::ServerIdentity(_) => {
                 formatter.write_str("logical broker host is not a valid TLS server identity")
             }
+            #[cfg(test)]
             Self::Session(_) => formatter.write_str("rustls client session creation failed"),
         }
     }
@@ -154,6 +154,7 @@ impl Error for TlsSessionError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::ServerIdentity(source) => Some(source),
+            #[cfg(test)]
             Self::Session(source) => Some(source),
         }
     }

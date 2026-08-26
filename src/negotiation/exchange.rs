@@ -2,6 +2,7 @@
 
 use bytes::BytesMut;
 use kafka_driver_core::{CorrelationId, EffectId};
+#[cfg(test)]
 use kafka_driver_transport::FrameBody;
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, OutboundFrameLimits,
@@ -16,6 +17,7 @@ const BOOTSTRAP_VERSION: ApiVersion = API_VERSIONS_API_DESCRIPTOR.supported_vers
 /// Identities and decode policy retained while one `ApiVersions` response is pending.
 #[derive(Debug)]
 pub(crate) struct NegotiationExchange {
+    #[cfg(test)]
     effect_id: EffectId,
     correlation_id: CorrelationId,
     decode_limits: DecodeLimits,
@@ -29,6 +31,8 @@ impl NegotiationExchange {
         outbound_limits: OutboundFrameLimits,
         decode_limits: DecodeLimits,
     ) -> Result<(Self, Bytes), NegotiationExchangeError> {
+        #[cfg(not(test))]
+        let _ = effect_id;
         let mut frame = BytesMut::new();
         encode_request(
             &mut frame,
@@ -40,6 +44,7 @@ impl NegotiationExchange {
         )?;
         Ok((
             Self {
+                #[cfg(test)]
                 effect_id,
                 correlation_id,
                 decode_limits,
@@ -48,10 +53,12 @@ impl NegotiationExchange {
         ))
     }
 
+    #[cfg(test)]
     pub(crate) const fn effect_id(&self) -> EffectId {
         self.effect_id
     }
 
+    #[cfg(test)]
     pub(crate) fn finish(
         self,
         frame: FrameBody,

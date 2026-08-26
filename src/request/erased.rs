@@ -2,11 +2,17 @@
 
 use std::time::Instant;
 
-use kafka_driver_core::{CallId, CorrelationId, Moment, NegotiatedApi, OutcomeStamp};
+#[cfg(test)]
+use kafka_driver_core::CorrelationId;
+use kafka_driver_core::{CallId, Moment, NegotiatedApi, OutcomeStamp};
 use kafka_wire::OutboundFrameLimits;
-use kafka_wire_core::{ApiKey, ApiVersion, Bytes, DecodeLimits, StrBytes};
+#[cfg(test)]
+use kafka_wire_core::Bytes;
+use kafka_wire_core::{ApiKey, ApiVersion, DecodeLimits, StrBytes};
 
-use crate::{RequestError, TrafficClass, api::RouteFact, response::ResponseRegistry};
+#[cfg(test)]
+use crate::response::ResponseRegistry;
+use crate::{RequestError, TrafficClass, api::RouteFact};
 
 use super::BorneraRequestPreparation;
 
@@ -42,6 +48,7 @@ pub(crate) trait ErasedRequest: Send {
     /// Records the exact semantic route selected before broker ownership.
     fn record_route(&mut self, route: RouteFact) -> Result<(), RouteFact>;
 
+    #[cfg(test)]
     /// Encodes the request and transfers its typed completion into FIFO ownership.
     fn prepare(
         self: Box<Self>,

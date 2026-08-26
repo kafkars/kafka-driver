@@ -1,27 +1,46 @@
 //! Single-broker ownership above deterministic policy and below the host.
 
+#[cfg(test)]
 mod address_refresh;
+#[cfg(test)]
 mod authentication;
+#[cfg(test)]
 mod construction;
 mod deadline;
+#[cfg(test)]
 mod error;
+#[cfg(test)]
 mod failure;
+#[cfg(test)]
 mod identity;
 mod limits;
+#[cfg(test)]
 mod local_rejection;
+#[cfg(test)]
 mod negotiation;
+#[cfg(test)]
 mod observation;
+#[cfg(test)]
 mod open;
+#[cfg(test)]
 mod owner;
+#[cfg(test)]
 mod readiness;
+#[cfg(test)]
 mod reconnect;
+#[cfg(test)]
 mod replacement;
+#[cfg(test)]
 mod response;
+#[cfg(test)]
 mod shutdown;
 #[cfg(test)]
 mod simulation;
+#[cfg(test)]
 mod submission;
+#[cfg(test)]
 mod terminal;
+#[cfg(test)]
 mod write_admission;
 
 #[cfg(test)]
@@ -62,7 +81,10 @@ mod scram_start_error_test;
 mod submission_test;
 
 pub(in crate::reactor) use deadline::DeadlineProgress;
+#[cfg(test)]
 pub(in crate::reactor) use error::BrokerError;
+#[cfg(test)]
 pub(in crate::reactor) use identity::BrokerIds;
 pub(in crate::reactor) use limits::BrokerLimits;
+#[cfg(test)]
 pub(in crate::reactor) use owner::SingleBroker;

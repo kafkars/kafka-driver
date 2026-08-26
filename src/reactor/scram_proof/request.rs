@@ -6,11 +6,13 @@ use bornera::ConnectionToken;
 use kafka_driver_core::{AuthenticationRound, EffectId};
 use sasl_scram::{AwaitingServerFinal, Error, OutboundMessage, PendingDerivation};
 
+#[cfg(test)]
 use crate::reactor::resource::{ResourceIdentity, ResourceToken};
 
 /// Backend-neutral destination for one proof completion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) enum ScramProofTarget {
+    #[cfg(test)]
     Legacy {
         token: ResourceToken,
         identity: ResourceIdentity,
@@ -21,6 +23,7 @@ pub(in crate::reactor) enum ScramProofTarget {
 }
 
 impl ScramProofTarget {
+    #[cfg(test)]
     pub(in crate::reactor) const fn legacy(
         token: ResourceToken,
         identity: ResourceIdentity,
@@ -32,19 +35,30 @@ impl ScramProofTarget {
         Self::Direct { connection }
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn legacy_identity(
         self,
     ) -> Option<(ResourceToken, ResourceIdentity)> {
         match self {
+            #[cfg(test)]
             Self::Legacy { token, identity } => Some((token, identity)),
             Self::Direct { .. } => None,
         }
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn direct_connection(self) -> Option<ConnectionToken> {
         match self {
             Self::Direct { connection } => Some(connection),
+            #[cfg(test)]
             Self::Legacy { .. } => None,
+        }
+    }
+
+    #[cfg(not(test))]
+    pub(in crate::reactor) const fn direct_connection(self) -> ConnectionToken {
+        match self {
+            Self::Direct { connection } => connection,
         }
     }
 }
@@ -53,11 +67,13 @@ impl ScramProofTarget {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) struct ScramProofFence {
     target: ScramProofTarget,
+    #[cfg(test)]
     effect_id: EffectId,
     round: AuthenticationRound,
 }
 
 impl ScramProofFence {
+    #[cfg(test)]
     pub(in crate::reactor) const fn legacy(
         token: ResourceToken,
         identity: ResourceIdentity,
@@ -76,8 +92,11 @@ impl ScramProofFence {
         effect_id: EffectId,
         round: AuthenticationRound,
     ) -> Self {
+        #[cfg(not(test))]
+        let _ = effect_id;
         Self {
             target: ScramProofTarget::direct(connection),
+            #[cfg(test)]
             effect_id,
             round,
         }
@@ -87,6 +106,7 @@ impl ScramProofFence {
         self.target
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn effect_id(self) -> EffectId {
         self.effect_id
     }
@@ -102,6 +122,7 @@ pub(in crate::reactor) struct ScramProofRequest {
 }
 
 impl ScramProofRequest {
+    #[cfg(test)]
     pub(in crate::reactor) fn legacy(
         token: ResourceToken,
         identity: ResourceIdentity,

@@ -5,7 +5,7 @@ use std::{net::SocketAddr, sync::Arc};
 use kafka_driver_core::BootstrapSet;
 
 use crate::{
-    config::{BootstrapConfig, BrokerConfig, ClientId, DriverLimits, DriverTarget},
+    config::{BootstrapConfig, ClientId, DirectBrokerConfig, DriverLimits, DriverTarget},
     host::DriverHost,
     observation::Observation,
     reactor::Reactor,
@@ -37,7 +37,7 @@ impl DriverBuilder {
     /// refresh DNS or discover a multi-broker topology.
     #[must_use]
     pub fn broker(mut self, address: SocketAddr) -> Self {
-        self.target = Some(DriverTarget::Direct(BrokerConfig::plaintext(address)));
+        self.target = Some(DriverTarget::Direct(DirectBrokerConfig::plaintext(address)));
         self
     }
 
@@ -58,7 +58,9 @@ impl DriverBuilder {
     #[cfg(feature = "tls-rustls")]
     #[must_use]
     pub fn rustls_broker(mut self, address: SocketAddr, tls: crate::TlsClientConfig) -> Self {
-        self.target = Some(DriverTarget::Direct(BrokerConfig::rustls(address, tls)));
+        self.target = Some(DriverTarget::Direct(DirectBrokerConfig::rustls(
+            address, tls,
+        )));
         self
     }
 
@@ -108,7 +110,7 @@ impl DriverBuilder {
         let observation = Arc::new(Observation::default());
         let (commands, shutdown, reactor) = Reactor::new(
             &self.limits,
-            Some(target),
+            target,
             Arc::clone(&call_ids),
             Arc::clone(&observation),
         )

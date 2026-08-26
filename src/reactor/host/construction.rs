@@ -1,44 +1,55 @@
-//! Exclusive legacy-or-Bornera backend construction before mailbox publication.
+//! Exclusive Bornera backend construction before mailbox publication.
 
 use std::sync::Arc;
 
 use crate::{
     api::CallIds,
     completion::{ShutdownRequester, shutdown_barrier},
-    config::{DirectBrokerConfig, DirectTargetSelection, DriverLimits, DriverTarget},
+    config::{DirectBrokerConfig, DriverLimits, DriverTarget},
     observation::Observation,
 };
 
 use super::{CoordinatorOwner, HostState, MetadataOwner, NameResolution, Reactor};
 use crate::reactor::{
-    Command, LegacyBackend, MailboxSender, Poller, ReactorBackend, ReactorClock, WakeHandle,
-    broker::BrokerLimits,
-    broker_set::BrokerSet,
+    Command, MailboxSender, ReactorBackend, ReactorClock, WakeHandle,
     causality::CausalSequence,
     direct_plaintext::{ClusterBackend, DirectBackend},
     mailbox,
     scram_proof::ScramProofWorker,
 };
 
+#[cfg(test)]
+use crate::reactor::{LegacyBackend, Poller, broker::BrokerLimits, broker_set::BrokerSet};
+
 impl Reactor {
     pub(crate) fn new(
         limits: &DriverLimits,
-        target: Option<DriverTarget>,
+        target: DriverTarget,
         call_ids: Arc<CallIds>,
         observation: Arc<Observation>,
     ) -> std::io::Result<(MailboxSender<Command>, ShutdownRequester, Self)> {
         let clock = ReactorClock::new();
         let now = clock.now().map_err(std::io::Error::other)?;
         let construction = match target {
-            Some(target) => match target.select_direct() {
-                DirectTargetSelection::Direct(config) => Construction::direct(limits, config, now)?,
-                DirectTargetSelection::Cluster(config) => Construction::cluster(limits, config)?,
-                DirectTargetSelection::Legacy(target) => {
-                    Construction::legacy(limits, Some(target), now)?
-                }
-            },
-            None => Construction::legacy(limits, None, now)?,
+            DriverTarget::Direct(config) => Construction::direct(limits, config, now)?,
+            DriverTarget::Bootstrap(config) => Construction::cluster(limits, config)?,
         };
+        Ok(Self::from_construction(
+            limits,
+            construction,
+            call_ids,
+            observation,
+            clock,
+        ))
+    }
+
+    fn from_construction(
+        limits: &DriverLimits,
+        construction: Construction,
+        call_ids: Arc<CallIds>,
+        observation: Arc<Observation>,
+        clock: ReactorClock,
+    ) -> (MailboxSender<Command>, ShutdownRequester, Self) {
         let (sender, commands) = mailbox(
             limits.mailbox_capacity(),
             limits.mailbox_byte_capacity(),
@@ -67,7 +78,24 @@ impl Reactor {
             state: HostState::Running,
             shutdown,
         };
-        Ok((sender, shutdown_requester, reactor))
+        (sender, shutdown_requester, reactor)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_legacy_test(
+        limits: &DriverLimits,
+        call_ids: Arc<CallIds>,
+        observation: Arc<Observation>,
+    ) -> std::io::Result<(MailboxSender<Command>, ShutdownRequester, Self)> {
+        let clock = ReactorClock::new();
+        let construction = Construction::legacy_test(limits)?;
+        Ok(Self::from_construction(
+            limits,
+            construction,
+            call_ids,
+            observation,
+            clock,
+        ))
     }
 }
 
@@ -130,65 +158,24 @@ impl Construction {
         })
     }
 
-    fn legacy(
-        limits: &DriverLimits,
-        target: Option<DriverTarget>,
-        now: kafka_driver_core::Moment,
-    ) -> std::io::Result<Self> {
+    #[cfg(test)]
+    fn legacy_test(limits: &DriverLimits) -> std::io::Result<Self> {
         let broker_limits = BrokerLimits::default();
         let capacity = BrokerSet::poll_registration_capacity(broker_limits, limits.metadata())
             .map_err(std::io::Error::other)?;
         let poller = Poller::with_registration_capacity(limits.poll_event_budget(), capacity)?;
-        let broker_template = match &target {
-            Some(DriverTarget::Bootstrap(config)) => Some(config.broker_template().clone()),
-            Some(DriverTarget::Direct(_)) | None => None,
-        };
-        let scram_proof = target
-            .as_ref()
-            .filter(|target| target.requires_proof_worker())
-            .map(|_| {
-                ScramProofWorker::spawn(
-                    limits.scram_proof(),
-                    WakeHandle::new(poller.pulse_handle()),
-                )
-            })
-            .transpose()?;
-        let proof_sender = scram_proof.as_ref().map(ScramProofWorker::sender);
-        let mut brokers = BrokerSet::with_scram_proof(
-            broker_limits,
-            limits.metadata(),
-            broker_template,
-            proof_sender,
-        )
-        .map_err(std::io::Error::other)?;
-        let (resolution, metadata, coordinator) = match target {
-            Some(DriverTarget::Direct(config)) => {
-                brokers
-                    .install_seed(config, &poller, now)
-                    .map_err(std::io::Error::other)?;
-                (None, None, None)
-            }
-            Some(DriverTarget::Bootstrap(config)) => (
-                Some(NameResolution::start(
-                    config,
-                    limits.resolver(),
-                    WakeHandle::new(poller.pulse_handle()),
-                )?),
-                Some(MetadataOwner::new(limits.metadata())),
-                Some(CoordinatorOwner::new(limits.coordinator())),
-            ),
-            None => (None, None, None),
-        };
+        let brokers = BrokerSet::with_scram_proof(broker_limits, limits.metadata(), None, None)
+            .map_err(std::io::Error::other)?;
         Ok(Self {
             backend: ReactorBackend::Legacy(Box::new(LegacyBackend::new(
                 poller,
                 Vec::with_capacity(limits.poll_event_budget().get()),
                 brokers,
             ))),
-            resolution,
-            scram_proof,
-            metadata,
-            coordinator,
+            resolution: None,
+            scram_proof: None,
+            metadata: None,
+            coordinator: None,
         })
     }
 }

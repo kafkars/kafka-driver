@@ -2,16 +2,21 @@
 
 use std::time::Instant;
 
-use kafka_driver_core::{CallId, CorrelationId, OutcomeStamp};
+#[cfg(test)]
+use kafka_driver_core::CorrelationId;
+use kafka_driver_core::{CallId, OutcomeStamp};
 use kafka_wire::{OutboundFrameLimits, RequestResponsePair};
-use kafka_wire_core::{ApiVersion, Bytes, DecodeLimits, StrBytes};
+#[cfg(test)]
+use kafka_wire_core::Bytes;
+use kafka_wire_core::{ApiVersion, DecodeLimits, StrBytes};
 
+#[cfg(test)]
+use crate::response::ResponseRegistry;
 use crate::{
     RequestError, TrafficClass,
     api::RouteFact,
     observation::{CallOutcome, CallTimeline},
     request::{BorneraRequestPreparation, RequestCompletion, RequestPolicy},
-    response::ResponseRegistry,
 };
 
 use super::{ErasedRequest, footprint::retained_bytes};
@@ -131,6 +136,7 @@ where
         self.completion.record_route(route)
     }
 
+    #[cfg(test)]
     fn prepare(
         self: Box<Self>,
         correlation_id: CorrelationId,

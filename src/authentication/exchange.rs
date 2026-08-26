@@ -3,6 +3,7 @@
 use super::AuthenticationExchangeError;
 use bytes::BytesMut;
 use kafka_driver_core::{AuthenticationRound, CorrelationId, EffectId};
+#[cfg(test)]
 use kafka_driver_transport::FrameBody;
 use kafka_wire::{
     OutboundFrameLimits, ResponseHeader, SaslAuthenticateRequest, SaslAuthenticateResponse,
@@ -25,6 +26,7 @@ impl AuthenticateExchange {
         clippy::too_many_arguments,
         reason = "the framing boundary retains five protocol identities beside borrowed payload and encode/decode policy"
     )]
+    #[cfg(test)]
     pub(crate) fn start(
         effect_id: EffectId,
         round: AuthenticationRound,
@@ -92,6 +94,7 @@ impl AuthenticateExchange {
         self.round
     }
 
+    #[cfg(test)]
     pub(crate) fn finish(
         self,
         frame: FrameBody,

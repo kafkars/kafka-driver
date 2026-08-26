@@ -2,14 +2,21 @@
 
 use std::{num::NonZeroUsize, time::Duration};
 
-use kafka_driver_core::{AuthenticationLimits, BackoffPolicy, ConnectionLimits};
+#[cfg(test)]
+use kafka_driver_core::ConnectionLimits;
+use kafka_driver_core::{AuthenticationLimits, BackoffPolicy};
 use kafka_wire::OutboundFrameLimits;
 
 use crate::negotiation::NegotiationLimits;
-use crate::reactor::transport::{ReadBudget, TransportLimits, WriteBudget};
+use crate::reactor::transport::TransportLimits;
+use crate::reactor::transport::{ReadBudget, WriteBudget};
 
+#[cfg(test)]
 const CONNECTION_CAPACITY: NonZeroUsize = nonzero(256);
+const RESPONSE_CAPACITY: NonZeroUsize = nonzero(256);
+#[cfg(test)]
 const RESOURCE_CAPACITY: NonZeroUsize = nonzero(1);
+#[cfg(test)]
 const TIMER_BUDGET: NonZeroUsize = nonzero(256);
 const READ_BYTES: NonZeroUsize = nonzero(1024 * 1024);
 const READ_FRAMES: NonZeroUsize = nonzero(64);
@@ -21,10 +28,14 @@ const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(10);
 /// Coherent limits shared by machine, response, timer, and transport ownership.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::reactor) struct BrokerLimits {
+    #[cfg(test)]
     connection: ConnectionLimits,
     response_capacity: NonZeroUsize,
+    #[cfg(test)]
     resource_capacity: NonZeroUsize,
+    #[cfg(test)]
     timer_capacity: NonZeroUsize,
+    #[cfg(test)]
     timer_budget: NonZeroUsize,
     transport: TransportLimits,
     read_budget: ReadBudget,
@@ -38,6 +49,7 @@ pub(in crate::reactor) struct BrokerLimits {
 }
 
 impl BrokerLimits {
+    #[cfg(test)]
     pub(in crate::reactor) const fn connection(self) -> ConnectionLimits {
         self.connection
     }
@@ -46,14 +58,17 @@ impl BrokerLimits {
         self.response_capacity
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn resource_capacity(self) -> NonZeroUsize {
         self.resource_capacity
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn timer_capacity(self) -> NonZeroUsize {
         self.timer_capacity
     }
 
+    #[cfg(test)]
     pub(in crate::reactor) const fn timer_budget(self) -> NonZeroUsize {
         self.timer_budget
     }
@@ -113,12 +128,17 @@ impl BrokerLimits {
 
 impl Default for BrokerLimits {
     fn default() -> Self {
+        #[cfg(test)]
         let connection = ConnectionLimits::new(CONNECTION_CAPACITY, 128);
         Self {
+            #[cfg(test)]
             connection,
-            response_capacity: connection.max_in_flight(),
+            response_capacity: RESPONSE_CAPACITY,
+            #[cfg(test)]
             resource_capacity: RESOURCE_CAPACITY,
+            #[cfg(test)]
             timer_capacity: connection.max_in_flight(),
+            #[cfg(test)]
             timer_budget: TIMER_BUDGET,
             transport: TransportLimits::default(),
             read_budget: ReadBudget::new(READ_BYTES, READ_FRAMES),

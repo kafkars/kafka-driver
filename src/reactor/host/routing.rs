@@ -50,14 +50,22 @@ impl Reactor {
                 .submit_seed(request, now, &mut self.causality)
                 .map_err(ReactorError::host);
         }
-        let Some(legacy) = self.backend.legacy_mut() else {
+        #[cfg(test)]
+        {
+            let Some(legacy) = self.backend.legacy_mut() else {
+                request.fail(RequestError::RouteUnavailable);
+                return Ok(());
+            };
+            legacy
+                .brokers
+                .submit_seed(&legacy.poller, request, now)
+                .map_err(ReactorError::broker_set)
+        }
+        #[cfg(not(test))]
+        {
             request.fail(RequestError::RouteUnavailable);
-            return Ok(());
-        };
-        legacy
-            .brokers
-            .submit_seed(&legacy.poller, request, now)
-            .map_err(ReactorError::broker_set)
+            Ok(())
+        }
     }
 
     fn submit_controller(
