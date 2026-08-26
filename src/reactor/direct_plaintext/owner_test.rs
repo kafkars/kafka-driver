@@ -9,7 +9,7 @@ use std::{
 
 use bytes::BytesMut;
 use calandria::Span;
-use kafka_driver_core::{CallFailure, CallId, Delivery, KafkaSessionPhase, Moment};
+use kafka_driver_core::{BrokerState, CallFailure, CallId, Delivery, KafkaSessionPhase, Moment};
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, ApiVersionsResponse, ResponseHeader,
     api_versions_response::ApiVersion as AdvertisedApi,
@@ -82,15 +82,19 @@ fn loopback_session_round_trip_releases_every_semantic_context() {
         .join()
         .unwrap_or_else(|_| panic!("join private direct broker"));
     for _ in 0..32 {
-        if owner.is_terminal() {
+        if matches!(owner.lifecycle.state(), BrokerState::Backoff { .. }) {
             break;
         }
         drive(owner, now, &mut causality);
         wait_if_idle(owner);
     }
-    assert!(owner.is_terminal());
+    assert!(matches!(
+        owner.lifecycle.state(),
+        BrokerState::Backoff { .. }
+    ));
+    assert!(!owner.is_terminal());
     assert!(!owner.has_local_work());
-    assert_eq!(owner.next_deadline(), None);
+    assert!(owner.next_deadline().is_some());
     assert!(
         !owner
             .drive(now, &mut causality)
@@ -120,7 +124,7 @@ fn drain_rejects_pre_admission_request_as_not_sent_immediately() {
     assert!(call.try_result().is_none());
 
     owner
-        .begin_session_drain(now)
+        .begin_session_drain(now, &mut causality)
         .unwrap_or_else(|error| panic!("begin pending drain: {error}"));
 
     assert_eq!(

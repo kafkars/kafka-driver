@@ -27,7 +27,9 @@ fn clean_retirement_replays_transport_and_fresh_plain_session_in_one_set() {
         NOW,
     )
     .unwrap_or_else(|error| panic!("construct first replay generation: {error}"));
-    let first = owner.connection;
+    let first = owner
+        .live_connection()
+        .unwrap_or_else(|error| panic!("read first replay generation: {error}"));
     assert_eq!(first.epoch(), ConnectionEpoch::new(1));
     assert_eq!(owner.set.snapshot().connections.active(), 1);
     assert_eq!(owner.set.snapshot().poller.registrations(), 1);
@@ -61,7 +63,9 @@ fn fatal_recovery_replays_a_distinct_generation_in_the_same_running_set() {
         NOW,
     )
     .unwrap_or_else(|error| panic!("construct recovered first generation: {error}"));
-    let first = owner.connection;
+    let first = owner
+        .live_connection()
+        .unwrap_or_else(|error| panic!("read first recovered generation: {error}"));
 
     let report = owner
         .set

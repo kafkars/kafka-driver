@@ -79,9 +79,12 @@ driver with a caller-driven `Reactor` for embedding in another event loop. The
 embedded reactor is thread-affine: construct and drive it on its owner thread. No
 public executor abstraction is required.
 
-During the Bornera cutover, direct numeric targets configured with `broker()` or
-`rustls_broker()` own one connection generation and do not reconnect after a
-terminal connection failure. Bootstrap targets retain reconnect ownership.
+Direct numeric targets configured with `broker()` or `rustls_broker()` retain
+one Bornera selector and reconnect the same configured address through fresh
+connection generations after bounded backoff. Permanent authentication failure
+and requested shutdown remain terminal. These direct targets do not refresh DNS
+or discover and route a multi-broker topology; bootstrap targets retain that
+broader ownership.
 
 ## Routes
 

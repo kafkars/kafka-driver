@@ -3,13 +3,16 @@
 use std::num::NonZeroUsize;
 
 use kafka_driver_core::{
-    AuthenticationFailure, EffectId, KafkaSessionAuthenticationState, KafkaSessionCloseReason,
-    KafkaSessionState,
+    AuthenticationFailure, BrokerState, EffectId, KafkaSessionAuthenticationState,
+    KafkaSessionCloseReason, KafkaSessionState,
 };
 
 use crate::{
     ScramProofLimits,
-    reactor::scram_proof::{ScramProofRequest, ScramProofWorker, proof_request},
+    reactor::{
+        causality::CausalSequence,
+        scram_proof::{ScramProofRequest, ScramProofWorker, proof_request},
+    },
 };
 
 use super::scram_fixture_test::{
@@ -32,15 +35,12 @@ fn exact_proof_completes_once_while_a_wrong_fence_is_ignored() {
         .try_recv()
         .unwrap_or_else(|error| panic!("receive exact direct proof: {error}"));
     let fence = exact.fence();
-    assert_eq!(
-        fence.target().direct_connection(),
-        Some(fixture.owner.connection)
-    );
+    assert_eq!(fence.target().direct_connection(), fixture.owner.connection);
     assert_eq!(fence.effect_id(), EFFECT);
     assert_eq!(fence.round(), first_round());
 
     let wrong = ScramProofRequest::direct(
-        fixture.owner.connection,
+        fixture.owner.connection_for_test(),
         EffectId::from_raw(99),
         first_round(),
         independent_pending(),
@@ -70,7 +70,7 @@ fn exact_proof_completes_once_while_a_wrong_fence_is_ignored() {
     ));
 
     let duplicate = ScramProofRequest::direct(
-        fixture.owner.connection,
+        fixture.owner.connection_for_test(),
         EFFECT,
         first_round(),
         independent_pending(),
@@ -108,6 +108,7 @@ fn authentication_deadline_wins_over_an_exact_late_proof() {
         &fixture,
         KafkaSessionCloseReason::AuthenticationFailed(AuthenticationFailure::Timeout),
     );
+    assert!(fixture.owner.scram_proof_sender.is_some());
 }
 
 #[test]
@@ -126,10 +127,11 @@ fn shutdown_during_derivation_clears_proof_and_authentication_ownership() {
 
     fixture
         .owner
-        .begin_session_drain(NOW)
+        .begin_session_drain(NOW, &mut CausalSequence::new())
         .unwrap_or_else(|error| panic!("drain authenticating direct owner: {error}"));
 
     assert_authentication_closed(&fixture, KafkaSessionCloseReason::Requested);
+    assert!(fixture.owner.scram_proof_sender.is_none());
     assert!(
         !fixture
             .owner
@@ -158,6 +160,57 @@ fn full_proof_queue_is_local_capacity_and_clears_secret_ownership() {
     assert_authentication_closed(
         &fixture,
         KafkaSessionCloseReason::AuthenticationFailed(AuthenticationFailure::LocalCapacity),
+    );
+    assert!(fixture.owner.scram_proof_sender.is_some());
+}
+
+#[test]
+fn recovered_epoch_rejects_a_late_proof_from_the_retired_connection() {
+    let mut fixture = ScramOwnerFixture::new();
+    let (worker, requests, _outcomes) = ScramProofWorker::isolated(limits(1));
+    fixture.owner.scram_proof_sender = Some(worker.sender());
+    let pending = fixture.arm_first_proof();
+    fixture
+        .owner
+        .dispatch_scram_proof(EFFECT, first_round(), pending, NOW)
+        .unwrap_or_else(|error| panic!("dispatch retired direct proof: {error}"));
+    let held = requests
+        .try_recv()
+        .unwrap_or_else(|error| panic!("receive retired direct proof: {error}"));
+    let retired = fixture.owner.connection_for_test();
+    let report = fixture
+        .owner
+        .set
+        .abandon(retired, bornera::OwnerFailure::OwnerInvariant)
+        .unwrap_or_else(|error| panic!("recover proof generation: {error}"));
+    fixture.owner.capture_recovery(report);
+    assert!(fixture.owner.connection.is_none());
+    assert!(fixture.owner.authentication_session.is_none());
+    assert!(fixture.owner.pending_scram_proof.is_none());
+    let mut causality = CausalSequence::new();
+    assert!(
+        fixture
+            .owner
+            .drive(NOW, &mut causality)
+            .unwrap_or_else(|error| panic!("settle proof recovery: {error}"))
+    );
+    let BrokerState::Backoff { deadline, .. } = fixture.owner.lifecycle.state() else {
+        panic!("proof recovery must enter backoff");
+    };
+    assert!(
+        fixture
+            .owner
+            .drive(deadline, &mut causality)
+            .unwrap_or_else(|error| panic!("open proof generation two: {error}"))
+    );
+
+    assert_ne!(fixture.owner.connection_for_test(), retired);
+    assert!(fixture.owner.scram_proof_sender.is_some());
+    assert!(
+        !fixture
+            .owner
+            .complete_scram_proof(held.finish(), deadline)
+            .unwrap_or_else(|error| panic!("reject retired direct proof: {error}"))
     );
 }
 
@@ -194,7 +247,6 @@ fn assert_authentication_closed(fixture: &ScramOwnerFixture, reason: KafkaSessio
     );
     assert!(fixture.owner.authentication_session.is_none());
     assert!(fixture.owner.pending_scram_proof.is_none());
-    assert!(fixture.owner.scram_proof_sender.is_none());
     assert!(fixture.owner.session_deadline.is_none());
 }
 

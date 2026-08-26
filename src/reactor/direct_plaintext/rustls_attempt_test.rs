@@ -1,15 +1,39 @@
 //! Same-set Rustls attempt replay with a fresh transport and decoder gate.
 
-use std::{net::TcpListener, sync::Arc};
+use std::{io, net::TcpListener, sync::Arc};
 
-use bornera::OwnerFailure;
+use bornera::{ConnectError, OwnerFailure};
 use bornera_core::ConnectionEpoch;
+use calandria::RetainedBytes;
 use kafka_driver_core::Moment;
 use rustls::{ClientConfig, RootCertStore, pki_types::ServerName};
 
 use crate::{DriverLimits, TlsClientConfig};
 
-use super::{owner::DirectOwner, rustls_transport::DirectRustlsTransport};
+use super::{
+    attempt::{DirectConnectError, rustls_connect_error},
+    owner::DirectOwner,
+    rustls_transport::DirectRustlsTransport,
+};
+
+#[test]
+fn rustls_connect_classifies_only_raw_socket_io_as_endpoint_local() {
+    let endpoint = rustls_connect_error(ConnectError::<io::Error>::Io(
+        io::ErrorKind::ConnectionRefused.into(),
+    ));
+    assert!(matches!(endpoint, DirectConnectError::Endpoint(_)));
+
+    let adapter = bornera_rustls::RustlsConnectError::Capacity {
+        required: RetainedBytes::from(2_u32),
+        supplied: RetainedBytes::from(1_u32),
+    };
+    let wrapped = io::Error::new(io::ErrorKind::InvalidInput, adapter);
+    let adapter = rustls_connect_error(ConnectError::<io::Error>::Io(wrapped));
+    assert!(matches!(adapter, DirectConnectError::Fatal(_)));
+
+    let selector = rustls_connect_error(ConnectError::<io::Error>::ResourceAdmission);
+    assert!(matches!(selector, DirectConnectError::Fatal(_)));
+}
 
 #[test]
 fn rustls_attempt_replays_a_fresh_transport_in_one_set() {
@@ -27,7 +51,9 @@ fn rustls_attempt_replays_a_fresh_transport_in_one_set() {
         Moment::from_nanos(1),
     )
     .unwrap_or_else(|error| panic!("construct first Rustls generation: {error}"));
-    let first = owner.connection;
+    let first = owner
+        .live_connection()
+        .unwrap_or_else(|error| panic!("read first rustls generation: {error}"));
 
     let report = owner
         .set

@@ -6,7 +6,9 @@ mod rustls;
 
 use std::{io, net::SocketAddr};
 
-use bornera::{ConnectionConfig, ConnectionIdentity, ConnectionToken, RegisteredTransport};
+use bornera::{
+    ConnectError, ConnectionConfig, ConnectionIdentity, ConnectionToken, RegisteredTransport,
+};
 use bornera_core::{ConnectionEpoch, ConnectionId, EndpointId, LaneId};
 use calandria::{Deadline, TimerOwnerId};
 use kafka_driver_core::Moment;
@@ -17,6 +19,8 @@ use crate::reactor::broker::BrokerLimits;
 pub(super) use plaintext::PlaintextAttempt;
 #[cfg(feature = "tls-rustls")]
 pub(super) use rustls::RustlsAttempt;
+#[cfg(all(test, feature = "tls-rustls"))]
+pub(super) use rustls::rustls_connect_error;
 
 /// Immutable policy capable of creating a fresh transport and slot per epoch.
 pub(super) trait DirectConnectionAttempt<T: RegisteredTransport> {
@@ -25,7 +29,46 @@ pub(super) trait DirectConnectionAttempt<T: RegisteredTransport> {
         set: &mut DirectSet<T>,
         epoch: ConnectionEpoch,
         now: Moment,
-    ) -> io::Result<ConnectionToken>;
+    ) -> Result<ConnectionToken, DirectConnectError>;
+}
+
+#[derive(Debug)]
+pub(super) enum DirectConnectError {
+    Endpoint(io::Error),
+    Fatal(io::Error),
+}
+
+impl DirectConnectError {
+    pub(super) fn endpoint(source: io::Error) -> Self {
+        Self::Endpoint(source)
+    }
+
+    pub(super) fn fatal(source: impl std::fmt::Display) -> Self {
+        Self::Fatal(io::Error::other(source.to_string()))
+    }
+}
+
+impl std::fmt::Display for DirectConnectError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Endpoint(source) | Self::Fatal(source) => source.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for DirectConnectError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Endpoint(source) | Self::Fatal(source) => Some(source),
+        }
+    }
+}
+
+fn plaintext_connect_error<E: std::fmt::Display>(error: ConnectError<E>) -> DirectConnectError {
+    match error {
+        ConnectError::Io(source) => DirectConnectError::endpoint(source),
+        other => DirectConnectError::fatal(other),
+    }
 }
 
 fn connection_config(

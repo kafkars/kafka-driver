@@ -112,7 +112,7 @@ impl Reactor {
         self.coordinator = None;
         if let Some(direct) = self.backend.direct_mut() {
             direct
-                .begin_session_drain(now)
+                .begin_session_drain(now, &mut self.causality)
                 .map_err(ReactorError::host)?;
         } else if let Some(legacy) = self.backend.legacy_mut() {
             legacy

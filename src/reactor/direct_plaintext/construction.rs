@@ -5,9 +5,10 @@ use std::{io, net::SocketAddr};
 use bornera::{
     ConnectionSet, ConnectionSetConfig, ConnectionToken, RegisteredTransport, TcpTransport,
 };
-use bornera_core::ConnectionEpoch;
 use calandria::{ResourceOwnerId, RetainedBytes, Turn};
-use kafka_driver_core::Moment;
+use kafka_driver_core::{
+    BrokerEffect, BrokerState, CloseReason, ConnectionEpoch, KafkaSessionInput, Moment,
+};
 use kafka_wire_core::DecodeLimits;
 
 use crate::{
@@ -18,7 +19,9 @@ use crate::{
 #[cfg(feature = "tls-rustls")]
 use super::{attempt::RustlsAttempt, rustls_transport::DirectRustlsTransport};
 use super::{
-    attempt::{DirectConnectionAttempt, PlaintextAttempt},
+    attempt::{DirectConnectError, DirectConnectionAttempt, PlaintextAttempt},
+    failure_translation::synchronous_open_failure,
+    lifecycle::DirectLifecycle,
     limits::set_limits,
     operation_owner::DirectOperationContext,
     owner::{DirectOwner, DirectSet, ID, message},
@@ -36,22 +39,36 @@ impl DirectOwner<TcpTransport> {
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
         let session_plan = DirectSessionPlan::new(sasl, broker);
-        let session = session_plan.start()?;
         let connection_attempt: Box<dyn DirectConnectionAttempt<TcpTransport>> =
             Box::new(PlaintextAttempt::new(driver, broker, address));
-        let mut set = new_set(driver)?;
-        let connection = connection_attempt.connect(&mut set, ConnectionEpoch::new(ID), now)?;
-        finish(
+        start(
             driver,
             broker,
+            address,
             client_id,
-            InitialDirect {
-                session_plan,
-                session,
-                set,
-                connection_attempt,
-                connection,
-            },
+            session_plan,
+            connection_attempt,
+            now,
+        )
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_with_attempt(
+        driver: &DriverLimits,
+        address: SocketAddr,
+        sasl: Option<SaslConfig>,
+        attempt: Box<dyn DirectConnectionAttempt<TcpTransport>>,
+        now: Moment,
+    ) -> io::Result<Self> {
+        let broker = BrokerLimits::default();
+        start(
+            driver,
+            broker,
+            address,
+            None,
+            DirectSessionPlan::new(sasl, broker),
+            attempt,
+            now,
         )
     }
 }
@@ -68,24 +85,71 @@ impl DirectOwner<DirectRustlsTransport> {
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
         let session_plan = DirectSessionPlan::new(sasl, broker);
-        let session = session_plan.start()?;
         let connection_attempt: Box<dyn DirectConnectionAttempt<DirectRustlsTransport>> =
             Box::new(RustlsAttempt::new(driver, broker, address, tls));
-        let mut set = new_set(driver)?;
-        let connection = connection_attempt.connect(&mut set, ConnectionEpoch::new(ID), now)?;
-        finish(
+        start(
             driver,
             broker,
+            address,
             client_id,
-            InitialDirect {
-                session_plan,
-                session,
-                set,
-                connection_attempt,
-                connection,
-            },
+            session_plan,
+            connection_attempt,
+            now,
         )
     }
+}
+
+fn start<T: RegisteredTransport>(
+    driver: &DriverLimits,
+    broker: BrokerLimits,
+    address: SocketAddr,
+    client_id: Option<ClientId>,
+    session_plan: DirectSessionPlan,
+    connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
+    now: Moment,
+) -> io::Result<DirectOwner<T>> {
+    let mut session = session_plan.start()?;
+    let mut lifecycle = DirectLifecycle::started(broker.backoff(), address)?;
+    let mut set = new_set(driver)?;
+    let attempt = connection_attempt.connect(&mut set, bornera_core::ConnectionEpoch::new(ID), now);
+    let (connection, last_close_reason) = match attempt {
+        Ok(connection) => (Some(connection), None),
+        Err(DirectConnectError::Endpoint(source)) => {
+            let reason = synchronous_open_failure(&source);
+            drop(session.machine.apply(KafkaSessionInput::Closed));
+            session.authentication = None;
+            let epoch = ConnectionEpoch::from_raw(ID);
+            let effects = lifecycle.generation_ended(epoch, reason, now)?;
+            let valid = matches!(
+                (lifecycle.state(), effects.as_slice()),
+                (
+                    BrokerState::Backoff { .. },
+                    [BrokerEffect::ScheduleReconnect { .. }]
+                ) | (BrokerState::Closed { .. }, [])
+            );
+            if !valid {
+                return Err(io::Error::other(
+                    "initial direct endpoint failure produced invalid lifecycle policy",
+                ));
+            }
+            (None, Some(reason))
+        }
+        Err(DirectConnectError::Fatal(source)) => return Err(source),
+    };
+    finish(
+        driver,
+        broker,
+        client_id,
+        InitialDirect {
+            session_plan,
+            session,
+            set,
+            connection_attempt,
+            connection,
+            lifecycle,
+            last_close_reason,
+        },
+    )
 }
 
 fn new_set<T: RegisteredTransport>(driver: &DriverLimits) -> io::Result<DirectSet<T>> {
@@ -101,7 +165,9 @@ struct InitialDirect<T: RegisteredTransport> {
     session: DirectSessionOwnership,
     set: DirectSet<T>,
     connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
-    connection: ConnectionToken,
+    connection: Option<ConnectionToken>,
+    lifecycle: DirectLifecycle,
+    last_close_reason: Option<CloseReason>,
 }
 
 fn finish<T: RegisteredTransport>(
@@ -116,13 +182,17 @@ fn finish<T: RegisteredTransport>(
         set,
         connection_attempt,
         connection,
+        lifecycle,
+        last_close_reason,
     } = initial;
     let retained =
         RetainedBytes::try_from(driver.mailbox_byte_capacity().get()).map_err(message)?;
+    let terminal = lifecycle.is_closed();
     Ok(DirectOwner {
         set,
         connection_attempt,
         connection,
+        lifecycle,
         session_plan,
         session: session.machine,
         authentication_session: session.authentication,
@@ -145,12 +215,12 @@ fn finish<T: RegisteredTransport>(
         write_byte_capacity: broker.transport().write().max_buffered_bytes(),
         write_frame_rejections: 0,
         write_byte_rejections: 0,
-        last_close_reason: None,
-        retired_seed: None,
+        generation_close_reason: None,
+        last_close_reason,
         submission_budget: driver.command_budget(),
         last_turn: Turn::waiting(),
         admission_open: false,
-        terminal: false,
+        terminal,
         pending_recovery: None,
     })
 }

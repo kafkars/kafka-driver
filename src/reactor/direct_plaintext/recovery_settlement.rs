@@ -1,28 +1,37 @@
 //! Terminal semantic settlement of every owner transferred by Bornera recovery.
 
-use bornera::{ConnectionEvent, OwnerFailure, RegisteredTransport, TransportDiagnostic};
-use kafka_driver_core::{CloseReason, Delivery, KafkaSessionState, Moment, TransportFailure};
+use std::io;
 
-use crate::reactor::{bornera::OperationContextKey, causality::CausalSequence};
+use bornera::{ConnectionEvent, OwnerFailure, RegisteredTransport, TransportDiagnostic};
+use kafka_driver_core::{
+    BrokerPhase, CloseReason, Delivery, KafkaSessionState, Moment, TransportFailure,
+};
+
+use crate::reactor::causality::CausalSequence;
 
 use super::{
     failure_translation::{connection_close_reason, diagnostic_close_reason, recovery},
     owner::{DirectOwner, DirectRecovery},
+    recovery_owners::RecoveredOwners,
 };
-use crate::reactor::bornera::driver_delivery;
 
 impl<T: RegisteredTransport> DirectOwner<T> {
     pub(super) fn settle_recovery(
         &mut self,
-        report: DirectRecovery,
+        recovery_report: DirectRecovery,
+        now: Moment,
         causality: &mut CausalSequence,
     ) -> std::io::Result<()> {
         self.clear_authentication_ownership();
-        self.release_scram_proof_sender();
         self.session_deadline = None;
+        let DirectRecovery {
+            report,
+            mut semantic_diverged,
+        } = recovery_report;
+        let mut first_error = None;
         let bornera::RecoveryReport {
             epoch,
-            reason,
+            reason: owner_failure,
             operations,
             unmatched_writes,
             outcomes,
@@ -31,62 +40,133 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             transport_pressure: _transport_pressure,
             transport_retained_limit: _transport_retained_limit,
             transport_retained_ceiling: _transport_retained_ceiling,
-            ownership_diverged: _ownership_diverged,
+            ownership_diverged,
             ..
         } = report;
-        let semantic_reason = self.last_close_reason;
+        let recovered_admission = events.iter().any(|event| {
+            matches!(event, ConnectionEvent::AdmissionOpened { epoch: opened, .. } if *opened == epoch)
+        });
+        if !semantic_diverged
+            && recovered_admission
+            && self.lifecycle.phase() == BrokerPhase::Connecting
+        {
+            record_error(
+                &mut first_error,
+                self.lifecycle.ready(super::reconnect::core_epoch(epoch)),
+            );
+        }
+        let semantic_reason = self.generation_close_reason;
         let recovered_reason = recovered_close_reason(
             self.session.state(),
             epoch,
-            events,
+            &events,
             transport_diagnostic,
-            reason,
+            owner_failure,
         );
         let effective_reason = semantic_reason.unwrap_or(recovered_reason);
         self.last_close_reason = Some(effective_reason);
 
-        for outcome in outcomes {
-            self.settle_outcome(outcome, Moment::from_nanos(0), causality, false)?;
+        let owner_settlement = self.settle_recovered_owners(
+            RecoveredOwners {
+                epoch,
+                operations,
+                unmatched_writes,
+                outcomes,
+            },
+            effective_reason,
+            now,
+            causality,
+        );
+        semantic_diverged |= owner_settlement.semantic_diverged;
+        if let Some(error) = owner_settlement.first_error {
+            keep_first(&mut first_error, error);
         }
-        for recovered in operations {
-            let key = OperationContextKey::new(epoch, recovered.operation);
-            let failure = recovery(effective_reason, driver_delivery(recovered.delivery));
-            self.fail_released(key, failure, causality)?;
-        }
-        for discarded in unmatched_writes {
-            let key = OperationContextKey::new(epoch, discarded.operation);
-            let failure = recovery(effective_reason, driver_delivery(discarded.delivery));
-            self.fail_released(key, failure, causality)?;
-        }
-        let fallback = recovery(effective_reason, Delivery::PossiblySent);
-        self.fail_remaining(&fallback, Some(causality), None)?;
-        let pending = recovery(effective_reason, Delivery::NotSent);
-        self.fail_pending(&pending, Some(causality))?;
         self.admission_open = false;
         if recovered_reason == CloseReason::Drained
             && matches!(self.session.state(), KafkaSessionState::Draining { .. })
         {
-            self.session_drained_by_engine()?;
+            record_error(&mut first_error, self.session_drained_by_engine());
         }
-        self.session_closed(Moment::from_nanos(0))?;
+        record_error(&mut first_error, self.session_closed(now));
+        self.generation_close_reason = None;
         self.last_close_reason = Some(effective_reason);
+        self.last_turn = calandria::Turn::waiting();
+        self.connection = None;
+
+        let contexts = self.contexts.snapshot();
+        let set_owner_failed = self.set.snapshot().owner_failure.is_some();
+        if first_error.is_none()
+            && recovery_can_reconnect(
+                owner_failure,
+                ownership_diverged,
+                set_owner_failed,
+                contexts,
+                semantic_diverged,
+            )
+        {
+            match self.settle_generation_lifecycle(
+                super::reconnect::core_epoch(epoch),
+                effective_reason,
+                now,
+                causality,
+            ) {
+                Ok(()) => return Ok(()),
+                Err(error) => keep_first(&mut first_error, error),
+            }
+        }
+
+        let pending = recovery(effective_reason, Delivery::NotSent);
+        record_error(
+            &mut first_error,
+            self.fail_pending(&pending, Some(causality)),
+        );
         self.terminal = true;
-        self.latch_recovered_seed(epoch.get());
-        Ok(())
+        Err(first_error.unwrap_or_else(|| {
+            io::Error::other("fatal Bornera owner recovery cannot reuse the direct selector")
+        }))
     }
+}
+
+fn record_error(first: &mut Option<io::Error>, result: io::Result<()>) {
+    if let Err(error) = result {
+        keep_first(first, error);
+    }
+}
+
+fn keep_first(first: &mut Option<io::Error>, error: io::Error) {
+    if first.is_none() {
+        *first = Some(error);
+    }
+}
+
+fn recovery_can_reconnect(
+    failure: OwnerFailure,
+    ownership_diverged: bool,
+    set_owner_failed: bool,
+    contexts: crate::reactor::bornera::OperationContextsSnapshot,
+    semantic_diverged: bool,
+) -> bool {
+    matches!(failure, OwnerFailure::Core | OwnerFailure::OwnerInvariant)
+        && !ownership_diverged
+        && !set_owner_failed
+        && contexts.reserved() == 0
+        && contexts.published() == 0
+        && contexts.retained_bytes() == calandria::RetainedBytes::ZERO
+        && !contexts.is_poisoned()
+        && !semantic_diverged
 }
 
 fn recovered_close_reason(
     session: KafkaSessionState,
     epoch: bornera_core::ConnectionEpoch,
-    events: Vec<ConnectionEvent>,
+    events: &[ConnectionEvent],
     diagnostic: Option<TransportDiagnostic>,
     _owner_failure: OwnerFailure,
 ) -> CloseReason {
     let lifecycle = events
-        .into_iter()
+        .iter()
         .filter(|event| event.epoch() == epoch)
-        .filter_map(|event| match event {
+        .filter_map(|event| match *event {
             ConnectionEvent::Closing {
                 sequence, reason, ..
             }

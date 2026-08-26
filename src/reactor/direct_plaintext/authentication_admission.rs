@@ -1,6 +1,6 @@
 //! Measure-first SASL session operations admitted through Bornera.
 
-use bornera::{OutboundFrame, RegisteredTransport};
+use bornera::{ConnectionReserveError, OutboundFrame, RegisteredTransport};
 use bornera_core::{OperationOptions, OperationPermit};
 use calandria::{Deadline, RetainedBytes};
 use kafka_driver_core::{
@@ -14,7 +14,7 @@ use crate::{
         AuthenticateExchange, AuthenticationExchange, AuthenticationExchangeError,
         HandshakeExchange,
     },
-    reactor::bornera::{ContextReservation, correlation_id},
+    reactor::bornera::{ContextReservation, ContextReserveFailure, correlation_id},
 };
 
 use super::{
@@ -173,6 +173,11 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         ) {
             Ok(reservation) => reservation,
             Err(error) => {
+                if error.failure() == ContextReserveFailure::OwnerPoisoned {
+                    drop(error.into_context());
+                    self.capture_context_divergence(now, None)?;
+                    return Ok(None);
+                }
                 drop(error.into_context());
                 self.fail_authentication_stage(stage, AuthenticationFailure::LocalCapacity, now)?;
                 return Ok(None);
@@ -186,11 +191,14 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         let options = OperationOptions::until(Deadline::at(calandria_moment(deadline)))
             .session()
             .write_retained_bytes(write_retained);
-        let permit = match self
-            .set
-            .reserve(self.connection, calandria_moment(now), options)
-        {
+        let connection = self.live_connection()?;
+        let permit = match self.set.reserve(connection, calandria_moment(now), options) {
             Ok(permit) => permit,
+            Err(ConnectionReserveError::StaleConnection) => {
+                drop(reservation.abort());
+                self.stale_generation_fatal(now, None)?;
+                return Ok(None);
+            }
             Err(error) => {
                 self.observe_reserve_rejection(error, write_retained);
                 drop(reservation.abort());
@@ -201,8 +209,8 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                     AuthenticationReserveDisposition::Lifecycle => {}
                     AuthenticationReserveDisposition::Recover => {
                         if self.pending_recovery.is_none() {
-                            self.pending_recovery =
-                                Some(self.set.try_recover(self.connection).map_err(message)?);
+                            let report = self.recover_failed_generation(connection, now, None)?;
+                            self.capture_recovery(report);
                         }
                     }
                 }

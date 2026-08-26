@@ -105,6 +105,11 @@ impl<C> OperationContexts<C> {
             state.poisoned,
         )
     }
+
+    #[cfg(test)]
+    pub(in crate::reactor) fn keys_for_test(&self) -> Vec<OperationContextKey> {
+        self.state.borrow().published.keys().copied().collect()
+    }
 }
 
 #[derive(Debug)]

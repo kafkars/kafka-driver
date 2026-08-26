@@ -78,11 +78,15 @@ impl DirectBackend {
         }
     }
 
-    pub(in crate::reactor) fn begin_session_drain(&mut self, now: Moment) -> io::Result<()> {
+    pub(in crate::reactor) fn begin_session_drain(
+        &mut self,
+        now: Moment,
+        causality: &mut CausalSequence,
+    ) -> io::Result<()> {
         match self {
-            Self::Plaintext(owner) => owner.begin_session_drain(now),
+            Self::Plaintext(owner) => owner.begin_session_drain(now, causality),
             #[cfg(feature = "tls-rustls")]
-            Self::Rustls(owner) => owner.begin_session_drain(now),
+            Self::Rustls(owner) => owner.begin_session_drain(now, causality),
         }
     }
 

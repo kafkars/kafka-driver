@@ -121,7 +121,7 @@ fn admission_closed_defers_to_lifecycle_and_releases_both_affine_owners() {
     let reservation = reserve_context(&owner);
     owner
         .set
-        .finalize(owner.connection, BorneraCloseReason::Requested)
+        .finalize(owner.connection_for_test(), BorneraCloseReason::Requested)
         .unwrap_or_else(|error| panic!("close PLAIN admission: {error}"));
 
     owner
@@ -158,7 +158,8 @@ fn foreign_permit_abandons_the_owner_instead_of_reporting_capacity() {
         .unwrap_or_else(|error| panic!("abandon foreign PLAIN permit: {error}"));
 
     assert!(owner.pending_recovery.is_some());
-    assert!(owner.set.connection_snapshot(owner.connection).is_err());
+    assert!(owner.connection.is_none());
+    assert!(!owner.admission_open);
     assert_empty_bornera_ownership(&foreign);
     assert_empty_contexts(&owner);
 }
@@ -171,7 +172,10 @@ fn stale_connection_is_host_fatal_after_releasing_both_affine_owners() {
     drop(
         owner
             .set
-            .abandon(owner.connection, bornera::OwnerFailure::OwnerInvariant)
+            .abandon(
+                owner.connection_for_test(),
+                bornera::OwnerFailure::OwnerInvariant,
+            )
             .unwrap_or_else(|error| panic!("make PLAIN connection stale: {error}")),
     );
 
@@ -188,8 +192,10 @@ fn stale_connection_is_host_fatal_after_releasing_both_affine_owners() {
 
     assert_eq!(
         error.to_string(),
-        "stale connection rejected an authentication commit"
+        "stale Bornera connection violated direct ownership"
     );
+    assert!(owner.is_terminal());
+    assert!(owner.connection.is_none());
     assert!(owner.pending_recovery.is_none());
     assert_empty_contexts(&owner);
 }
@@ -243,7 +249,7 @@ fn reserve(
         .write_retained_bytes(write_retained);
     owner
         .set
-        .reserve(owner.connection, calandria_moment(NOW), options)
+        .reserve(owner.connection_for_test(), calandria_moment(NOW), options)
         .unwrap_or_else(|error| panic!("reserve PLAIN publication permit: {error}"))
 }
 
@@ -283,7 +289,7 @@ fn assert_empty_contexts(owner: &DirectPlaintextOwner) {
 fn assert_empty_bornera_ownership(owner: &DirectPlaintextOwner) {
     let snapshot = owner
         .set
-        .connection_snapshot(owner.connection)
+        .connection_snapshot(owner.connection_for_test())
         .unwrap_or_else(|error| panic!("inspect PLAIN publication ownership: {error}"));
     assert_eq!(snapshot.connection.reserved_permits, 0);
     assert_eq!(snapshot.connection.owned_operations, 0);

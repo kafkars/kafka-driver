@@ -7,25 +7,30 @@ use kafka_driver_core::{
 };
 
 use super::{failure_translation::not_sent, owner::DirectOwner};
+use crate::reactor::causality::CausalSequence;
 
 impl<T: RegisteredTransport> DirectOwner<T> {
-    pub(in crate::reactor) fn begin_session_drain(&mut self, now: Moment) -> std::io::Result<()> {
+    pub(in crate::reactor) fn begin_session_drain(
+        &mut self,
+        now: Moment,
+        causality: &mut CausalSequence,
+    ) -> std::io::Result<()> {
         self.admission_open = false;
         self.clear_authentication_ownership();
         self.release_scram_proof_sender();
+        self.settle_pending_recovery(now, causality)?;
         self.fail_pending(&not_sent(CallFailure::Draining), None)?;
-        self.apply_session(KafkaSessionInput::BeginDrain, now)
+        self.begin_lifecycle_drain(now)
     }
 
     pub(super) fn session_closed(&mut self, now: Moment) -> std::io::Result<()> {
         self.clear_authentication_ownership();
-        self.release_scram_proof_sender();
         self.session_deadline = None;
         self.apply_session(KafkaSessionInput::Closed, now)?;
         if let KafkaSessionState::Closed { reason } = self.session.state()
             && reason != KafkaSessionCloseReason::TransportClosed
         {
-            self.record_session_close(reason);
+            self.record_generation_close(reason);
         }
         Ok(())
     }
@@ -40,7 +45,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                 // Bornera already began the authoritative Drained closure.
                 KafkaSessionEffect::CloseSession {
                     reason: KafkaSessionCloseReason::Drained,
-                } => self.record_session_close(KafkaSessionCloseReason::Drained),
+                } => self.record_generation_close(KafkaSessionCloseReason::Drained),
                 KafkaSessionEffect::CancelDeadline => {}
                 _ => {
                     return Err(std::io::Error::other(

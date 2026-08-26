@@ -1,7 +1,7 @@
 //! Measure-first public request admission into one ready direct session.
 
-use bornera::RegisteredTransport;
-use bornera_core::OperationOptions;
+use bornera::{ConnectionReserveError, RegisteredTransport};
+use bornera_core::{OperationOptions, ReserveError};
 use calandria::{Deadline, RetainedBytes};
 use kafka_driver_core::{CallFailure, CloseReason, Delivery, KafkaSessionPhase, Moment};
 
@@ -12,7 +12,10 @@ use super::{
     operation_owner::DirectOperationContext,
     owner::{DirectOwner, calandria_moment},
 };
-use crate::reactor::{bornera::correlation_id, causality::CausalSequence};
+use crate::reactor::{
+    bornera::{ContextReserveFailure, correlation_id},
+    causality::CausalSequence,
+};
 
 impl<T: RegisteredTransport> DirectOwner<T> {
     pub(super) fn submit_request(
@@ -21,7 +24,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         now: Moment,
         causality: &mut CausalSequence,
     ) -> std::io::Result<()> {
-        if self.terminal {
+        if self.is_terminal() {
             let failure = match self.last_close_reason {
                 Some(reason @ CloseReason::AuthenticationFailed(_)) => {
                     recovery(reason, Delivery::NotSent)
@@ -31,7 +34,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             request.fail(failure);
             return Ok(());
         }
-        if self.session.state().phase() != KafkaSessionPhase::Ready || !self.admission_open {
+        if !self.can_admit_public() {
             self.pending.push(request, now);
             return Ok(());
         }
@@ -44,7 +47,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         causality: &mut CausalSequence,
         budget: usize,
     ) -> std::io::Result<usize> {
-        if !self.admission_open || self.session.state().phase() != KafkaSessionPhase::Ready {
+        if !self.can_admit_public() {
             return Ok(0);
         }
         let mut admitted = 0;
@@ -59,6 +62,14 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             }
         }
         Ok(admitted)
+    }
+
+    fn can_admit_public(&self) -> bool {
+        self.pending_recovery.is_none()
+            && self.connection.is_some()
+            && self.lifecycle.has_live_generation()
+            && self.session.state().phase() == KafkaSessionPhase::Ready
+            && self.admission_open
     }
 
     fn admit_ready(
@@ -115,6 +126,11 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         let mut reservation = match self.contexts.reserve(operation_context, retained) {
             Ok(reservation) => reservation,
             Err(error) => {
+                if error.failure() == ContextReserveFailure::OwnerPoisoned {
+                    fail_context(error.into_context(), not_sent(CallFailure::LocallyRejected));
+                    self.capture_context_divergence(now, Some(causality))?;
+                    return Ok(());
+                }
                 let failure = context_reserve(error.failure());
                 fail_context(error.into_context(), failure);
                 return Ok(());
@@ -127,11 +143,20 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         let options = OperationOptions::until(Deadline::at(calandria_moment(deadline)))
             .retained_bytes(retained)
             .write_retained_bytes(write_retained);
-        let permit = match self
-            .set
-            .reserve(self.connection, calandria_moment(now), options)
-        {
+        let connection = self.live_connection()?;
+        let permit = match self.set.reserve(connection, calandria_moment(now), options) {
             Ok(permit) => permit,
+            Err(ConnectionReserveError::StaleConnection) => {
+                fail_context(reservation.abort(), not_sent(CallFailure::Closed));
+                return self.stale_generation_fatal(now, Some(causality));
+            }
+            Err(error @ ConnectionReserveError::Rejected(ReserveError::OwnerPoisoned)) => {
+                self.observe_reserve_rejection(error, write_retained);
+                fail_context(reservation.abort(), not_sent(CallFailure::LocallyRejected));
+                let report = self.recover_failed_generation(connection, now, Some(causality))?;
+                self.capture_recovery(report);
+                return Ok(());
+            }
             Err(error) => {
                 self.observe_reserve_rejection(error, write_retained);
                 fail_context(
@@ -161,6 +186,6 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                 return Ok(());
             }
         };
-        self.commit_public(permit, frame, reservation, causality)
+        self.commit_public(permit, frame, reservation, now, causality)
     }
 }

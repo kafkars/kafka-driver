@@ -1,7 +1,10 @@
 //! `ApiVersions` session operation and admission opening on the direct Bornera connection.
 
-use bornera::{ConnectionCommitError, EngineCommitError, OutboundFrame, RegisteredTransport};
-use bornera_core::OperationOptions;
+use bornera::{
+    ConnectionCommitError, ConnectionReserveError, EngineCommitError, OutboundFrame,
+    RegisteredTransport,
+};
+use bornera_core::{OperationOptions, ReserveError};
 use calandria::{Deadline, RetainedBytes};
 use kafka_driver_core::{
     EffectId, KafkaSessionDeadline, KafkaSessionInput, Moment, NegotiationFailure,
@@ -14,7 +17,7 @@ use super::{
 };
 use crate::{
     negotiation::{NegotiationExchange, negotiate},
-    reactor::bornera::{OperationContextKey, correlation_id},
+    reactor::bornera::{ContextReserveFailure, OperationContextKey, correlation_id},
 };
 
 const NEGOTIATION_EFFECT: EffectId = EffectId::from_raw(1);
@@ -83,22 +86,40 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         else {
             return self.negotiation_failed(NegotiationFailure::Malformed, now);
         };
-        let Ok(mut reservation) = self
+        let mut reservation = match self
             .contexts
             .reserve(DirectOperationContext::negotiation(), RetainedBytes::ZERO)
-        else {
-            return self.negotiation_failed(NegotiationFailure::Capacity, now);
+        {
+            Ok(reservation) => reservation,
+            Err(error) if error.failure() == ContextReserveFailure::OwnerPoisoned => {
+                drop(error.into_context());
+                self.capture_context_divergence(now, None)?;
+                return Ok(());
+            }
+            Err(error) => {
+                drop(error.into_context());
+                return self.negotiation_failed(NegotiationFailure::Capacity, now);
+            }
         };
         let write_retained = RetainedBytes::try_from(measure.wire_bytes)
             .map_err(|error| std::io::Error::other(error.to_string()))?;
         let options = OperationOptions::until(Deadline::at(calandria_moment(deadline)))
             .session()
             .write_retained_bytes(write_retained);
-        let permit = match self
-            .set
-            .reserve(self.connection, calandria_moment(now), options)
-        {
+        let connection = self.live_connection()?;
+        let permit = match self.set.reserve(connection, calandria_moment(now), options) {
             Ok(permit) => permit,
+            Err(ConnectionReserveError::StaleConnection) => {
+                drop(reservation.abort());
+                return self.stale_generation_fatal(now, None);
+            }
+            Err(error @ ConnectionReserveError::Rejected(ReserveError::OwnerPoisoned)) => {
+                self.observe_reserve_rejection(error, write_retained);
+                drop(reservation.abort());
+                let report = self.recover_failed_generation(connection, now, None)?;
+                self.capture_recovery(report);
+                return Ok(());
+            }
             Err(error) => {
                 self.observe_reserve_rejection(error, write_retained);
                 drop(reservation.abort());
@@ -138,26 +159,33 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         reservation: crate::reactor::bornera::ContextReservation<DirectOperationContext>,
         now: Moment,
     ) -> std::io::Result<()> {
-        let operation = match self.set.commit(self.connection, permit, frame) {
+        let connection = self.live_connection()?;
+        let operation = match self.set.commit(connection, permit, frame) {
             Ok(operation) => operation,
             Err(ConnectionCommitError::Connection(EngineCommitError::AcceptedOwnerFailure {
                 operation,
                 ..
             })) => {
-                self.publish_negotiation(operation, reservation)?;
+                self.publish_negotiation(operation, reservation, now)?;
                 if self.pending_recovery.is_none() {
-                    self.pending_recovery =
-                        Some(self.set.try_recover(self.connection).map_err(message)?);
+                    let report = self.recover_failed_generation(connection, now, None)?;
+                    self.capture_recovery(report);
                 }
                 return Ok(());
+            }
+            Err(ConnectionCommitError::StaleConnection { permit, frame }) => {
+                drop((permit, frame, reservation.abort()));
+                return self.stale_generation_fatal(now, None);
             }
             Err(_) => {
                 drop(reservation.abort());
                 return self.negotiation_failed(NegotiationFailure::Capacity, now);
             }
         };
-        self.publish_negotiation(operation, reservation)?;
-        self.mark_runnable();
+        self.publish_negotiation(operation, reservation, now)?;
+        if self.pending_recovery.is_none() {
+            self.mark_runnable();
+        }
         Ok(())
     }
 
@@ -165,14 +193,18 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         &mut self,
         operation: bornera_core::OperationId,
         reservation: crate::reactor::bornera::ContextReservation<DirectOperationContext>,
+        now: Moment,
     ) -> std::io::Result<()> {
-        let key = OperationContextKey::new(self.connection.epoch(), operation);
+        let connection = self.live_connection()?;
+        let key = OperationContextKey::new(connection.epoch(), operation);
         if reservation.publish(key).is_err() {
-            self.pending_recovery = Some(
-                self.set
-                    .abandon(self.connection, bornera::OwnerFailure::OwnerInvariant)
-                    .map_err(message)?,
-            );
+            let report = self.abandon_generation(
+                connection,
+                bornera::OwnerFailure::OwnerInvariant,
+                now,
+                None,
+            )?;
+            self.capture_diverged_recovery(report);
         }
         Ok(())
     }

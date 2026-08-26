@@ -1,6 +1,6 @@
 //! Ordered session-policy effects and one owner-local establishment deadline.
 
-use bornera::RegisteredTransport;
+use bornera::{ConnectionAccessError, RegisteredTransport};
 use bornera_core::CloseReason;
 use calandria::Deadline;
 use kafka_driver_core::{KafkaSessionCloseReason, KafkaSessionEffect, KafkaSessionInput, Moment};
@@ -57,31 +57,64 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                 Ok(())
             }
             KafkaSessionEffect::SessionReady => {
+                let connection = self.live_connection()?;
                 self.clear_authentication_ownership();
-                self.release_scram_proof_sender();
                 self.session_deadline = None;
-                self.set.open_admission(self.connection).map_err(message)?;
+                match self.set.open_admission(connection) {
+                    Ok(_) => {}
+                    Err(ConnectionAccessError::StaleConnection) => {
+                        return self.stale_generation_fatal(now, None);
+                    }
+                    Err(ConnectionAccessError::Owner(_)) => {
+                        let report = self.recover_failed_generation(connection, now, None)?;
+                        self.capture_recovery(report);
+                        return Ok(());
+                    }
+                    Err(error) => return Err(message(error)),
+                }
                 self.mark_runnable();
                 Ok(())
             }
             KafkaSessionEffect::BeginDrain => {
+                let connection = self.live_connection()?;
                 self.admission_open = false;
                 let deadline = add(now, DRAIN_TIMEOUT)?;
-                self.set
-                    .begin_drain(self.connection, Deadline::at(calandria_moment(deadline)))
-                    .map_err(message)?;
+                match self
+                    .set
+                    .begin_drain(connection, Deadline::at(calandria_moment(deadline)))
+                {
+                    Ok(_) => {}
+                    Err(ConnectionAccessError::StaleConnection) => {
+                        return self.stale_generation_fatal(now, None);
+                    }
+                    Err(ConnectionAccessError::Owner(_)) => {
+                        let report = self.recover_failed_generation(connection, now, None)?;
+                        self.capture_recovery(report);
+                        return Ok(());
+                    }
+                    Err(error) => return Err(message(error)),
+                }
                 self.mark_runnable();
                 Ok(())
             }
             KafkaSessionEffect::CloseSession { reason } => {
+                let connection = self.live_connection()?;
                 self.admission_open = false;
                 self.clear_authentication_ownership();
-                self.release_scram_proof_sender();
                 self.session_deadline = None;
-                self.record_session_close(reason);
-                self.set
-                    .finalize(self.connection, close_reason(reason))
-                    .map_err(message)?;
+                self.record_generation_close(reason);
+                match self.set.finalize(connection, close_reason(reason)) {
+                    Ok(_) => {}
+                    Err(ConnectionAccessError::StaleConnection) => {
+                        return self.stale_generation_fatal(now, None);
+                    }
+                    Err(ConnectionAccessError::Owner(_)) => {
+                        let report = self.recover_failed_generation(connection, now, None)?;
+                        self.capture_recovery(report);
+                        return Ok(());
+                    }
+                    Err(error) => return Err(message(error)),
+                }
                 self.mark_runnable();
                 Ok(())
             }

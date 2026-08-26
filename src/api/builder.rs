@@ -32,8 +32,9 @@ impl DriverBuilder {
 
     /// Configures the single plaintext broker endpoint owned by this reactor.
     ///
-    /// This direct numeric target owns one connection generation and does not
-    /// reconnect after a terminal connection failure during the Bornera cutover.
+    /// Recoverable connection failures retry this same numeric address through
+    /// fresh Bornera generations after bounded backoff. This target does not
+    /// refresh DNS or discover a multi-broker topology.
     #[must_use]
     pub fn broker(mut self, address: SocketAddr) -> Self {
         self.target = Some(DriverTarget::Direct(BrokerConfig::plaintext(address)));
@@ -51,8 +52,9 @@ impl DriverBuilder {
 
     /// Configures one broker protected by an explicitly bound rustls identity.
     ///
-    /// This direct numeric target owns one connection generation and does not
-    /// reconnect after a terminal connection failure during the Bornera cutover.
+    /// Recoverable connection failures reestablish TLS to this same numeric
+    /// address through fresh Bornera generations after bounded backoff. This
+    /// target does not refresh DNS or discover a multi-broker topology.
     #[cfg(feature = "tls-rustls")]
     #[must_use]
     pub fn rustls_broker(mut self, address: SocketAddr, tls: crate::TlsClientConfig) -> Self {

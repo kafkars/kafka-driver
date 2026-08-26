@@ -1,13 +1,13 @@
 //! Rustls acquisition with a fresh decoder feedback gate for every epoch.
 
-use std::{io, net::SocketAddr};
+use std::net::SocketAddr;
 
-use bornera::ConnectionToken;
+use bornera::{ConnectError, ConnectionToken};
 use bornera_core::ConnectionEpoch;
 use bornera_rustls::RustlsConnector;
 use kafka_driver_core::Moment;
 
-use super::{DirectConnectionAttempt, connection_config};
+use super::{DirectConnectError, DirectConnectionAttempt, connection_config};
 use crate::{
     config::{DriverLimits, TlsClientConfig},
     reactor::{bornera::KafkaReplyClassifier, broker::BrokerLimits},
@@ -16,7 +16,7 @@ use crate::{
 use crate::reactor::direct_plaintext::{
     decoder_gate::DecoderGate,
     limits::{rustls_transport_limits, slot_limits},
-    owner::{DirectSet, message},
+    owner::DirectSet,
     rustls_transport::{DirectRustlsConnector, DirectRustlsTransport},
 };
 
@@ -49,26 +49,44 @@ impl DirectConnectionAttempt<DirectRustlsTransport> for RustlsAttempt {
         set: &mut DirectSet<DirectRustlsTransport>,
         epoch: ConnectionEpoch,
         now: Moment,
-    ) -> io::Result<ConnectionToken> {
-        let transport = rustls_transport_limits()?;
+    ) -> Result<ConnectionToken, DirectConnectError> {
+        let transport = rustls_transport_limits().map_err(DirectConnectError::fatal)?;
         let decoder_gate = DecoderGate::new();
         let (decoder, slot) = slot_limits(
             &self.driver,
             self.broker,
             transport.transport_limits(),
             Some(decoder_gate.clone()),
-        )?;
+        )
+        .map_err(DirectConnectError::fatal)?;
         let connector = DirectRustlsConnector::new(
             RustlsConnector::new(self.tls.clone().into_bornera(transport)),
             decoder_gate,
         );
         set.connect_with(
-            connection_config(self.address, epoch, now, self.broker)?,
+            connection_config(self.address, epoch, now, self.broker)
+                .map_err(DirectConnectError::fatal)?,
             slot,
             decoder,
             KafkaReplyClassifier,
             connector,
         )
-        .map_err(message)
+        .map_err(rustls_connect_error)
+    }
+}
+
+pub(in crate::reactor::direct_plaintext) fn rustls_connect_error<E: std::fmt::Display>(
+    error: ConnectError<E>,
+) -> DirectConnectError {
+    match error {
+        ConnectError::Io(source)
+            if source
+                .get_ref()
+                .and_then(|inner| inner.downcast_ref::<bornera_rustls::RustlsConnectError>())
+                .is_none() =>
+        {
+            DirectConnectError::endpoint(source)
+        }
+        other => DirectConnectError::fatal(other),
     }
 }

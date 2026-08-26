@@ -176,3 +176,17 @@ fn transport_failure(diagnostic: TransportDiagnostic) -> TransportFailure {
         _ => TransportFailure::Other,
     }
 }
+
+pub(super) fn synchronous_open_failure(source: &std::io::Error) -> CloseReason {
+    let failure = match source.kind() {
+        std::io::ErrorKind::TimedOut => TransportFailure::TimedOut,
+        std::io::ErrorKind::ConnectionRefused => TransportFailure::Refused,
+        std::io::ErrorKind::ConnectionReset
+        | std::io::ErrorKind::ConnectionAborted
+        | std::io::ErrorKind::BrokenPipe
+        | std::io::ErrorKind::NotConnected
+        | std::io::ErrorKind::UnexpectedEof => TransportFailure::Reset,
+        _ => TransportFailure::Other,
+    };
+    CloseReason::OpenFailed(failure)
+}

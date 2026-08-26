@@ -4,13 +4,12 @@ use std::{net::TcpListener, sync::mpsc, thread, time::Duration};
 
 use calandria::Span;
 use kafka_driver_core::{
-    AuthenticationFailure, BrokerCloseReason, BrokerState, CallFailure, CallId, CloseReason,
-    ConnectionPhase, Delivery, KafkaSessionCloseReason, KafkaSessionState, Moment,
-    TransportFailure,
+    AuthenticationFailure, BrokerState, CallId, CloseReason, ConnectionPhase,
+    KafkaSessionCloseReason, KafkaSessionState, Moment, TransportFailure,
 };
 use kafka_wire::ApiVersionsRequest;
 
-use crate::{DriverLimits, RequestError, SaslConfig, request::erased_request};
+use crate::{DriverLimits, SaslConfig, request::erased_request};
 
 use super::{
     authentication_fixture_test::{serve_accepted_handshake_then_eof, serve_stalled_handshake},
@@ -19,7 +18,7 @@ use super::{
 use crate::reactor::causality::CausalSequence;
 
 #[test]
-fn plain_handshake_deadline_fires_before_engine_and_closes_exactly() {
+fn plain_handshake_deadline_fires_before_engine_then_retries_exactly() {
     let listener = TcpListener::bind("127.0.0.1:0")
         .unwrap_or_else(|error| panic!("bind stalled PLAIN broker: {error}"));
     let address = listener
@@ -56,18 +55,10 @@ fn plain_handshake_deadline_fires_before_engine_and_closes_exactly() {
             reason: KafkaSessionCloseReason::AuthenticationFailed(AuthenticationFailure::Timeout),
         }
     ));
-    drive_until_terminal(&mut owner, deadline, &mut causality);
+    drive_until_backoff(&mut owner, deadline, &mut causality);
 
     let expected_reason = CloseReason::AuthenticationFailed(AuthenticationFailure::Timeout);
-    assert_eq!(
-        call.try_result(),
-        Some(Ok(Err(RequestError::Rejected {
-            failure: CallFailure::ConnectionClosed {
-                reason: expected_reason,
-            },
-            delivery: Delivery::NotSent,
-        })))
-    );
+    assert!(call.try_result().is_none());
     assert_eq!(
         owner.session.state(),
         KafkaSessionState::Closed {
@@ -77,15 +68,11 @@ fn plain_handshake_deadline_fires_before_engine_and_closes_exactly() {
     assert_empty_contexts(&owner);
     let seed = owner
         .seed_snapshot()
-        .unwrap_or_else(|| panic!("terminal authentication seed must be retained"));
+        .unwrap_or_else(|| panic!("retrying authentication seed must remain observable"));
     assert_eq!(seed.last_close_reason(), Some(expected_reason));
     assert_eq!(seed.connection_phase(), ConnectionPhase::Closed);
-    assert_eq!(
-        seed.broker_state(),
-        BrokerState::Closed {
-            reason: BrokerCloseReason::AuthenticationFailed(AuthenticationFailure::Timeout),
-        }
-    );
+    assert!(matches!(seed.broker_state(), BrokerState::Backoff { .. }));
+    assert!(!owner.is_terminal());
 
     let finished = server
         .join()
@@ -96,7 +83,7 @@ fn plain_handshake_deadline_fires_before_engine_and_closes_exactly() {
 }
 
 #[test]
-fn accepted_plain_handshake_followed_by_eof_remains_transport_loss() {
+fn accepted_plain_handshake_followed_by_eof_retries_as_transport_loss() {
     let listener = TcpListener::bind("127.0.0.1:0")
         .unwrap_or_else(|error| panic!("bind EOF PLAIN broker: {error}"));
     let address = listener
@@ -114,18 +101,10 @@ fn accepted_plain_handshake_followed_by_eof_remains_transport_loss() {
     owner
         .submit(request, now, &mut causality)
         .unwrap_or_else(|error| panic!("queue call behind EOF PLAIN handshake: {error}"));
-    drive_until_terminal(&mut owner, now, &mut causality);
+    drive_until_backoff(&mut owner, now, &mut causality);
 
     let expected_reason = CloseReason::TransportLost(TransportFailure::Other);
-    assert_eq!(
-        call.try_result(),
-        Some(Ok(Err(RequestError::Rejected {
-            failure: CallFailure::ConnectionClosed {
-                reason: expected_reason,
-            },
-            delivery: Delivery::NotSent,
-        })))
-    );
+    assert!(call.try_result().is_none());
     assert_eq!(owner.last_close_reason, Some(expected_reason));
     assert_empty_contexts(&owner);
     let observed = server
@@ -157,19 +136,19 @@ fn drive_until_observed(
     panic!("PLAIN handshake was not emitted within 64 turns");
 }
 
-fn drive_until_terminal(
+fn drive_until_backoff(
     owner: &mut DirectPlaintextOwner,
     now: Moment,
     causality: &mut CausalSequence,
 ) {
     for _ in 0..64 {
-        if owner.is_terminal() {
+        if matches!(owner.lifecycle.state(), BrokerState::Backoff { .. }) {
             return;
         }
         drive(owner, now, causality);
         wait_if_idle(owner);
     }
-    panic!("direct PLAIN owner did not become terminal within 64 turns");
+    panic!("direct PLAIN owner did not enter backoff within 64 turns");
 }
 
 fn drive(owner: &mut DirectPlaintextOwner, now: Moment, causality: &mut CausalSequence) -> bool {

@@ -104,7 +104,7 @@ impl BrokerConfig {
     }
 }
 
-/// One fixed numeric owner supported by the Bornera backend without reconnect parity.
+/// One fixed numeric Bornera owner with same-address reconnect generations.
 pub(crate) enum DirectBrokerConfig {
     Plaintext {
         address: SocketAddr,

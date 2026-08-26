@@ -30,7 +30,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             drop(pending);
             return Err(worker_lost());
         };
-        let request = ScramProofRequest::direct(self.connection, effect_id, round, pending);
+        let request = ScramProofRequest::direct(self.live_connection()?, effect_id, round, pending);
         let fence = request.fence();
         match sender.submit(request) {
             Ok(()) => {
@@ -68,7 +68,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             return Ok(false);
         }
         self.pending_scram_proof = None;
-        if fence.target().direct_connection() != Some(self.connection)
+        if fence.target().direct_connection() != self.connection
             || !self.scram_round_is_active(fence.round())
         {
             return Ok(false);

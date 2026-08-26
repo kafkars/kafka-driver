@@ -20,22 +20,27 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         permit: bornera_core::OperationPermit,
         frame: bornera::OutboundFrame,
         reservation: crate::reactor::bornera::ContextReservation<DirectOperationContext>,
+        now: kafka_driver_core::Moment,
         causality: &mut CausalSequence,
     ) -> std::io::Result<()> {
-        match self.set.commit(self.connection, permit, frame) {
+        let connection = self.live_connection()?;
+        match self.set.commit(connection, permit, frame) {
             Ok(operation) => {
-                self.publish_public(operation, reservation)?;
-                self.mark_runnable();
+                self.publish_public(operation, reservation, now, causality)?;
+                if self.pending_recovery.is_none() {
+                    self.mark_runnable();
+                }
                 Ok(())
             }
             Err(ConnectionCommitError::Connection(EngineCommitError::AcceptedOwnerFailure {
                 operation,
                 ..
             })) => {
-                self.publish_public(operation, reservation)?;
+                self.publish_public(operation, reservation, now, causality)?;
                 if self.pending_recovery.is_none() {
-                    self.pending_recovery =
-                        Some(self.set.try_recover(self.connection).map_err(message)?);
+                    let report =
+                        self.recover_failed_generation(connection, now, Some(causality))?;
+                    self.capture_recovery(report);
                 }
                 Ok(())
             }
@@ -46,38 +51,25 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             }
             Err(ConnectionCommitError::Connection(EngineCommitError::OwnerFailed { .. })) => {
                 fail_context(reservation.abort(), not_sent(CallFailure::LocallyRejected));
-                self.pending_recovery =
-                    Some(self.set.try_recover(self.connection).map_err(message)?);
+                let report = self.recover_failed_generation(connection, now, Some(causality))?;
+                self.capture_recovery(report);
                 Ok(())
             }
-            Err(ConnectionCommitError::StaleConnection { .. }) => {
+            Err(ConnectionCommitError::StaleConnection { permit, frame }) => {
+                drop((permit, frame));
                 if let DirectOperationContext::Public(context) = reservation.abort() {
-                    let observed = causality.outcome().map_err(message)?;
-                    let _ = context.fail_observed(not_sent(CallFailure::Closed), observed);
+                    match causality.outcome() {
+                        Ok(observed) => {
+                            let _ = context.fail_observed(not_sent(CallFailure::Closed), observed);
+                        }
+                        Err(error) => {
+                            let _ = context.fail(not_sent(CallFailure::Closed));
+                            let _ = self.stale_generation_fatal(now, Some(causality));
+                            return Err(message(error));
+                        }
+                    }
                 }
-                let reason = super::failure_translation::close_reason(
-                    bornera_core::CloseReason::TransportLost,
-                );
-                self.fail_remaining(
-                    &super::failure_translation::recovery(
-                        reason,
-                        kafka_driver_core::Delivery::PossiblySent,
-                    ),
-                    Some(causality),
-                    None,
-                )?;
-                self.fail_pending(
-                    &super::failure_translation::recovery(
-                        reason,
-                        kafka_driver_core::Delivery::NotSent,
-                    ),
-                    Some(causality),
-                )?;
-                self.admission_open = false;
-                self.session_closed(kafka_driver_core::Moment::from_nanos(0))?;
-                self.last_close_reason = Some(reason);
-                self.terminal = true;
-                Ok(())
+                self.stale_generation_fatal(now, Some(causality))
             }
             Err(_) => {
                 fail_context(reservation.abort(), RequestError::IdentityConflict);
@@ -90,20 +82,25 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         &mut self,
         operation: bornera_core::OperationId,
         mut reservation: crate::reactor::bornera::ContextReservation<DirectOperationContext>,
+        now: kafka_driver_core::Moment,
+        causality: &mut CausalSequence,
     ) -> std::io::Result<()> {
         reservation.bind(|context| {
             if let DirectOperationContext::Public(context) = context {
                 context.mark_writer(Instant::now());
             }
         });
-        let key = OperationContextKey::new(self.connection.epoch(), operation);
+        let connection = self.live_connection()?;
+        let key = OperationContextKey::new(connection.epoch(), operation);
         if let Err(error) = reservation.publish(key) {
             fail_context(error.into_context(), RequestError::IdentityConflict);
-            self.pending_recovery = Some(
-                self.set
-                    .abandon(self.connection, bornera::OwnerFailure::OwnerInvariant)
-                    .map_err(message)?,
-            );
+            let report = self.abandon_generation(
+                connection,
+                bornera::OwnerFailure::OwnerInvariant,
+                now,
+                Some(causality),
+            )?;
+            self.capture_diverged_recovery(report);
         }
         Ok(())
     }

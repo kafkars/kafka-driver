@@ -7,9 +7,8 @@ use kafka_driver_core::{AuthenticationFailure, Moment};
 use crate::reactor::bornera::{ContextReservation, OperationContextKey};
 
 use super::{
-    authentication_settlement::AuthenticationStageOwner,
-    operation_owner::DirectOperationContext,
-    owner::{DirectOwner, message},
+    authentication_settlement::AuthenticationStageOwner, operation_owner::DirectOperationContext,
+    owner::DirectOwner,
 };
 
 impl<T: RegisteredTransport> DirectOwner<T> {
@@ -21,17 +20,20 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         stage: AuthenticationStageOwner,
         now: Moment,
     ) -> std::io::Result<()> {
-        match self.set.commit(self.connection, permit, frame) {
+        let connection = self.live_connection()?;
+        match self.set.commit(connection, permit, frame) {
             Ok(operation) => {
-                self.publish_authentication(operation, reservation)?;
-                self.mark_runnable();
+                self.publish_authentication(operation, reservation, now)?;
+                if self.pending_recovery.is_none() {
+                    self.mark_runnable();
+                }
             }
             Err(ConnectionCommitError::Connection(EngineCommitError::AcceptedOwnerFailure {
                 operation,
                 ..
             })) => {
-                self.publish_authentication(operation, reservation)?;
-                self.recover_authentication_owner()?;
+                self.publish_authentication(operation, reservation, now)?;
+                self.recover_authentication_owner(now)?;
             }
             Err(ConnectionCommitError::Connection(EngineCommitError::Rejected(error))) => {
                 let disposition = authentication_commit_disposition(error.failure());
@@ -43,10 +45,10 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                     }
                     AuthenticationCommitDisposition::Lifecycle => {}
                     AuthenticationCommitDisposition::Recover => {
-                        self.recover_authentication_owner()?;
+                        self.recover_authentication_owner(now)?;
                     }
                     AuthenticationCommitDisposition::Abandon => {
-                        self.abandon_authentication_owner()?;
+                        self.abandon_authentication_owner(now)?;
                     }
                 }
             }
@@ -57,14 +59,12 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             })) => {
                 drop((permit, frame));
                 drop(reservation.abort());
-                self.recover_authentication_owner()?;
+                self.recover_authentication_owner(now)?;
             }
             Err(ConnectionCommitError::StaleConnection { permit, frame }) => {
                 drop((permit, frame));
                 drop(reservation.abort());
-                return Err(std::io::Error::other(
-                    "stale connection rejected an authentication commit",
-                ));
+                return self.stale_generation_fatal(now, None);
             }
             Err(error) => {
                 drop(error);
@@ -81,33 +81,42 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         &mut self,
         operation: bornera_core::OperationId,
         reservation: ContextReservation<DirectOperationContext>,
+        now: Moment,
     ) -> std::io::Result<()> {
-        let key = OperationContextKey::new(self.connection.epoch(), operation);
+        let connection = self.live_connection()?;
+        let key = OperationContextKey::new(connection.epoch(), operation);
         if let Err(error) = reservation.publish(key) {
             drop(error.into_context());
-            self.pending_recovery = Some(
-                self.set
-                    .abandon(self.connection, bornera::OwnerFailure::OwnerInvariant)
-                    .map_err(message)?,
-            );
+            let report = self.abandon_generation(
+                connection,
+                bornera::OwnerFailure::OwnerInvariant,
+                now,
+                None,
+            )?;
+            self.capture_diverged_recovery(report);
         }
         Ok(())
     }
 
-    fn recover_authentication_owner(&mut self) -> std::io::Result<()> {
+    fn recover_authentication_owner(&mut self, now: Moment) -> std::io::Result<()> {
         if self.pending_recovery.is_none() {
-            self.pending_recovery = Some(self.set.try_recover(self.connection).map_err(message)?);
+            let connection = self.live_connection()?;
+            let report = self.recover_failed_generation(connection, now, None)?;
+            self.capture_recovery(report);
         }
         Ok(())
     }
 
-    fn abandon_authentication_owner(&mut self) -> std::io::Result<()> {
+    fn abandon_authentication_owner(&mut self, now: Moment) -> std::io::Result<()> {
         if self.pending_recovery.is_none() {
-            self.pending_recovery = Some(
-                self.set
-                    .abandon(self.connection, bornera::OwnerFailure::OwnerInvariant)
-                    .map_err(message)?,
-            );
+            let connection = self.live_connection()?;
+            let report = self.abandon_generation(
+                connection,
+                bornera::OwnerFailure::OwnerInvariant,
+                now,
+                None,
+            )?;
+            self.capture_recovery(report);
         }
         Ok(())
     }

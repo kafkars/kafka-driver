@@ -194,7 +194,11 @@ fn open_transport(owner: &mut DirectPlaintextOwner) {
             .unwrap_or_else(|error| panic!("drive direct SCRAM transport: {error}"));
         if owner
             .set
-            .connection_snapshot(owner.connection)
+            .connection_snapshot(
+                owner
+                    .live_connection()
+                    .unwrap_or_else(|error| panic!("read SCRAM fixture connection: {error}")),
+            )
             .is_ok_and(|snapshot| snapshot.transport == TransportState::Open)
         {
             return;

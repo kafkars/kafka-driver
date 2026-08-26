@@ -11,6 +11,8 @@ mod construction;
 mod decoder_gate;
 mod drive;
 mod failure_translation;
+mod invariant_failure;
+mod lifecycle;
 mod limits;
 mod negotiation;
 mod observation;
@@ -19,6 +21,8 @@ mod owner;
 mod pending;
 mod public_settlement;
 mod publication;
+mod reconnect;
+mod recovery_owners;
 mod recovery_settlement;
 #[cfg(feature = "tls-rustls")]
 mod rustls_transport;
@@ -40,11 +44,23 @@ mod authentication_test;
 #[cfg(feature = "tls-rustls")]
 mod decoder_gate_test;
 #[cfg(test)]
+mod drive_test;
+#[cfg(test)]
+mod lifecycle_test;
+#[cfg(test)]
 mod owner_test;
 #[cfg(test)]
 mod pending_test;
 #[cfg(test)]
+mod public_settlement_test;
+#[cfg(test)]
+mod reconnect_edge_test;
+#[cfg(test)]
+mod reconnect_fatal_test;
+#[cfg(test)]
 mod recovery_test;
+#[cfg(test)]
+mod recovery_totality_test;
 #[cfg(all(test, feature = "tls-rustls"))]
 mod rustls_attempt_test;
 #[cfg(test)]

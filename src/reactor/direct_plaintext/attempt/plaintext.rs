@@ -1,22 +1,21 @@
 //! Plain TCP acquisition with fresh framing ownership for every epoch.
 
-use std::{io, net::SocketAddr};
+use std::net::SocketAddr;
 
 use bornera::{ConnectionToken, TcpTransport, TransportLimits};
 use bornera_core::ConnectionEpoch;
 use calandria::RetainedBytes;
 use kafka_driver_core::Moment;
 
-use super::{DirectConnectionAttempt, connection_config};
+use super::{
+    DirectConnectError, DirectConnectionAttempt, connection_config, plaintext_connect_error,
+};
 use crate::{
     config::DriverLimits,
     reactor::{bornera::KafkaReplyClassifier, broker::BrokerLimits},
 };
 
-use crate::reactor::direct_plaintext::{
-    limits::slot_limits,
-    owner::{DirectSet, message},
-};
+use crate::reactor::direct_plaintext::{limits::slot_limits, owner::DirectSet};
 
 pub(in crate::reactor::direct_plaintext) struct PlaintextAttempt {
     driver: DriverLimits,
@@ -44,19 +43,21 @@ impl DirectConnectionAttempt<TcpTransport> for PlaintextAttempt {
         set: &mut DirectSet<TcpTransport>,
         epoch: ConnectionEpoch,
         now: Moment,
-    ) -> io::Result<ConnectionToken> {
+    ) -> Result<ConnectionToken, DirectConnectError> {
         let (decoder, slot) = slot_limits(
             &self.driver,
             self.broker,
             TransportLimits::new(RetainedBytes::ZERO),
             None,
-        )?;
+        )
+        .map_err(DirectConnectError::fatal)?;
         set.connect(
-            connection_config(self.address, epoch, now, self.broker)?,
+            connection_config(self.address, epoch, now, self.broker)
+                .map_err(DirectConnectError::fatal)?,
             slot,
             decoder,
             KafkaReplyClassifier,
         )
-        .map_err(message)
+        .map_err(plaintext_connect_error)
     }
 }

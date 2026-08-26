@@ -1,10 +1,9 @@
-//! Compatibility observation projected from Bornera and the Kafka session owner.
+//! Public observation projected from long-lived policy and Bornera mechanics.
 
 use bornera::{ConnectionReserveError, RegisteredTransport, TransportState};
 use bornera_core::{ReserveError, RetainedBytes};
 use kafka_driver_core::{
-    BrokerCloseReason, BrokerState, CloseReason, ConnectionEpoch, ConnectionPhase,
-    KafkaSessionCloseReason, KafkaSessionState, TransportFailure,
+    CloseReason, ConnectionPhase, KafkaSessionCloseReason, KafkaSessionState, TransportFailure,
 };
 
 use crate::{SeedSnapshot, WriteQueueSnapshot};
@@ -13,20 +12,31 @@ use super::{failure_translation::connection_close_reason, owner::DirectOwner};
 
 impl<T: RegisteredTransport> DirectOwner<T> {
     pub(in crate::reactor) fn seed_snapshot(&self) -> Option<SeedSnapshot> {
-        self.live_seed_snapshot().or(self.retired_seed)
+        if !self.terminal && self.lifecycle.has_live_generation() {
+            return self.live_seed_snapshot();
+        }
+        if self.terminal && !self.lifecycle.is_closed() {
+            return None;
+        }
+        Some(SeedSnapshot::new(
+            self.lifecycle.state(),
+            ConnectionPhase::Closed,
+            self.last_close_reason,
+            self.empty_write_queue(),
+        ))
     }
 
     fn live_seed_snapshot(&self) -> Option<SeedSnapshot> {
-        let mechanical = self.set.connection_snapshot(self.connection).ok()?;
-        let epoch = ConnectionEpoch::from_raw(self.connection.epoch().get());
-        let session = self.session.state();
-        let broker_state = self.broker_state(session, epoch, mechanical.transport)?;
-        let connection_phase = connection_phase(session, mechanical.transport, self.admission_open);
+        let mechanical = self.set.connection_snapshot(self.connection?).ok()?;
         let retained_bytes =
             usize::try_from(mechanical.buffered_write_retained_bytes.get()).unwrap_or(usize::MAX);
         Some(SeedSnapshot::new(
-            broker_state,
-            connection_phase,
+            self.lifecycle.state(),
+            connection_phase(
+                self.session.state(),
+                mechanical.transport,
+                self.admission_open,
+            ),
             self.last_close_reason.or_else(|| {
                 mechanical
                     .connection
@@ -42,95 +52,13 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         ))
     }
 
-    fn broker_state(
-        &self,
-        session: KafkaSessionState,
-        epoch: ConnectionEpoch,
-        transport: TransportState,
-    ) -> Option<BrokerState> {
-        match transport {
-            TransportState::Closing => {
-                return match session {
-                    KafkaSessionState::Closing {
-                        reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
-                    }
-                    | KafkaSessionState::Closed {
-                        reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
-                    } => Some(BrokerState::Closed {
-                        reason: BrokerCloseReason::AuthenticationFailed(failure),
-                    }),
-                    KafkaSessionState::Draining { .. }
-                    | KafkaSessionState::Closing {
-                        reason:
-                            KafkaSessionCloseReason::Requested | KafkaSessionCloseReason::Drained,
-                    }
-                    | KafkaSessionState::Closed {
-                        reason:
-                            KafkaSessionCloseReason::Requested | KafkaSessionCloseReason::Drained,
-                    } => Some(BrokerState::Draining { epoch }),
-                    _ => None,
-                };
-            }
-            TransportState::Closed => {
-                return match session {
-                    KafkaSessionState::Closing {
-                        reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
-                    }
-                    | KafkaSessionState::Closed {
-                        reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
-                    } => Some(BrokerState::Closed {
-                        reason: BrokerCloseReason::AuthenticationFailed(failure),
-                    }),
-                    KafkaSessionState::Closed {
-                        reason:
-                            KafkaSessionCloseReason::Requested | KafkaSessionCloseReason::Drained,
-                    } => Some(BrokerState::Closed {
-                        reason: BrokerCloseReason::Requested,
-                    }),
-                    KafkaSessionState::Draining { .. }
-                    | KafkaSessionState::Closing {
-                        reason:
-                            KafkaSessionCloseReason::Requested | KafkaSessionCloseReason::Drained,
-                    } => Some(BrokerState::Draining { epoch }),
-                    _ => None,
-                };
-            }
-            TransportState::Connecting | TransportState::Open => {}
-            _ => return None,
-        }
-        match session {
-            KafkaSessionState::AwaitingTransport
-            | KafkaSessionState::Negotiating { .. }
-            | KafkaSessionState::Authenticating { .. } => {
-                Some(BrokerState::Connecting { epoch, retry: None })
-            }
-            KafkaSessionState::Ready { .. }
-                if self.admission_open && transport == TransportState::Open =>
-            {
-                Some(BrokerState::Available { epoch })
-            }
-            KafkaSessionState::Ready { .. } => Some(BrokerState::Connecting { epoch, retry: None }),
-            KafkaSessionState::Draining { .. }
-            | KafkaSessionState::Closing {
-                reason: KafkaSessionCloseReason::Requested | KafkaSessionCloseReason::Drained,
-            } => Some(BrokerState::Draining { epoch }),
-            KafkaSessionState::Closed {
-                reason: KafkaSessionCloseReason::Requested | KafkaSessionCloseReason::Drained,
-            } => Some(BrokerState::Closed {
-                reason: BrokerCloseReason::Requested,
-            }),
-            KafkaSessionState::Closing {
-                reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
-            }
-            | KafkaSessionState::Closed {
-                reason: KafkaSessionCloseReason::AuthenticationFailed(failure),
-            } => Some(BrokerState::Closed {
-                reason: BrokerCloseReason::AuthenticationFailed(failure),
-            }),
-            // A fixed direct slot has no reconnect state capable of honestly
-            // representing a generic fatal terminal failure.
-            KafkaSessionState::Closing { .. } | KafkaSessionState::Closed { .. } => None,
-        }
+    fn empty_write_queue(&self) -> WriteQueueSnapshot {
+        WriteQueueSnapshot::new(
+            0,
+            0,
+            self.write_frame_rejections,
+            self.write_byte_rejections,
+        )
     }
 
     pub(super) fn observe_reserve_rejection(
@@ -144,7 +72,10 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         ) {
             return;
         }
-        let Ok(snapshot) = self.set.connection_snapshot(self.connection) else {
+        let Some(connection) = self.connection else {
+            return;
+        };
+        let Ok(snapshot) = self.set.connection_snapshot(connection) else {
             return;
         };
         if snapshot.connection.buffered_write_frames >= self.write_frame_capacity {
@@ -162,31 +93,8 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         }
     }
 
-    pub(super) fn record_session_close(&mut self, reason: KafkaSessionCloseReason) {
-        self.last_close_reason = Some(session_close_reason(reason));
-    }
-
-    pub(super) fn latch_retired_seed(&mut self) {
-        self.retired_seed = self.live_seed_snapshot();
-    }
-
-    pub(super) fn latch_recovered_seed(&mut self, recovered_epoch: u64) {
-        let session = self.session.state();
-        let epoch = ConnectionEpoch::from_raw(recovered_epoch);
-        let Some(broker_state) = self.broker_state(session, epoch, TransportState::Closed) else {
-            return;
-        };
-        self.retired_seed = Some(SeedSnapshot::new(
-            broker_state,
-            ConnectionPhase::Closed,
-            self.last_close_reason,
-            WriteQueueSnapshot::new(
-                0,
-                0,
-                self.write_frame_rejections,
-                self.write_byte_rejections,
-            ),
-        ));
+    pub(super) fn record_generation_close(&mut self, reason: KafkaSessionCloseReason) {
+        self.generation_close_reason = Some(session_close_reason(reason));
     }
 }
 

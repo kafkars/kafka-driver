@@ -96,7 +96,7 @@ fn valid_tls_response_precedes_a_malformed_trailing_frame() {
 }
 
 #[test]
-fn two_correlated_responses_complete_before_terminal_tls_truncation() {
+fn two_correlated_responses_complete_before_tls_truncation_enters_backoff() {
     let broker = TlsBroker::bind();
     let address = broker.address();
     let tls = broker.client_config();
@@ -147,7 +147,7 @@ fn two_correlated_responses_complete_before_terminal_tls_truncation() {
     assert_eq!(
         probe,
         Ok(Err(RequestError::Rejected {
-            failure: CallFailure::Closed,
+            failure: CallFailure::DeadlineExceeded,
             delivery: Delivery::NotSent,
         }))
     );
@@ -185,7 +185,7 @@ fn loopback_ip_identity_round_trips_without_dns_sni() {
 }
 
 #[test]
-fn wrong_logical_name_fails_establishment_before_kafka_admission() {
+fn wrong_logical_name_retries_establishment_without_kafka_admission() {
     let broker = TlsBroker::bind();
     let address = broker.address();
     let tls = broker.client_config_for("wrong.invalid");
@@ -213,9 +213,7 @@ fn wrong_logical_name_fails_establishment_before_kafka_admission() {
     assert_eq!(
         result,
         Ok(Err(RequestError::Rejected {
-            failure: CallFailure::ConnectionClosed {
-                reason: ConnectionCloseReason::OpenFailed(TransportFailure::Other),
-            },
+            failure: CallFailure::DeadlineExceeded,
             delivery: Delivery::NotSent,
         }))
     );
