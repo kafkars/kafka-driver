@@ -11,7 +11,7 @@ use super::{ClusterRuntime, SeedSlot, backend::ClusterBackend, reclaimable};
 
 #[cfg(test)]
 #[path = "seed_rotation_test.rs"]
-mod test;
+pub(super) mod test;
 
 #[cfg(test)]
 #[path = "seed_rotation_invariant_test.rs"]

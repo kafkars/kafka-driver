@@ -67,12 +67,12 @@ fn requested_retirement_preserves_waiters_until_owned_replacement() {
     assert!(!runtime.seed_waiting_is_closed());
     assert!(!runtime.seed_replacement_blocked().unwrap_or(true));
 
-    let ResolvedSeedReplacement::Busy(seed) = runtime
-        .replace_resolved_seed(&FailedResolvedFactory, resolved_seed(2), NOW)
-        .unwrap_or_else(|error| panic!("fence unowned replacement: {error}"))
-    else {
-        panic!("restart-pending replacement must retain raw evidence");
-    };
+    assert!(matches!(
+        runtime
+            .replace_resolved_seed(&FailedResolvedFactory, resolved_seed(2), NOW)
+            .unwrap_or_else(|error| panic!("fence unowned replacement: {error}")),
+        ResolvedSeedReplacement::Retained
+    ));
     runtime
         .mark_seed_bootstrap_resolution_owned()
         .unwrap_or_else(|error| panic!("transfer bootstrap ownership: {error}"));
@@ -82,12 +82,11 @@ fn requested_retirement_preserves_waiters_until_owned_replacement() {
             .unwrap_or_else(|error| panic!("ignore stale rotated seed: {error}")),
         ResolvedSeedReplacement::Stale
     ));
-    assert!(matches!(
+    assert!(
         runtime
-            .replace_resolved_seed(&FailedResolvedFactory, *seed, NOW)
-            .unwrap_or_else(|error| panic!("replace requested seed: {error}")),
-        ResolvedSeedReplacement::Replaced
-    ));
+            .retry_pending_resolved_seed(&FailedResolvedFactory, NOW)
+            .unwrap_or_else(|error| panic!("replace requested seed: {error}"))
+    );
 
     assert_eq!(runtime.seed_bootstrap, SeedBootstrapState::Inactive);
     assert!(first_call.try_result().is_none());
@@ -154,8 +153,9 @@ fn global_waiting_drain_remains_shutdown_only_and_blocks_replacement() {
         runtime
             .replace_resolved_seed(&FailedResolvedFactory, resolved_seed(2), NOW)
             .unwrap_or_else(|error| panic!("observe shutdown replacement fence: {error}")),
-        ResolvedSeedReplacement::Busy(_)
+        ResolvedSeedReplacement::Stale
     ));
+    assert!(runtime.pending_resolved_seed.is_none());
     let (call, request) = request(4);
     runtime
         .submit_seed(request, NOW, &mut CausalSequence::new())
@@ -187,7 +187,8 @@ pub(super) fn request(
     )
 }
 
-pub(super) fn failed_plan() -> BorneraLanePlan<TcpTransport> {
+pub(in crate::reactor::direct_plaintext::cluster_runtime) fn failed_plan()
+-> BorneraLanePlan<TcpTransport> {
     let broker = BrokerLimits::default();
     BorneraLanePlan::new(
         crate::config::BrokerAddresses::Resolved {

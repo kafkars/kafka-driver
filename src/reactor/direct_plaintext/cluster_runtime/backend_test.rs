@@ -69,7 +69,7 @@ fn plaintext_facade_owns_one_typed_runtime_and_retained_factory() {
 }
 
 #[test]
-fn busy_seed_replacement_preserves_raw_evidence_through_transport_erasure() {
+fn busy_seed_replacement_is_retained_through_transport_erasure() {
     let listener = listener();
     let address = listener
         .local_addr()
@@ -84,13 +84,19 @@ fn busy_seed_replacement_preserves_raw_evidence_through_transport_erasure() {
     let replacement = backend
         .replace_resolved_seed(seed(2, "fresh.kafka.test", address), NOW)
         .unwrap_or_else(|error| panic!("offer busy seed replacement: {error}"));
-    let ResolvedSeedReplacement::Busy(seed) = replacement else {
-        panic!("newer raw evidence must remain owned while the seed is busy");
+    assert!(matches!(replacement, ResolvedSeedReplacement::Retained));
+    let runtime = match &backend {
+        ClusterBackend::Plaintext { runtime, .. } => runtime,
+        #[cfg(feature = "tls-rustls")]
+        ClusterBackend::Rustls { .. } => panic!("plaintext template selected Rustls"),
     };
-    let (generation, endpoint, addresses) = seed.into_parts();
-    assert_eq!(generation, ConnectionEpoch::from_raw(2));
-    assert_eq!(endpoint.host().as_str(), "fresh.kafka.test");
-    assert_eq!(addresses.len(), 1);
+    assert_eq!(
+        runtime
+            .pending_resolved_seed
+            .as_ref()
+            .map(ResolvedSeed::generation),
+        Some(ConnectionEpoch::from_raw(2))
+    );
 }
 
 #[cfg(feature = "tls-rustls")]

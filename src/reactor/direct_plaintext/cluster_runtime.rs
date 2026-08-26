@@ -71,6 +71,7 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     refresh_turn: Vec<BrokerLane>,
     routes_first: bool,
     seed: Option<SeedSlot>,
+    pending_resolved_seed: Option<crate::reactor::bootstrap::ResolvedSeed>,
     seed_bootstrap: seed_rotation::SeedBootstrapState,
     seed_waiting: PendingRequests,
     seed_waiting_state: seed_waiting_settlement::SeedWaitingState,
@@ -97,6 +98,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             refresh_turn: Vec::new(),
             routes_first: false,
             seed: None,
+            pending_resolved_seed: None,
             seed_bootstrap: seed_rotation::SeedBootstrapState::Inactive,
             seed_waiting: PendingRequests::new(
                 driver.metadata().waiting_calls(),

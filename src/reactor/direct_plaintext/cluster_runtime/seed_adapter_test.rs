@@ -90,7 +90,7 @@ fn stale_seed_does_not_invoke_factory_or_consume_identity() {
 }
 
 #[test]
-fn busy_seed_returns_complete_raw_evidence_before_factory_work() {
+fn busy_seed_is_retained_before_factory_work() {
     let mut runtime = runtime();
     let owner = runtime
         .install_seed(ConnectionEpoch::from_raw(1), failed_plan(), NOW)
@@ -101,24 +101,23 @@ fn busy_seed_returns_complete_raw_evidence_before_factory_work() {
     let replacement = runtime
         .replace_resolved_seed(&factory, seed(2, "fresh.test", 9093), NOW)
         .unwrap_or_else(|error| panic!("defer busy seed: {error}"));
-    let ResolvedSeedReplacement::Busy(seed) = replacement else {
-        panic!("busy seed must retain raw evidence");
-    };
+    assert!(matches!(replacement, ResolvedSeedReplacement::Retained));
     assert_eq!(factory.attempts.get(), 0);
-    let (generation, endpoint, addresses) = seed.into_parts();
-    assert_eq!(generation, ConnectionEpoch::from_raw(2));
-    assert_eq!(endpoint.host().as_str(), "fresh.test");
-    assert_eq!(addresses.len(), 1);
+    assert_eq!(
+        runtime
+            .pending_resolved_seed
+            .as_ref()
+            .map(ResolvedSeed::generation),
+        Some(ConnectionEpoch::from_raw(2))
+    );
 
     make_reclaimable(&mut runtime, owner);
-    let replacement = runtime
-        .replace_resolved_seed(
-            &factory,
-            ResolvedSeed::new(generation, endpoint, addresses),
-            NOW,
-        )
-        .unwrap_or_else(|error| panic!("install retained seed: {error}"));
-    assert!(matches!(replacement, ResolvedSeedReplacement::Replaced));
+    assert!(
+        runtime
+            .retry_pending_resolved_seed(&factory, NOW)
+            .unwrap_or_else(|error| panic!("install retained seed: {error}"))
+    );
+    assert!(runtime.pending_resolved_seed.is_none());
     assert_eq!(factory.attempts.get(), 1);
 }
 
@@ -149,7 +148,7 @@ fn replacement_factory_failure_preserves_the_reclaimable_seed() {
     assert_eq!(next.lane().get(), owner.lane().get() + 1);
 }
 
-fn runtime() -> ClusterRuntime<TcpTransport> {
+pub(super) fn runtime() -> ClusterRuntime<TcpTransport> {
     ClusterRuntime::new(&DriverLimits::default())
         .unwrap_or_else(|error| panic!("cluster runtime: {error}"))
 }
@@ -166,7 +165,7 @@ fn plaintext_factory(driver: &DriverLimits) -> PlaintextLanePlanFactory {
     }
 }
 
-fn seed(generation: u64, host: &str, port: u16) -> ResolvedSeed {
+pub(super) fn seed(generation: u64, host: &str, port: u16) -> ResolvedSeed {
     ResolvedSeed::new(
         ConnectionEpoch::from_raw(generation),
         BrokerEndpoint::new(
@@ -192,7 +191,7 @@ fn nonzero_port(port: u16) -> NonZeroU16 {
     NonZeroU16::new(port).unwrap_or(NonZeroU16::MIN)
 }
 
-fn failed_plan() -> BorneraLanePlan<TcpTransport> {
+pub(super) fn failed_plan() -> BorneraLanePlan<TcpTransport> {
     let broker = BrokerLimits::default();
     BorneraLanePlan::new(
         crate::config::BrokerAddresses::Direct(SocketAddr::from(([127, 0, 0, 1], 9))),
@@ -211,8 +210,8 @@ fn make_reclaimable(runtime: &mut ClusterRuntime<TcpTransport>, owner: super::Di
         .unwrap_or_else(|error| panic!("drain reclaimable lane: {error}"));
 }
 
-struct CountingFactory {
-    attempts: Cell<usize>,
+pub(super) struct CountingFactory {
+    pub(super) attempts: Cell<usize>,
 }
 
 impl BorneraLanePlanFactory<TcpTransport> for CountingFactory {
@@ -226,8 +225,8 @@ impl BorneraLanePlanFactory<TcpTransport> for CountingFactory {
     }
 }
 
-struct FailingFactory {
-    attempts: Cell<usize>,
+pub(super) struct FailingFactory {
+    pub(super) attempts: Cell<usize>,
 }
 
 impl BorneraLanePlanFactory<TcpTransport> for FailingFactory {

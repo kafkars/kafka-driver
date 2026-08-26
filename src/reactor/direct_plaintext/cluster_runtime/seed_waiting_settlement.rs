@@ -59,6 +59,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
     /// Closes external admission without spending the next drive's work budget.
     pub(super) fn begin_seed_waiting_drain(&mut self) {
         let _ = self.capture_seed_terminal_failure();
+        self.pending_resolved_seed = None;
         self.seed_waiting_state.draining = true;
     }
 
@@ -110,6 +111,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         match result {
             Ok(value) => Ok(value),
             Err(error) => {
+                self.pending_resolved_seed = None;
                 let _ = self.capture_seed_terminal_failure();
                 self.totalize_seed_waiting_after_host_failure();
                 self.totalize_route_waiting_after_host_failure();
@@ -120,6 +122,10 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
 
     pub(super) fn seed_waiting_is_closed(&self) -> bool {
         !self.seed_waiting_state.is_open()
+    }
+
+    pub(super) fn seed_replacement_retention_open(&self) -> bool {
+        !self.seed_waiting_state.draining
     }
 
     pub(super) fn seed_waiting_admission_failure(&self) -> Option<RequestError> {

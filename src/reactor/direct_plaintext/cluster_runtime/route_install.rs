@@ -50,8 +50,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         causality: &mut CausalSequence,
     ) -> io::Result<bool> {
         let driven = self.drive(now, causality)?;
+        let seed_replaced = self.retry_pending_resolved_seed(factory, now)?;
         let installed = self.drive_route_installs(factory, now, causality)?;
-        Ok(driven || installed)
+        Ok(driven || seed_replaced || installed)
     }
 
     pub(super) fn route_install_must_defer(
