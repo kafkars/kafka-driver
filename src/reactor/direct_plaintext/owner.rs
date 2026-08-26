@@ -1,11 +1,12 @@
-//! Capacity-one direct broker state and sole-selector hosting surface.
+//! Connection-local Kafka ownership independent of the shared Bornera set.
 
-use std::{io, time::Duration};
+use std::{
+    io,
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
-#[cfg(test)]
-use bornera::TcpTransport;
 use bornera::{ConnectionSet, ConnectionToken, RegisteredTransport};
-use calandria::{Next, Span, Turn, WaitOutcome, WorkCount};
 use kafka_driver_core::{CallFailure, Delivery, KafkaSessionMachine, Moment};
 use kafka_wire::OutboundFrameLimits;
 use kafka_wire_core::DecodeLimits;
@@ -15,14 +16,15 @@ use crate::{
     authentication::AuthenticationSession,
     config::ClientId,
     reactor::scram_proof::{ScramProofFence, ScramProofSender},
-    request::ErasedRequest,
 };
 
 use super::{operation_owner::DirectOperationContext, pending::PendingRequests};
 use crate::reactor::bornera::{KafkaFrame, KafkaReplyClassifier, OperationContexts};
 
 use super::{
-    attempt::DirectConnectionAttempt, decoder_gate::DirectFrameDecoder, lifecycle::DirectLifecycle,
+    attempt::{DirectConnectionAttempt, DirectConnectionOwner},
+    decoder_gate::DirectFrameDecoder,
+    lifecycle::DirectLifecycle,
     session_plan::DirectSessionPlan,
 };
 
@@ -30,10 +32,10 @@ pub(super) type DirectSet<T> = ConnectionSet<DirectFrameDecoder, KafkaReplyClass
 
 pub(super) const ID: u64 = 1;
 
-pub(in crate::reactor) struct DirectOwner<T: RegisteredTransport> {
-    pub(super) set: DirectSet<T>,
+pub(in crate::reactor) struct DirectLane<T: RegisteredTransport> {
     #[allow(dead_code, reason = "replayed by the direct reconnect lifecycle")]
     pub(super) connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
+    pub(super) connection_owner: DirectConnectionOwner,
     pub(super) connection: Option<ConnectionToken>,
     pub(super) lifecycle: DirectLifecycle,
     #[allow(dead_code, reason = "replayed by the direct reconnect lifecycle")]
@@ -59,97 +61,48 @@ pub(in crate::reactor) struct DirectOwner<T: RegisteredTransport> {
     pub(super) generation_close_reason: Option<kafka_driver_core::CloseReason>,
     pub(super) last_close_reason: Option<kafka_driver_core::CloseReason>,
     pub(super) submission_budget: std::num::NonZeroUsize,
-    pub(super) last_turn: Turn,
+    pub(super) runnable: bool,
     pub(super) admission_open: bool,
     pub(super) terminal: bool,
     pub(super) pending_recovery: Option<DirectRecovery>,
 }
 
-#[cfg(test)]
-pub(in crate::reactor) type DirectPlaintextOwner = DirectOwner<TcpTransport>;
+/// Temporary affine access to one lane through its shared mechanical owner.
+pub(super) struct DirectLaneAccess<'a, T: RegisteredTransport> {
+    pub(super) lane: &'a mut DirectLane<T>,
+    pub(super) set: &'a mut DirectSet<T>,
+}
 
-impl<T: RegisteredTransport> DirectOwner<T> {
-    pub(in crate::reactor) fn submit(
-        &mut self,
-        request: Box<dyn ErasedRequest>,
-        now: Moment,
-        causality: &mut crate::reactor::causality::CausalSequence,
-    ) -> io::Result<()> {
-        self.submit_request(request, now, causality)
+pub(super) struct DirectLaneView<'a, T: RegisteredTransport> {
+    pub(super) lane: &'a DirectLane<T>,
+    pub(super) set: &'a DirectSet<T>,
+}
+
+impl<T: RegisteredTransport> Deref for DirectLaneAccess<'_, T> {
+    type Target = DirectLane<T>;
+
+    fn deref(&self) -> &Self::Target {
+        self.lane
     }
+}
 
-    pub(in crate::reactor) fn wait(&mut self, maximum: Span) -> io::Result<WaitOutcome> {
-        match self.set.poll_io(maximum) {
-            Ok(outcome) => Ok(outcome),
-            Err(error) => {
-                let primary = message(error);
-                let Some(connection) = self.connection else {
-                    let _ = self.generation_invariant_fatal(
-                        Moment::ORIGIN,
-                        None,
-                        "Bornera readiness failed without a live direct generation",
-                    );
-                    return Err(primary);
-                };
-                match self.recover_failed_generation(connection, Moment::ORIGIN, None) {
-                    Ok(report) => {
-                        self.capture_recovery(report);
-                        Ok(WaitOutcome::Notified)
-                    }
-                    Err(_) => Err(primary),
-                }
-            }
-        }
+impl<T: RegisteredTransport> DerefMut for DirectLaneAccess<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.lane
     }
+}
 
-    pub(in crate::reactor) fn wake_handle(&self) -> calandria::WakeHandle {
-        self.set.wake_handle()
+impl<T: RegisteredTransport> Deref for DirectLaneView<'_, T> {
+    type Target = DirectLane<T>;
+
+    fn deref(&self) -> &Self::Target {
+        self.lane
     }
+}
 
-    pub(in crate::reactor) fn pulse_handle(&self) -> bornera::ConnectionPulseHandle {
-        self.set.pulse_handle()
-    }
-
-    pub(in crate::reactor) fn next_deadline(&self) -> Option<Moment> {
-        if self.is_terminal() {
-            return None;
-        }
-        let engine = self
-            .lifecycle
-            .has_live_generation()
-            .then(|| match self.last_turn.next() {
-                Next::Now => Some(Moment::from_nanos(0)),
-                Next::WakeOr(deadline) => Some(Moment::from_nanos(deadline.moment().as_nanos())),
-                Next::Wake | Next::Stop => None,
-            })
-            .flatten();
-        engine
-            .into_iter()
-            .chain(self.lifecycle.next_deadline())
-            .chain(
-                self.lifecycle
-                    .has_live_generation()
-                    .then_some(self.session_deadline)
-                    .flatten(),
-            )
-            .chain(self.pending.next_deadline())
-            .min()
-    }
-
-    pub(in crate::reactor) fn has_local_work(&self) -> bool {
-        !self.is_terminal()
-            && (self.pending_recovery.is_some()
-                || (self.lifecycle.has_live_generation()
-                    && matches!(self.last_turn.next(), Next::Now))
-                || (self.admission_open && !self.pending.is_empty()))
-    }
-
+impl<T: RegisteredTransport> DirectLane<T> {
     pub(in crate::reactor) fn is_terminal(&self) -> bool {
         self.terminal || self.lifecycle.is_closed()
-    }
-
-    pub(super) fn mark_runnable(&mut self) {
-        self.last_turn = Turn::runnable(WorkCount::new(1));
     }
 
     pub(super) fn live_connection(&self) -> io::Result<ConnectionToken> {
@@ -158,6 +111,16 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         })
     }
 
+    pub(super) fn mark_runnable(&mut self) {
+        self.runnable = true;
+    }
+
+    pub(super) fn mark_waiting(&mut self) {
+        self.runnable = false;
+    }
+}
+
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn capture_recovery(&mut self, report: DirectRecoveryReport) {
         self.capture_recovery_with(report, false);
     }
@@ -174,7 +137,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         self.admission_open = false;
         self.session_deadline = None;
         self.clear_authentication_ownership();
-        self.last_turn = Turn::waiting();
+        self.mark_waiting();
         if let Some(pending) = self.pending_recovery.as_mut() {
             pending.semantic_diverged = true;
             self.totalize_duplicate_recovery(report);
@@ -185,18 +148,19 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             semantic_diverged: semantic_diverged || token_diverged,
         });
     }
+}
 
-    #[cfg(test)]
-    pub(in crate::reactor) fn selector_registrations(&self) -> usize {
-        self.set.snapshot().poller.registrations()
-    }
-
+impl<T: RegisteredTransport> DirectLane<T> {
     #[cfg(test)]
     pub(in crate::reactor) fn connection_for_test(&self) -> ConnectionToken {
         self.connection
             .unwrap_or_else(|| panic!("test requires a live direct connection"))
     }
 }
+
+#[cfg(test)]
+pub(in crate::reactor) type DirectPlaintextOwner =
+    super::runtime::DirectRuntime<bornera::TcpTransport>;
 
 pub(super) const fn calandria_moment(moment: Moment) -> calandria::Moment {
     calandria::Moment::from_nanos(moment.as_nanos())

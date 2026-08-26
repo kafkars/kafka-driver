@@ -29,6 +29,7 @@ fn exact_proof_completes_once_while_a_wrong_fence_is_ignored() {
     let pending = fixture.arm_first_proof();
     fixture
         .owner
+        .access()
         .dispatch_scram_proof(EFFECT, first_round(), pending, NOW)
         .unwrap_or_else(|error| panic!("dispatch exact direct proof: {error}"));
     let exact = requests
@@ -92,6 +93,7 @@ fn authentication_deadline_wins_over_an_exact_late_proof() {
     let pending = fixture.arm_first_proof();
     fixture
         .owner
+        .access()
         .dispatch_scram_proof(EFFECT, first_round(), pending, NOW)
         .unwrap_or_else(|error| panic!("dispatch held direct proof: {error}"));
     let held = requests
@@ -119,6 +121,7 @@ fn shutdown_during_derivation_clears_proof_and_authentication_ownership() {
     let pending = fixture.arm_first_proof();
     fixture
         .owner
+        .access()
         .dispatch_scram_proof(EFFECT, first_round(), pending, NOW)
         .unwrap_or_else(|error| panic!("dispatch shutdown-held direct proof: {error}"));
     let held = requests
@@ -154,6 +157,7 @@ fn full_proof_queue_is_local_capacity_and_clears_secret_ownership() {
 
     fixture
         .owner
+        .access()
         .dispatch_scram_proof(EFFECT, first_round(), pending, NOW)
         .unwrap_or_else(|error| panic!("settle full direct proof queue: {error}"));
 
@@ -172,6 +176,7 @@ fn recovered_epoch_rejects_a_late_proof_from_the_retired_connection() {
     let pending = fixture.arm_first_proof();
     fixture
         .owner
+        .access()
         .dispatch_scram_proof(EFFECT, first_round(), pending, NOW)
         .unwrap_or_else(|error| panic!("dispatch retired direct proof: {error}"));
     let held = requests
@@ -183,7 +188,7 @@ fn recovered_epoch_rejects_a_late_proof_from_the_retired_connection() {
         .set
         .abandon(retired, bornera::OwnerFailure::OwnerInvariant)
         .unwrap_or_else(|error| panic!("recover proof generation: {error}"));
-    fixture.owner.capture_recovery(report);
+    fixture.owner.access().capture_recovery(report);
     assert!(fixture.owner.connection.is_none());
     assert!(fixture.owner.authentication_session.is_none());
     assert!(fixture.owner.pending_scram_proof.is_none());
@@ -224,6 +229,7 @@ fn closed_proof_worker_is_host_fatal_without_rewriting_session_state() {
 
     let error = fixture
         .owner
+        .access()
         .dispatch_scram_proof(EFFECT, first_round(), pending, NOW)
         .err()
         .unwrap_or_else(|| panic!("closed direct proof worker must fail the host"));

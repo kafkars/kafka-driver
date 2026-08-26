@@ -90,6 +90,7 @@ fn frame_too_large_is_plain_policy_failure_and_releases_both_affine_owners() {
     let frame = frame(b"x");
 
     owner
+        .access()
         .commit_authentication(
             permit,
             frame,
@@ -125,6 +126,7 @@ fn admission_closed_defers_to_lifecycle_and_releases_both_affine_owners() {
         .unwrap_or_else(|error| panic!("close PLAIN admission: {error}"));
 
     owner
+        .access()
         .commit_authentication(
             permit,
             frame(b"x"),
@@ -148,6 +150,7 @@ fn foreign_permit_abandons_the_owner_instead_of_reporting_capacity() {
     let reservation = reserve_context(&owner);
 
     owner
+        .access()
         .commit_authentication(
             permit,
             frame(b"x"),
@@ -180,6 +183,7 @@ fn stale_connection_is_host_fatal_after_releasing_both_affine_owners() {
     );
 
     let error = owner
+        .access()
         .commit_authentication(
             permit,
             frame(b"x"),

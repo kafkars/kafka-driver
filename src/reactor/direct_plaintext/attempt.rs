@@ -13,7 +13,7 @@ use bornera_core::{ConnectionEpoch, ConnectionId, EndpointId, LaneId};
 use calandria::{Deadline, TimerOwnerId};
 use kafka_driver_core::Moment;
 
-use super::owner::{DirectSet, ID, calandria_moment};
+use super::owner::{DirectSet, calandria_moment};
 use crate::reactor::broker::BrokerLimits;
 
 pub(super) use plaintext::PlaintextAttempt;
@@ -27,9 +27,35 @@ pub(super) trait DirectConnectionAttempt<T: RegisteredTransport> {
     fn connect(
         &self,
         set: &mut DirectSet<T>,
+        owner: DirectConnectionOwner,
         epoch: ConnectionEpoch,
         now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError>;
+}
+
+/// Stable Bornera identity domains owned by one connection-local lane.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct DirectConnectionOwner {
+    endpoint: EndpointId,
+    lane: LaneId,
+    connection: ConnectionId,
+    timer: TimerOwnerId,
+}
+
+impl DirectConnectionOwner {
+    pub(super) const fn new(
+        endpoint: EndpointId,
+        lane: LaneId,
+        connection: ConnectionId,
+        timer: TimerOwnerId,
+    ) -> Self {
+        Self {
+            endpoint,
+            lane,
+            connection,
+            timer,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -72,6 +98,7 @@ fn plaintext_connect_error<E: std::fmt::Display>(error: ConnectError<E>) -> Dire
 }
 
 fn connection_config(
+    owner: DirectConnectionOwner,
     address: SocketAddr,
     epoch: ConnectionEpoch,
     now: Moment,
@@ -80,17 +107,10 @@ fn connection_config(
     let connect_deadline = now
         .checked_add(broker.connect_timeout())
         .ok_or_else(|| io::Error::other("direct connect deadline overflowed"))?;
-    let lane =
-        u32::try_from(ID).map_err(|_| io::Error::other("direct lane identity exceeds u32"))?;
     Ok(ConnectionConfig::new(
-        ConnectionIdentity::new(
-            EndpointId::new(ID),
-            LaneId::new(lane),
-            ConnectionId::new(ID),
-            epoch,
-        ),
+        ConnectionIdentity::new(owner.endpoint, owner.lane, owner.connection, epoch),
         address,
         Deadline::at(calandria_moment(connect_deadline)),
-        TimerOwnerId::new(ID),
+        owner.timer,
     ))
 }

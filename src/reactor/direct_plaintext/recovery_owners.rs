@@ -6,13 +6,13 @@ use bornera::{EngineOutcome, OutboundFrame, RegisteredTransport};
 use bornera_core::{DiscardedWrite, RecoveredOperation};
 use kafka_driver_core::{CloseReason, Delivery, Moment};
 
-use super::{failure_translation::recovery, owner::DirectOwner};
+use super::{failure_translation::recovery, owner::DirectLaneAccess};
 use crate::reactor::{
     bornera::{KafkaFrame, OperationContextKey, driver_delivery},
     causality::CausalSequence,
 };
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn settle_recovered_owners(
         &mut self,
         owners: RecoveredOwners,

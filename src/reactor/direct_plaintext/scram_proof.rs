@@ -11,9 +11,9 @@ use sasl_scram::PendingDerivation;
 
 use crate::reactor::scram_proof::{ScramProofOutcome, ScramProofRequest, ScramProofSubmitError};
 
-use super::{authentication_settlement::AuthenticationStageOwner, owner::DirectOwner};
+use super::{authentication_settlement::AuthenticationStageOwner, owner::DirectLaneAccess};
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn dispatch_scram_proof(
         &mut self,
         effect_id: EffectId,

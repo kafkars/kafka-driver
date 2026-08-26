@@ -90,7 +90,7 @@ fn causal_exhaustion_totalizes_recovered_and_pending_calls() {
         .set
         .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
         .unwrap_or_else(|error| panic!("capture causal recovery report: {error}"));
-    owner.capture_recovery(report);
+    owner.access().capture_recovery(report);
     let (pending, pending_request) = request(105);
     owner
         .submit(pending_request, NOW, &mut causality)
@@ -161,6 +161,7 @@ fn stale_commit_with_exhausted_causality_completes_current_call() {
     let mut causality = CausalSequence { next: u64::MAX };
 
     let error = owner
+        .access()
         .commit_public(permit, frame, reservation, NOW, &mut causality)
         .err()
         .unwrap_or_else(|| panic!("stale causal commit must fail the host"));

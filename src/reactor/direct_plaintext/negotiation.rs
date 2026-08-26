@@ -13,7 +13,7 @@ use kafka_wire::{API_VERSIONS_API_DESCRIPTOR, ApiVersionsRequest, measure_reques
 
 use super::{
     operation_owner::DirectOperationContext,
-    owner::{DirectOwner, add, calandria_moment, message},
+    owner::{DirectLaneAccess, add, calandria_moment, message},
 };
 use crate::{
     negotiation::{NegotiationExchange, negotiate},
@@ -22,7 +22,7 @@ use crate::{
 
 const NEGOTIATION_EFFECT: EffectId = EffectId::from_raw(1);
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn transport_opened(&mut self, now: Moment) -> std::io::Result<()> {
         let deadline = add(now, self.negotiation_timeout)?;
         self.apply_session(
@@ -81,7 +81,8 @@ impl<T: RegisteredTransport> DirectOwner<T> {
     ) -> std::io::Result<()> {
         let version = API_VERSIONS_API_DESCRIPTOR.supported_versions.min();
         let request = ApiVersionsRequest::default();
-        let client_id = self.client_id.as_ref().map(crate::config::ClientId::wire);
+        let client_id = self.client_id.clone();
+        let client_id = client_id.as_ref().map(crate::config::ClientId::wire);
         let Ok(measure) = measure_request(&request, version, client_id, self.outbound_limits)
         else {
             return self.negotiation_failed(NegotiationFailure::Malformed, now);

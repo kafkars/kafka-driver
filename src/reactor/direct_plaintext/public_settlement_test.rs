@@ -47,6 +47,7 @@ fn recovered_outcome_uses_the_explicit_generation_reason() {
     let exact = CloseReason::TransportLost(TransportFailure::TimedOut);
 
     owner
+        .access()
         .settle_public_outcome(
             context,
             OperationOutcome::Failed {

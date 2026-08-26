@@ -6,10 +6,10 @@ use kafka_driver_core::{
     Moment,
 };
 
-use super::{failure_translation::not_sent, owner::DirectOwner};
+use super::{failure_translation::not_sent, owner::DirectLaneAccess};
 use crate::reactor::causality::CausalSequence;
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(in crate::reactor) fn begin_session_drain(
         &mut self,
         now: Moment,

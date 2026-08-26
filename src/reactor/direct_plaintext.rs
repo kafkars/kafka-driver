@@ -24,6 +24,7 @@ mod publication;
 mod reconnect;
 mod recovery_owners;
 mod recovery_settlement;
+mod runtime;
 #[cfg(feature = "tls-rustls")]
 mod rustls_transport;
 mod scram_proof;

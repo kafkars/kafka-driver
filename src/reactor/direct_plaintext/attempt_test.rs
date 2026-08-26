@@ -40,8 +40,14 @@ fn clean_retirement_replays_transport_and_fresh_plain_session_in_one_set() {
     assert_eq!(owner.set.snapshot().poller.registrations(), 0);
 
     let second = owner
+        .lane
         .connection_attempt
-        .connect(&mut owner.set, ConnectionEpoch::new(2), LATER)
+        .connect(
+            &mut owner.set,
+            owner.lane.connection_owner,
+            ConnectionEpoch::new(2),
+            LATER,
+        )
         .unwrap_or_else(|error| panic!("construct second replay generation: {error}"));
 
     assert_ne!(second, first);
@@ -78,8 +84,14 @@ fn fatal_recovery_replays_a_distinct_generation_in_the_same_running_set() {
     assert_eq!(owner.set.snapshot().owner_failure, None);
 
     let second = owner
+        .lane
         .connection_attempt
-        .connect(&mut owner.set, ConnectionEpoch::new(2), LATER)
+        .connect(
+            &mut owner.set,
+            owner.lane.connection_owner,
+            ConnectionEpoch::new(2),
+            LATER,
+        )
         .unwrap_or_else(|error| panic!("construct generation after recovery: {error}"));
 
     assert_ne!(second, first);

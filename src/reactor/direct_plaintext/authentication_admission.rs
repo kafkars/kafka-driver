@@ -21,12 +21,12 @@ use super::{
     authentication_reserve::{AuthenticationReserveDisposition, reserve_disposition},
     authentication_settlement::AuthenticationStageOwner,
     operation_owner::DirectOperationContext,
-    owner::{DirectOwner, calandria_moment, message},
+    owner::{DirectLaneAccess, calandria_moment, message},
 };
 
 const HANDSHAKE_EFFECT: EffectId = EffectId::from_raw(2);
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn start_authentication_handshake(
         &mut self,
         mechanism: SaslMechanism,
@@ -96,8 +96,9 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         deadline: Moment,
     ) -> std::io::Result<()> {
         let stage = AuthenticationStageOwner::Exchange(round);
+        let max_frame_bytes = self.outbound_limits.max_frame_bytes();
         let authentication_message = match self.authentication_session.as_mut() {
-            Some(session) => session.next_message(self.outbound_limits.max_frame_bytes()),
+            Some(session) => session.next_message(max_frame_bytes),
             None => {
                 return self.fail_authentication_stage(stage, AuthenticationFailure::Protocol, now);
             }

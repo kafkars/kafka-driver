@@ -3,7 +3,6 @@
 use std::{collections::VecDeque, io};
 
 use bornera::RegisteredTransport;
-use calandria::Turn;
 use kafka_driver_core::{
     BrokerCloseReason, BrokerEffect, BrokerState, CallFailure, CloseReason, ConnectionEpoch,
     Delivery, KafkaSessionInput, Moment,
@@ -16,10 +15,10 @@ use crate::reactor::causality::CausalSequence;
 use super::{
     attempt::DirectConnectError,
     failure_translation::{not_sent, recovery, synchronous_open_failure},
-    owner::DirectOwner,
+    owner::DirectLaneAccess,
 };
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn settle_generation_lifecycle(
         &mut self,
         epoch: ConnectionEpoch,
@@ -61,7 +60,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             .map_err(|error| self.host_fatal(error))?;
         if self.lifecycle.is_closed() {
             self.terminal = true;
-            self.last_turn = Turn::waiting();
+            self.mark_waiting();
         }
         Ok(())
     }
@@ -108,10 +107,10 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                             "direct reconnect effect diverged from broker state",
                         ));
                     }
-                    self.last_turn = Turn::waiting();
+                    self.mark_waiting();
                 }
                 BrokerEffect::CancelReconnect { .. } => {
-                    self.last_turn = Turn::waiting();
+                    self.mark_waiting();
                 }
                 BrokerEffect::DrainConnection { epoch } => {
                     if epoch != core_epoch(self.live_connection()?.epoch()) {
@@ -153,20 +152,21 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             ));
         }
         let session = self.session_plan.start()?;
-        let connection =
-            match self
-                .connection_attempt
-                .connect(&mut self.set, bornera_epoch(epoch), now)
-            {
-                Ok(connection) => connection,
-                Err(DirectConnectError::Endpoint(source)) => {
-                    let reason = synchronous_open_failure(&source);
-                    self.last_close_reason = Some(reason);
-                    self.last_turn = Turn::waiting();
-                    return Ok(Some(reason));
-                }
-                Err(DirectConnectError::Fatal(source)) => return Err(source),
-            };
+        let connection = match self.lane.connection_attempt.connect(
+            self.set,
+            self.lane.connection_owner,
+            bornera_epoch(epoch),
+            now,
+        ) {
+            Ok(connection) => connection,
+            Err(DirectConnectError::Endpoint(source)) => {
+                let reason = synchronous_open_failure(&source);
+                self.last_close_reason = Some(reason);
+                self.mark_waiting();
+                return Ok(Some(reason));
+            }
+            Err(DirectConnectError::Fatal(source)) => return Err(source),
+        };
         if connection.epoch() != bornera_epoch(epoch) {
             return Err(io::Error::other(
                 "direct attempt returned the wrong connection epoch",
@@ -194,7 +194,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             return Ok(());
         };
         self.terminal = true;
-        self.last_turn = Turn::waiting();
+        self.mark_waiting();
         let failure = terminal_failure(reason, preceding);
         self.fail_pending(&failure, causality)
     }
@@ -212,7 +212,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         let _ = self.fail_remaining(&recovery(reason, Delivery::PossiblySent), None, Some(()));
         let _ = self.fail_pending(&recovery(reason, Delivery::NotSent), None);
         self.terminal = true;
-        self.last_turn = Turn::waiting();
+        self.mark_waiting();
         error
     }
 }

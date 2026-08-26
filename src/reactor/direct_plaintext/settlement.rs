@@ -9,12 +9,12 @@ use crate::{RequestError, reactor::causality::CausalSequence};
 use super::{
     failure_translation::{negotiation, recovery},
     operation_owner::DirectOperationContext,
-    owner::{DirectOwner, message},
+    owner::{DirectLaneAccess, message},
     reconnect::core_epoch,
 };
 use crate::reactor::bornera::OperationContextKey;
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn settle_event(
         &mut self,
         event: ConnectionEvent,
@@ -66,7 +66,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                     Err(error) => return Err(message(error)),
                 }
                 self.connection = None;
-                self.last_turn = calandria::Turn::waiting();
+                self.mark_waiting();
                 if semantic_diverged != 0 {
                     self.fail_pending(&recovery(effective, Delivery::NotSent), Some(causality))?;
                     self.terminal = true;

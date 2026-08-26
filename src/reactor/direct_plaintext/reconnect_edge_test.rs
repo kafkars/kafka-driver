@@ -18,7 +18,9 @@ use kafka_wire::{ApiVersionsRequest, ApiVersionsResponse};
 use crate::{DriverLimits, RequestError, SaslConfig, request::erased_request};
 
 use super::{
-    attempt::{DirectConnectError, DirectConnectionAttempt, PlaintextAttempt},
+    attempt::{
+        DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner, PlaintextAttempt,
+    },
     owner::{DirectPlaintextOwner, DirectSet, calandria_moment},
     reconnect::terminal_failure,
 };
@@ -63,6 +65,7 @@ fn synchronous_endpoint_failures_retain_owner_and_queue_until_epoch_three() {
 
     assert!(
         owner
+            .access()
             .fire_due_reconnect(first_deadline, &mut causality)
             .unwrap_or_else(|error| panic!("attempt synchronous epoch two: {error}"))
     );
@@ -73,6 +76,7 @@ fn synchronous_endpoint_failures_retain_owner_and_queue_until_epoch_three() {
 
     assert!(
         owner
+            .access()
             .fire_due_reconnect(second_deadline, &mut causality)
             .unwrap_or_else(|error| panic!("open real epoch three: {error}"))
     );
@@ -101,6 +105,7 @@ fn recovered_admission_resets_retry_before_generation_failure() {
     let deadline = assert_backoff(&owner, 1, 2);
     let mut causality = CausalSequence::new();
     owner
+        .access()
         .fire_due_reconnect(deadline, &mut causality)
         .unwrap_or_else(|error| panic!("open admission-recovery epoch: {error}"));
     drive_transport_open(&mut owner, deadline);
@@ -117,7 +122,7 @@ fn recovered_admission_resets_retry_before_generation_failure() {
         event,
         ConnectionEvent::AdmissionOpened { epoch, .. } if *epoch == BorneraEpoch::new(2)
     )));
-    owner.capture_recovery(report);
+    owner.access().capture_recovery(report);
     let (queued_call, queued) = request(84);
     owner
         .submit(queued, deadline, &mut causality)
@@ -166,6 +171,7 @@ fn policy_exhaustion_fails_pending_and_later_calls_as_closed() {
         .unwrap_or_else(|error| panic!("queue policy-close call: {error}"));
     detach_connection(&mut owner);
     owner
+        .access()
         .settle_generation_lifecycle(
             ConnectionEpoch::from_raw(1),
             preceding,
@@ -217,6 +223,7 @@ impl DirectConnectionAttempt<TcpTransport> for FailThroughEpoch {
     fn connect(
         &self,
         set: &mut DirectSet<TcpTransport>,
+        owner: DirectConnectionOwner,
         epoch: BorneraEpoch,
         now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError> {
@@ -225,7 +232,7 @@ impl DirectConnectionAttempt<TcpTransport> for FailThroughEpoch {
                 io::ErrorKind::ConnectionRefused.into(),
             ));
         }
-        self.delegate.connect(set, epoch, now)
+        self.delegate.connect(set, owner, epoch, now)
     }
 }
 

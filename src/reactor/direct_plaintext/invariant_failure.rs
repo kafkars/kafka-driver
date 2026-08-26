@@ -6,7 +6,7 @@ use kafka_driver_core::{CloseReason, Delivery, Moment, TransportFailure};
 use super::{
     failure_translation::recovery,
     operation_owner::DirectOperationContext,
-    owner::{DirectOwner, DirectRecoveryReport},
+    owner::{DirectLaneAccess, DirectRecoveryReport},
 };
 use crate::{
     RequestError,
@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn totalize_duplicate_recovery(&mut self, report: DirectRecoveryReport) {
         let reason = self.recovery_fallback_reason();
         let bornera::RecoveryReport {
@@ -114,7 +114,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         let _ = self.session_closed(now);
         self.connection = None;
         self.last_close_reason = Some(reason);
-        self.last_turn = calandria::Turn::waiting();
+        self.mark_waiting();
         let _ = self.fail_remaining(
             &recovery(reason, Delivery::PossiblySent),
             causality.as_deref_mut(),

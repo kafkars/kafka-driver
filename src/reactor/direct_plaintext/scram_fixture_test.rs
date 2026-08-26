@@ -70,6 +70,7 @@ impl DirectBackend {
         open_transport(owner);
         let pending = arm_first_proof(owner);
         owner
+            .access()
             .dispatch_scram_proof(effect_id, first_round(), pending, NOW)
             .unwrap_or_else(|error| panic!("dispatch hosted direct proof: {error}"));
         owner

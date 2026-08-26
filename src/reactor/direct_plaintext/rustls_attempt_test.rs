@@ -12,7 +12,7 @@ use crate::{DriverLimits, TlsClientConfig};
 
 use super::{
     attempt::{DirectConnectError, rustls_connect_error},
-    owner::DirectOwner,
+    runtime::DirectRuntime,
     rustls_transport::DirectRustlsTransport,
 };
 
@@ -42,7 +42,7 @@ fn rustls_attempt_replays_a_fresh_transport_in_one_set() {
     let address = listener
         .local_addr()
         .unwrap_or_else(|error| panic!("read Rustls replay address: {error}"));
-    let mut owner = DirectOwner::<DirectRustlsTransport>::new(
+    let mut owner = DirectRuntime::<DirectRustlsTransport>::new(
         &DriverLimits::default(),
         address,
         tls(),
@@ -61,9 +61,11 @@ fn rustls_attempt_replays_a_fresh_transport_in_one_set() {
         .unwrap_or_else(|error| panic!("recover first Rustls generation: {error}"));
     assert_eq!(report.epoch, ConnectionEpoch::new(1));
     let second = owner
+        .lane
         .connection_attempt
         .connect(
             &mut owner.set,
+            owner.lane.connection_owner,
             ConnectionEpoch::new(2),
             Moment::from_nanos(2),
         )

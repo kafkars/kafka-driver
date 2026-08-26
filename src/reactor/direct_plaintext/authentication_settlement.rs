@@ -9,7 +9,7 @@ use kafka_driver_core::{
 
 use crate::authentication::{AuthenticationExchange, AuthenticationReceive, HandshakeOutcome};
 
-use super::owner::DirectOwner;
+use super::owner::DirectLaneAccess;
 
 #[derive(Clone, Copy)]
 pub(super) enum AuthenticationStageOwner {
@@ -17,7 +17,7 @@ pub(super) enum AuthenticationStageOwner {
     Exchange(AuthenticationRound),
 }
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn settle_authentication_reply(
         &mut self,
         exchange: AuthenticationExchange,

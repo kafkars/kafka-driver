@@ -12,7 +12,7 @@ use crate::{
     request::ErasedRequest,
 };
 
-use super::owner::DirectOwner;
+use super::runtime::DirectRuntime;
 #[cfg(feature = "tls-rustls")]
 use super::rustls_transport::DirectRustlsTransport;
 use crate::reactor::causality::CausalSequence;
@@ -20,9 +20,9 @@ use crate::reactor::scram_proof::{ScramProofOutcome, ScramProofSender};
 
 /// Exclusive direct owner for exactly one configured transport family.
 pub(in crate::reactor) enum DirectBackend {
-    Plaintext(Box<DirectOwner<TcpTransport>>),
+    Plaintext(Box<DirectRuntime<TcpTransport>>),
     #[cfg(feature = "tls-rustls")]
-    Rustls(Box<DirectOwner<DirectRustlsTransport>>),
+    Rustls(Box<DirectRuntime<DirectRustlsTransport>>),
 }
 
 impl DirectBackend {
@@ -36,20 +36,20 @@ impl DirectBackend {
                 address,
                 sasl,
                 client_id,
-            } => Ok(Self::Plaintext(Box::new(DirectOwner::<TcpTransport>::new(
-                limits, address, sasl, client_id, now,
-            )?))),
+            } => Ok(Self::Plaintext(Box::new(
+                DirectRuntime::<TcpTransport>::new(limits, address, sasl, client_id, now)?,
+            ))),
             #[cfg(feature = "tls-rustls")]
             DirectBrokerConfig::Rustls {
                 address,
                 tls,
                 sasl,
                 client_id,
-            } => Ok(Self::Rustls(Box::new(
-                DirectOwner::<DirectRustlsTransport>::new(
-                    limits, address, tls, sasl, client_id, now,
-                )?,
-            ))),
+            } => Ok(Self::Rustls(Box::new(DirectRuntime::<
+                DirectRustlsTransport,
+            >::new(
+                limits, address, tls, sasl, client_id, now,
+            )?))),
         }
     }
 

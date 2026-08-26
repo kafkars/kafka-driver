@@ -8,7 +8,8 @@ use calandria::RetainedBytes;
 use kafka_driver_core::Moment;
 
 use super::{
-    DirectConnectError, DirectConnectionAttempt, connection_config, plaintext_connect_error,
+    DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner, connection_config,
+    plaintext_connect_error,
 };
 use crate::{
     config::DriverLimits,
@@ -41,6 +42,7 @@ impl DirectConnectionAttempt<TcpTransport> for PlaintextAttempt {
     fn connect(
         &self,
         set: &mut DirectSet<TcpTransport>,
+        owner: DirectConnectionOwner,
         epoch: ConnectionEpoch,
         now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError> {
@@ -52,7 +54,7 @@ impl DirectConnectionAttempt<TcpTransport> for PlaintextAttempt {
         )
         .map_err(DirectConnectError::fatal)?;
         set.connect(
-            connection_config(self.address, epoch, now, self.broker)
+            connection_config(owner, self.address, epoch, now, self.broker)
                 .map_err(DirectConnectError::fatal)?,
             slot,
             decoder,

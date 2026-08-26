@@ -5,11 +5,11 @@ use bornera_core::CloseReason;
 use calandria::Deadline;
 use kafka_driver_core::{KafkaSessionCloseReason, KafkaSessionEffect, KafkaSessionInput, Moment};
 
-use super::owner::{DirectOwner, add, calandria_moment, message};
+use super::owner::{DirectLaneAccess, add, calandria_moment, message};
 
 const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn apply_session(
         &mut self,
         input: KafkaSessionInput,

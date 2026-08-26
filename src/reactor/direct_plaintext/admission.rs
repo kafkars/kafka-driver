@@ -10,14 +10,14 @@ use crate::{RequestError, request::ErasedRequest};
 use super::{
     failure_translation::{context_reserve, fail_context, not_sent, operation_reserve, recovery},
     operation_owner::DirectOperationContext,
-    owner::{DirectOwner, calandria_moment},
+    owner::{DirectLaneAccess, calandria_moment},
 };
 use crate::reactor::{
     bornera::{ContextReserveFailure, correlation_id},
     causality::CausalSequence,
 };
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn submit_request(
         &mut self,
         request: Box<dyn ErasedRequest>,

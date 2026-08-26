@@ -8,9 +8,12 @@ use kafka_driver_core::{
 
 use crate::{SeedSnapshot, WriteQueueSnapshot};
 
-use super::{failure_translation::connection_close_reason, owner::DirectOwner};
+use super::{
+    failure_translation::connection_close_reason,
+    owner::{DirectLaneAccess, DirectLaneView},
+};
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneView<'_, T> {
     pub(in crate::reactor) fn seed_snapshot(&self) -> Option<SeedSnapshot> {
         if !self.terminal && self.lifecycle.has_live_generation() {
             return self.live_seed_snapshot();
@@ -60,7 +63,9 @@ impl<T: RegisteredTransport> DirectOwner<T> {
             self.write_byte_rejections,
         )
     }
+}
 
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn observe_reserve_rejection(
         &mut self,
         error: ConnectionReserveError,

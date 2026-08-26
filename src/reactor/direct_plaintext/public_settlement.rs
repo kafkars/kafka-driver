@@ -17,10 +17,10 @@ use crate::{
 
 use super::{
     failure_translation::{operation, recovery, sent},
-    owner::{DirectOwner, message},
+    owner::{DirectLaneAccess, message},
 };
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn settle_public_outcome(
         &mut self,
         context: PublicResponseContext,

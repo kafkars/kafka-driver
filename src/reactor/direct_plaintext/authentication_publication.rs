@@ -8,10 +8,10 @@ use crate::reactor::bornera::{ContextReservation, OperationContextKey};
 
 use super::{
     authentication_settlement::AuthenticationStageOwner, operation_owner::DirectOperationContext,
-    owner::DirectOwner,
+    owner::DirectLaneAccess,
 };
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn commit_authentication(
         &mut self,
         permit: bornera_core::OperationPermit,

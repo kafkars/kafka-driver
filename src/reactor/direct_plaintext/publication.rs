@@ -10,11 +10,11 @@ use crate::{RequestError, reactor::bornera::OperationContextKey};
 use super::{
     failure_translation::{fail_context, not_sent},
     operation_owner::DirectOperationContext,
-    owner::{DirectOwner, message},
+    owner::{DirectLaneAccess, message},
 };
 use crate::reactor::causality::CausalSequence;
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn commit_public(
         &mut self,
         permit: bornera_core::OperationPermit,

@@ -11,11 +11,11 @@ use crate::reactor::causality::CausalSequence;
 
 use super::{
     failure_translation::{connection_close_reason, diagnostic_close_reason, recovery},
-    owner::{DirectOwner, DirectRecovery},
+    owner::{DirectLaneAccess, DirectRecovery},
     recovery_owners::RecoveredOwners,
 };
 
-impl<T: RegisteredTransport> DirectOwner<T> {
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
     pub(super) fn settle_recovery(
         &mut self,
         recovery_report: DirectRecovery,
@@ -90,7 +90,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         record_error(&mut first_error, self.session_closed(now));
         self.generation_close_reason = None;
         self.last_close_reason = Some(effective_reason);
-        self.last_turn = calandria::Turn::waiting();
+        self.mark_waiting();
         self.connection = None;
 
         let contexts = self.contexts.snapshot();

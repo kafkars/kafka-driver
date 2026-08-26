@@ -7,35 +7,57 @@ use kafka_driver_core::Moment;
 
 use crate::reactor::{bornera::KafkaFrame, causality::CausalSequence};
 
-use super::owner::{DirectOwner, calandria_moment};
+use super::owner::DirectLaneAccess;
 
-impl<T: RegisteredTransport> DirectOwner<T> {
-    pub(in crate::reactor) fn drive(
+pub(super) struct DirectDrivePreparation {
+    pub(super) progress: bool,
+    pub(super) remaining: usize,
+    pub(super) more_due: bool,
+    pub(super) should_turn: bool,
+}
+
+impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
+    pub(super) fn prepare_drive(
         &mut self,
         now: Moment,
         causality: &mut CausalSequence,
-    ) -> std::io::Result<bool> {
+    ) -> std::io::Result<DirectDrivePreparation> {
+        self.mark_waiting();
         let mut progress = self.fire_due_reconnect(now, causality)?;
         progress |= self.fire_due_session_deadline(now)?;
-        let expiration = self.pending.expire_due(now, self.submission_budget.get());
+        let submission_budget = self.submission_budget.get();
+        let expiration = self.pending.expire_due(now, submission_budget);
         progress |= expiration.settled() != 0;
         let more_due = expiration.more_due();
         progress |= self.settle_pending_recovery(now, causality)?;
-        if self.is_terminal() {
-            return Ok(progress);
+        Ok(DirectDrivePreparation {
+            progress,
+            remaining: submission_budget.saturating_sub(expiration.settled()),
+            more_due,
+            should_turn: !self.is_terminal() && self.lifecycle.has_live_generation(),
+        })
+    }
+
+    pub(super) fn finish_drive(
+        &mut self,
+        preparation: &DirectDrivePreparation,
+        turn_succeeded: bool,
+        now: Moment,
+        causality: &mut CausalSequence,
+    ) -> std::io::Result<bool> {
+        let DirectDrivePreparation {
+            mut progress,
+            remaining,
+            more_due,
+            should_turn,
+        } = *preparation;
+        if turn_succeeded && should_turn {
+            progress |= self.drain_engine(now, causality)?;
         }
-        if !self.lifecycle.has_live_generation() {
-            return Ok(progress);
-        }
-        progress |= self.drive_engine(now, causality)?;
         progress |= self.settle_pending_recovery(now, causality)?;
         if self.is_terminal() {
             return Ok(progress);
         }
-        let remaining = self
-            .submission_budget
-            .get()
-            .saturating_sub(expiration.settled());
         let admitted = self.admit_pending(now, causality, remaining)?;
         progress |= admitted != 0;
         progress |= self.settle_pending_recovery(now, causality)?;
@@ -45,18 +67,23 @@ impl<T: RegisteredTransport> DirectOwner<T> {
         Ok(progress)
     }
 
-    fn drive_engine(
+    pub(super) fn capture_turn_failure(
+        &mut self,
+        now: Moment,
+        causality: &mut CausalSequence,
+    ) -> std::io::Result<()> {
+        let connection = self.live_connection()?;
+        let report = self.recover_failed_generation(connection, now, Some(causality))?;
+        self.capture_recovery(report);
+        Ok(())
+    }
+
+    fn drain_engine(
         &mut self,
         now: Moment,
         causality: &mut CausalSequence,
     ) -> std::io::Result<bool> {
         let connection = self.live_connection()?;
-        let Ok(turn) = self.set.turn_component(calandria_moment(now)) else {
-            let report = self.recover_failed_generation(connection, now, Some(causality))?;
-            self.capture_recovery(report);
-            return Ok(true);
-        };
-        self.last_turn = turn;
         let drained_outcomes = self.set.drain_outcomes(connection).map(collect_drain);
         let outcomes = match drained_outcomes {
             Ok(outcomes) => outcomes,
@@ -86,8 +113,7 @@ impl<T: RegisteredTransport> DirectOwner<T> {
                 return Ok(true);
             }
         };
-        let progress =
-            self.last_turn.work().get() != 0 || !outcomes.is_empty() || !events.is_empty();
+        let progress = !outcomes.is_empty() || !events.is_empty();
         let mut outcomes = outcomes.into_iter();
         let mut events = events.into_iter();
         while let Some(outcome) = outcomes.next() {

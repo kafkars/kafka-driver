@@ -66,7 +66,7 @@ fn missing_recovery_context_settles_everything_then_fails_the_host() {
         .unwrap_or_else(|error| panic!("abandon recovery owner: {error}"));
     assert_eq!(report.outcomes.len(), 1);
     assert_eq!(report.operations.len(), 1);
-    owner.capture_recovery(report);
+    owner.access().capture_recovery(report);
     let (queued_call, queued) = request(24);
     owner
         .submit(queued, now, &mut causality)
@@ -131,7 +131,7 @@ fn shutdown_settles_captured_recovery_before_cancelling_backoff() {
         .set
         .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
         .unwrap_or_else(|error| panic!("abandon recovery-shutdown owner: {error}"));
-    owner.capture_recovery(report);
+    owner.access().capture_recovery(report);
     let (call, request) = request(25);
     let mut causality = CausalSequence::new();
     owner
@@ -171,7 +171,7 @@ fn divergent_recovery_settles_pending_work_then_fails_the_host() {
         .abandon(connection, bornera::OwnerFailure::OwnerInvariant)
         .unwrap_or_else(|error| panic!("abandon divergent recovery owner: {error}"));
     report.ownership_diverged = true;
-    owner.capture_recovery(report);
+    owner.access().capture_recovery(report);
 
     let error = owner
         .drive(now, &mut causality)

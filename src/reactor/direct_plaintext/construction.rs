@@ -2,10 +2,9 @@
 
 use std::{io, net::SocketAddr};
 
-use bornera::{
-    ConnectionSet, ConnectionSetConfig, ConnectionToken, RegisteredTransport, TcpTransport,
-};
-use calandria::{ResourceOwnerId, RetainedBytes, Turn};
+use bornera::{ConnectionToken, RegisteredTransport, TcpTransport};
+use bornera_core::{ConnectionId, EndpointId, LaneId};
+use calandria::{RetainedBytes, TimerOwnerId, Turn};
 use kafka_driver_core::{
     BrokerEffect, BrokerState, CloseReason, ConnectionEpoch, KafkaSessionInput, Moment,
 };
@@ -19,17 +18,19 @@ use crate::{
 #[cfg(feature = "tls-rustls")]
 use super::{attempt::RustlsAttempt, rustls_transport::DirectRustlsTransport};
 use super::{
-    attempt::{DirectConnectError, DirectConnectionAttempt, PlaintextAttempt},
+    attempt::{
+        DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner, PlaintextAttempt,
+    },
     failure_translation::synchronous_open_failure,
     lifecycle::DirectLifecycle,
-    limits::set_limits,
     operation_owner::DirectOperationContext,
-    owner::{DirectOwner, DirectSet, ID, message},
+    owner::{DirectLane, DirectSet, ID, message},
     pending::PendingRequests,
+    runtime::{DirectRuntime, new_set},
     session_plan::{DirectSessionOwnership, DirectSessionPlan},
 };
 
-impl DirectOwner<TcpTransport> {
+impl DirectRuntime<TcpTransport> {
     pub(in crate::reactor) fn new(
         driver: &DriverLimits,
         address: SocketAddr,
@@ -74,7 +75,7 @@ impl DirectOwner<TcpTransport> {
 }
 
 #[cfg(feature = "tls-rustls")]
-impl DirectOwner<DirectRustlsTransport> {
+impl DirectRuntime<DirectRustlsTransport> {
     pub(in crate::reactor) fn new(
         driver: &DriverLimits,
         address: SocketAddr,
@@ -107,11 +108,22 @@ fn start<T: RegisteredTransport>(
     session_plan: DirectSessionPlan,
     connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
     now: Moment,
-) -> io::Result<DirectOwner<T>> {
+) -> io::Result<DirectRuntime<T>> {
     let mut session = session_plan.start()?;
     let mut lifecycle = DirectLifecycle::started(broker.backoff(), address)?;
     let mut set = new_set(driver)?;
-    let attempt = connection_attempt.connect(&mut set, bornera_core::ConnectionEpoch::new(ID), now);
+    let connection_owner = DirectConnectionOwner::new(
+        EndpointId::new(ID),
+        LaneId::new(1),
+        ConnectionId::new(ID),
+        TimerOwnerId::new(ID),
+    );
+    let attempt = connection_attempt.connect(
+        &mut set,
+        connection_owner,
+        bornera_core::ConnectionEpoch::new(ID),
+        now,
+    );
     let (connection, last_close_reason) = match attempt {
         Ok(connection) => (Some(connection), None),
         Err(DirectConnectError::Endpoint(source)) => {
@@ -145,6 +157,7 @@ fn start<T: RegisteredTransport>(
             session,
             set,
             connection_attempt,
+            connection_owner,
             connection,
             lifecycle,
             last_close_reason,
@@ -152,19 +165,12 @@ fn start<T: RegisteredTransport>(
     )
 }
 
-fn new_set<T: RegisteredTransport>(driver: &DriverLimits) -> io::Result<DirectSet<T>> {
-    ConnectionSet::new(
-        ConnectionSetConfig::new(ResourceOwnerId::new(ID)),
-        set_limits(driver),
-    )
-    .map_err(message)
-}
-
 struct InitialDirect<T: RegisteredTransport> {
     session_plan: DirectSessionPlan,
     session: DirectSessionOwnership,
     set: DirectSet<T>,
     connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
+    connection_owner: DirectConnectionOwner,
     connection: Option<ConnectionToken>,
     lifecycle: DirectLifecycle,
     last_close_reason: Option<CloseReason>,
@@ -175,12 +181,13 @@ fn finish<T: RegisteredTransport>(
     broker: BrokerLimits,
     client_id: Option<ClientId>,
     initial: InitialDirect<T>,
-) -> io::Result<DirectOwner<T>> {
+) -> io::Result<DirectRuntime<T>> {
     let InitialDirect {
         session_plan,
         session,
         set,
         connection_attempt,
+        connection_owner,
         connection,
         lifecycle,
         last_close_reason,
@@ -188,9 +195,9 @@ fn finish<T: RegisteredTransport>(
     let retained =
         RetainedBytes::try_from(driver.mailbox_byte_capacity().get()).map_err(message)?;
     let terminal = lifecycle.is_closed();
-    Ok(DirectOwner {
-        set,
+    let lane = DirectLane {
         connection_attempt,
+        connection_owner,
         connection,
         lifecycle,
         session_plan,
@@ -218,9 +225,14 @@ fn finish<T: RegisteredTransport>(
         generation_close_reason: None,
         last_close_reason,
         submission_budget: driver.command_budget(),
-        last_turn: Turn::waiting(),
+        runnable: false,
         admission_open: false,
         terminal,
         pending_recovery: None,
+    };
+    Ok(DirectRuntime {
+        set,
+        lane,
+        last_turn: Turn::waiting(),
     })
 }

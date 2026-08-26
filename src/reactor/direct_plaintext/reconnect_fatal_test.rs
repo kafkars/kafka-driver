@@ -17,7 +17,7 @@ use kafka_wire::ApiVersionsRequest;
 use crate::{DriverLimits, RequestError, request::erased_request};
 
 use super::{
-    attempt::{DirectConnectError, DirectConnectionAttempt},
+    attempt::{DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner},
     owner::{DirectPlaintextOwner, DirectSet},
 };
 use crate::reactor::causality::CausalSequence;
@@ -93,6 +93,7 @@ fn timer_identity_exhaustion_is_repeatable_host_fatal_without_policy_close() {
 
     for _ in 0..2 {
         let error = owner
+            .access()
             .settle_generation_lifecycle(
                 ConnectionEpoch::from_raw(1),
                 CloseReason::OpenFailed(TransportFailure::Refused),
@@ -122,6 +123,7 @@ impl DirectConnectionAttempt<TcpTransport> for ImmediateEndpointFailure {
     fn connect(
         &self,
         _set: &mut DirectSet<TcpTransport>,
+        _owner: DirectConnectionOwner,
         _epoch: BorneraEpoch,
         _now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError> {
