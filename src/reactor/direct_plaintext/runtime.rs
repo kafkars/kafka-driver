@@ -16,7 +16,6 @@ use crate::{
 };
 
 use super::{
-    DirectBrokerRpc,
     owner::{DirectLane, DirectLaneAccess, DirectLaneView},
     set_owner::DirectSetOwner,
 };
@@ -29,17 +28,6 @@ pub(in crate::reactor) struct DirectRuntime<T: RegisteredTransport> {
 impl<T: RegisteredTransport> DirectRuntime<T> {
     pub(super) fn access(&mut self) -> DirectLaneAccess<'_, T> {
         self.connections.access(&mut self.lane)
-    }
-
-    #[allow(
-        dead_code,
-        reason = "the selector-neutral RPC facade is activated by the pending cluster cutover"
-    )]
-    pub(in crate::reactor) fn rpc<'lane, 'cause>(
-        &'lane mut self,
-        causality: &'cause mut CausalSequence,
-    ) -> DirectBrokerRpc<'lane, 'cause, T> {
-        DirectBrokerRpc::new(self.access(), causality)
     }
 
     pub(super) fn view(&self) -> DirectLaneView<'_, T> {

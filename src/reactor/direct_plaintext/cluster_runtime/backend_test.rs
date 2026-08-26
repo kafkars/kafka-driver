@@ -1,4 +1,4 @@
-//! Transport-erasure proofs for the unreachable cluster backend.
+//! Transport-erasure proofs for the live cluster backend.
 
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},

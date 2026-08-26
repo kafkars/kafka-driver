@@ -1,4 +1,4 @@
-//! Cluster-wide Bornera lane ownership proofs before public cutover.
+//! Cluster-wide Bornera lane ownership and scheduling proofs.
 
 use std::{io, net::SocketAddr, num::NonZeroUsize, time::Duration};
 

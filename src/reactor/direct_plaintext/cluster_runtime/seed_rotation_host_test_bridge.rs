@@ -1,4 +1,4 @@
-//! Opaque host-test bridge for cluster seed fatal totality before public cutover.
+//! Opaque host-test bridge for cluster seed fatal totality.
 
 use std::{
     io,
