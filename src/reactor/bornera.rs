@@ -8,6 +8,7 @@ mod delivery;
 mod frame;
 mod frame_error;
 mod identity;
+mod lane_identity;
 mod reservation;
 mod snapshot;
 
@@ -21,6 +22,8 @@ mod delivery_test;
 mod frame_test;
 #[cfg(test)]
 mod identity_test;
+#[cfg(test)]
+mod lane_identity_test;
 
 pub(in crate::reactor) use classifier::{KafkaReplyClassifier, KafkaReplyClassifierError};
 pub(in crate::reactor) use context_error::{
@@ -32,5 +35,8 @@ pub(in crate::reactor) use delivery::driver_delivery;
 pub(in crate::reactor) use frame::{KafkaFrame, KafkaFrameDecoder};
 pub(in crate::reactor) use frame_error::{KafkaFrameDecodeError, KafkaFrameDecoderConfigError};
 pub(in crate::reactor) use identity::{KafkaMatchKeyError, correlation_id, match_key};
+pub(in crate::reactor) use lane_identity::{
+    BorneraIdentityAllocator, BorneraIdentityError, BorneraLaneOwner,
+};
 pub(in crate::reactor) use reservation::ContextReservation;
 pub(in crate::reactor) use snapshot::OperationContextsSnapshot;

@@ -10,7 +10,7 @@ use kafka_driver_core::{
 
 use crate::reactor::entropy::JitterEntropy;
 
-use super::owner::ID;
+use super::owner::INITIAL_EPOCH;
 
 #[derive(Debug)]
 pub(super) struct DirectLifecycle {
@@ -21,7 +21,7 @@ pub(super) struct DirectLifecycle {
 
 impl DirectLifecycle {
     pub(super) fn started(backoff: BackoffPolicy, entropy: JitterEntropy) -> io::Result<Self> {
-        let epoch = ConnectionEpoch::from_raw(ID);
+        let epoch = ConnectionEpoch::from_raw(INITIAL_EPOCH);
         let mut owner = Self {
             broker: BrokerMachine::new(epoch, backoff),
             next_timer: Some(1),

@@ -17,14 +17,14 @@ use kafka_driver_core::{
 use crate::{DriverLimits, config::BrokerAddresses};
 
 use super::super::{
-    attempt::{DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner},
+    attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt},
     backend::DirectBackend,
     endpoint_refresh::DirectEndpointRefresh,
     lane_construction::start_lane,
+    lane_plan::{BorneraLanePlan, KafkaSessionPlan},
     limits::DirectSetBounds,
     owner::{DirectLane, DirectSet},
     runtime::DirectRuntime,
-    session_plan::DirectSessionPlan,
     set_owner::DirectSetOwner,
 };
 use crate::reactor::{broker::BrokerLimits, causality::CausalSequence};
@@ -47,16 +47,18 @@ impl RefreshFixture {
         let lane = start_lane(
             &mut set,
             &driver,
-            broker,
-            BrokerAddresses::Resolved {
-                endpoint: endpoint(),
-                addresses: addresses(old_addresses()),
-            },
-            None,
-            DirectSessionPlan::new(None, broker),
-            Box::new(RecordingFailure {
-                seen: Arc::clone(&seen),
-            }),
+            BorneraLanePlan::new(
+                BrokerAddresses::Resolved {
+                    endpoint: endpoint(),
+                    addresses: addresses(old_addresses()),
+                },
+                broker,
+                None,
+                KafkaSessionPlan::new(None, broker),
+                Box::new(RecordingFailure {
+                    seen: Arc::clone(&seen),
+                }),
+            ),
             owner(endpoint_id, lane_id),
             START,
         )
@@ -173,7 +175,7 @@ impl DirectConnectionAttempt<TcpTransport> for RecordingFailure {
     fn connect(
         &self,
         _set: &mut DirectSet<TcpTransport>,
-        _owner: DirectConnectionOwner,
+        _owner: BorneraLaneOwner,
         address: SocketAddr,
         _epoch: BorneraEpoch,
         _now: Moment,
@@ -188,8 +190,8 @@ impl DirectConnectionAttempt<TcpTransport> for RecordingFailure {
     }
 }
 
-fn owner(endpoint: u64, lane: u32) -> DirectConnectionOwner {
-    DirectConnectionOwner::new(
+fn owner(endpoint: u64, lane: u32) -> BorneraLaneOwner {
+    BorneraLaneOwner::new(
         EndpointId::new(endpoint),
         LaneId::new(lane),
         ConnectionId::new(endpoint),

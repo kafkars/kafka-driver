@@ -3,24 +3,20 @@
 use std::{io, net::SocketAddr};
 
 use bornera::{RegisteredTransport, TcpTransport};
-use bornera_core::{ConnectionId, EndpointId, LaneId};
-use calandria::TimerOwnerId;
 use kafka_driver_core::Moment;
 
 use crate::config::{BrokerAddresses, ClientId, DriverLimits, SaslConfig};
 use crate::reactor::broker::BrokerLimits;
 
 #[cfg(feature = "tls-rustls")]
-use super::{attempt::RustlsAttempt, rustls_transport::DirectRustlsTransport};
+use super::rustls_transport::DirectRustlsTransport;
+#[cfg(test)]
+use super::{attempt::DirectConnectionAttempt, lane_plan::KafkaSessionPlan};
 use super::{
-    attempt::{DirectConnectionAttempt, DirectConnectionOwner, PlaintextAttempt},
-    lane_construction::start_lane,
-    limits::DirectSetBounds,
-    owner::ID,
-    runtime::DirectRuntime,
-    session_plan::DirectSessionPlan,
-    set_owner::DirectSetOwner,
+    lane_construction::start_lane, lane_plan::BorneraLanePlan, limits::DirectSetBounds,
+    runtime::DirectRuntime, set_owner::DirectSetOwner,
 };
+use crate::reactor::bornera::BorneraIdentityAllocator;
 
 impl DirectRuntime<TcpTransport> {
     pub(in crate::reactor) fn new(
@@ -31,18 +27,14 @@ impl DirectRuntime<TcpTransport> {
         now: Moment,
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
-        let session_plan = DirectSessionPlan::new(sasl, broker);
-        let connection_attempt: Box<dyn DirectConnectionAttempt<TcpTransport>> =
-            Box::new(PlaintextAttempt::new(driver, broker));
-        start(
+        let plan = BorneraLanePlan::plaintext(
             driver,
             broker,
-            address,
+            BrokerAddresses::Direct(address),
+            sasl,
             client_id,
-            session_plan,
-            connection_attempt,
-            now,
-        )
+        );
+        start(driver, plan, now)
     }
 
     #[cfg(test)]
@@ -54,15 +46,14 @@ impl DirectRuntime<TcpTransport> {
         now: Moment,
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
-        start(
-            driver,
+        let plan = BorneraLanePlan::new(
+            BrokerAddresses::Direct(address),
             broker,
-            address,
             None,
-            DirectSessionPlan::new(sasl, broker),
+            KafkaSessionPlan::new(sasl, broker),
             attempt,
-            now,
-        )
+        );
+        start(driver, plan, now)
     }
 }
 
@@ -77,47 +68,28 @@ impl DirectRuntime<DirectRustlsTransport> {
         now: Moment,
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
-        let session_plan = DirectSessionPlan::new(sasl, broker);
-        let connection_attempt: Box<dyn DirectConnectionAttempt<DirectRustlsTransport>> =
-            Box::new(RustlsAttempt::new(driver, broker, tls));
-        start(
+        let plan = BorneraLanePlan::rustls(
             driver,
             broker,
-            address,
+            BrokerAddresses::Direct(address),
+            tls,
+            sasl,
             client_id,
-            session_plan,
-            connection_attempt,
-            now,
-        )
+        );
+        start(driver, plan, now)
     }
 }
 
 fn start<T: RegisteredTransport>(
     driver: &DriverLimits,
-    broker: BrokerLimits,
-    address: SocketAddr,
-    client_id: Option<ClientId>,
-    session_plan: DirectSessionPlan,
-    connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
+    plan: BorneraLanePlan<T>,
     now: Moment,
 ) -> io::Result<DirectRuntime<T>> {
     let mut connections = DirectSetOwner::new(driver, DirectSetBounds::direct())?;
-    let connection_owner = DirectConnectionOwner::new(
-        EndpointId::new(ID),
-        LaneId::new(1),
-        ConnectionId::new(ID),
-        TimerOwnerId::new(ID),
-    );
-    let lane = start_lane(
-        &mut connections,
-        driver,
-        broker,
-        BrokerAddresses::Direct(address),
-        client_id,
-        session_plan,
-        connection_attempt,
-        connection_owner,
-        now,
-    )?;
+    let mut identities = BorneraIdentityAllocator::new();
+    let (_, [owner]) = identities
+        .reserve_endpoint_lanes::<1>()
+        .map_err(io::Error::other)?;
+    let lane = start_lane(&mut connections, driver, plan, owner, now)?;
     Ok(DirectRuntime { connections, lane })
 }

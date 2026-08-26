@@ -113,7 +113,10 @@ pub(super) fn failed_endpoint(
 
 impl<T: RegisteredTransport> DirectLane<T> {
     pub(in crate::reactor) const fn refresh_owner(&self) -> DirectRefreshOwner {
-        self.connection_owner.refresh_owner()
+        DirectRefreshOwner::new(
+            self.connection_owner.endpoint(),
+            self.connection_owner.lane(),
+        )
     }
 
     pub(in crate::reactor) fn pending_endpoint_refresh_owner(&self) -> Option<DirectRefreshOwner> {

@@ -10,10 +10,10 @@ use kafka_driver_core::Moment;
 use crate::config::DriverLimits;
 
 use super::{
-    attempt::{DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner},
+    attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt},
     drive::DirectDrivePreparation,
     limits::{DirectSetBounds, set_limits},
-    owner::{DirectLane, DirectLaneAccess, DirectLaneView, DirectSet, ID, message},
+    owner::{DirectLane, DirectLaneAccess, DirectLaneView, DirectSet, SET_OWNER_ID, message},
 };
 
 pub(super) struct DirectSetOwner<T: RegisteredTransport> {
@@ -30,7 +30,7 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
     pub(super) fn new(driver: &DriverLimits, bounds: DirectSetBounds) -> io::Result<Self> {
         let lane_capacity = bounds.max_connections().get();
         let set = ConnectionSet::new(
-            ConnectionSetConfig::new(ResourceOwnerId::new(ID)),
+            ConnectionSetConfig::new(ResourceOwnerId::new(SET_OWNER_ID)),
             set_limits(driver, bounds),
         )
         .map_err(message)?;
@@ -62,7 +62,7 @@ impl<T: RegisteredTransport> DirectSetOwner<T> {
     pub(super) fn connect_lane(
         &mut self,
         attempt: &dyn DirectConnectionAttempt<T>,
-        owner: DirectConnectionOwner,
+        owner: BorneraLaneOwner,
         address: SocketAddr,
         epoch: ConnectionEpoch,
         now: Moment,

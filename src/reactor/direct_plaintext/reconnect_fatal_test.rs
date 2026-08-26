@@ -17,7 +17,7 @@ use kafka_wire::ApiVersionsRequest;
 use crate::{DriverLimits, RequestError, request::erased_request};
 
 use super::{
-    attempt::{DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner},
+    attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt},
     owner::{DirectPlaintextOwner, DirectSet},
 };
 use crate::reactor::causality::CausalSequence;
@@ -124,7 +124,7 @@ impl DirectConnectionAttempt<TcpTransport> for ImmediateEndpointFailure {
     fn connect(
         &self,
         _set: &mut DirectSet<TcpTransport>,
-        _owner: DirectConnectionOwner,
+        _owner: BorneraLaneOwner,
         _address: SocketAddr,
         _epoch: BorneraEpoch,
         _now: Moment,

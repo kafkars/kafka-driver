@@ -17,13 +17,11 @@ use kafka_driver_core::{
 use crate::{DriverLimits, config::BrokerAddresses};
 
 use super::{
-    attempt::{
-        DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner, PlaintextAttempt,
-    },
+    attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt, PlaintextAttempt},
     lane_construction::start_lane,
+    lane_plan::{BorneraLanePlan, KafkaSessionPlan},
     limits::DirectSetBounds,
     owner::{DirectLane, DirectPlaintextOwner, DirectSet},
-    session_plan::DirectSessionPlan,
     set_owner::DirectSetOwner,
 };
 use crate::reactor::{broker::BrokerLimits, causality::CausalSequence};
@@ -168,14 +166,16 @@ pub(super) fn resolved_lane(
     let lane = start_lane(
         &mut set,
         &driver,
-        broker,
-        BrokerAddresses::Resolved {
-            endpoint: endpoint(),
-            addresses: resolved(addresses),
-        },
-        None,
-        DirectSessionPlan::new(None, broker),
-        attempt,
+        BorneraLanePlan::new(
+            BrokerAddresses::Resolved {
+                endpoint: endpoint(),
+                addresses: resolved(addresses),
+            },
+            broker,
+            None,
+            KafkaSessionPlan::new(None, broker),
+            attempt,
+        ),
         owner(),
         NOW,
     )
@@ -214,7 +214,7 @@ impl DirectConnectionAttempt<TcpTransport> for RecordingFailure {
     fn connect(
         &self,
         _set: &mut DirectSet<TcpTransport>,
-        _owner: DirectConnectionOwner,
+        _owner: BorneraLaneOwner,
         address: SocketAddr,
         _epoch: BorneraEpoch,
         _now: Moment,
@@ -235,7 +235,7 @@ impl DirectConnectionAttempt<TcpTransport> for RecordingPlaintext {
     fn connect(
         &self,
         set: &mut DirectSet<TcpTransport>,
-        owner: DirectConnectionOwner,
+        owner: BorneraLaneOwner,
         address: SocketAddr,
         epoch: BorneraEpoch,
         now: Moment,
@@ -281,8 +281,8 @@ fn resolved(addresses: [SocketAddr; 2]) -> ResolvedAddressSet {
     .unwrap_or_else(|error| panic!("valid resolved addresses: {error}"))
 }
 
-fn owner() -> DirectConnectionOwner {
-    DirectConnectionOwner::new(
+fn owner() -> BorneraLaneOwner {
+    BorneraLaneOwner::new(
         EndpointId::new(1),
         LaneId::new(1),
         ConnectionId::new(1),

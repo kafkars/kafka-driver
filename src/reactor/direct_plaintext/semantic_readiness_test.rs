@@ -15,9 +15,7 @@ use kafka_driver_core::{BrokerState, CloseReason, ConnectionEpoch, Moment, Trans
 use crate::DriverLimits;
 
 use super::{
-    attempt::{
-        DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner, PlaintextAttempt,
-    },
+    attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt, PlaintextAttempt},
     endpoint_selection_test::{recorded, resolved_lane},
     owner::DirectSet,
 };
@@ -87,7 +85,7 @@ impl DirectConnectionAttempt<TcpTransport> for FailFirstThenPlaintext {
     fn connect(
         &self,
         set: &mut DirectSet<TcpTransport>,
-        owner: DirectConnectionOwner,
+        owner: BorneraLaneOwner,
         address: SocketAddr,
         epoch: BorneraEpoch,
         now: Moment,

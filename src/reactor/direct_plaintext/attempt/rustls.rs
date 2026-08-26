@@ -7,9 +7,7 @@ use bornera_core::ConnectionEpoch;
 use bornera_rustls::RustlsConnector;
 use kafka_driver_core::Moment;
 
-use super::{
-    DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner, connection_config,
-};
+use super::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt, connection_config};
 use crate::{
     config::{DriverLimits, TlsClientConfig},
     reactor::{bornera::KafkaReplyClassifier, broker::BrokerLimits},
@@ -53,7 +51,7 @@ impl DirectConnectionAttempt<DirectRustlsTransport> for RustlsAttempt {
     fn connect(
         &self,
         set: &mut DirectSet<DirectRustlsTransport>,
-        owner: DirectConnectionOwner,
+        owner: BorneraLaneOwner,
         address: SocketAddr,
         epoch: ConnectionEpoch,
         now: Moment,

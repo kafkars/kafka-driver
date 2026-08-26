@@ -17,6 +17,7 @@ mod failure_translation;
 mod generation;
 mod invariant_failure;
 mod lane_construction;
+mod lane_plan;
 mod lifecycle;
 mod lifecycle_drain;
 mod lifecycle_refresh;
@@ -37,7 +38,6 @@ mod runtime;
 mod rustls_transport;
 mod scram_proof;
 mod session_close;
-mod session_plan;
 mod session_progress;
 mod set_drive;
 mod set_owner;
@@ -52,8 +52,7 @@ mod authentication_fixture_test;
 mod authentication_publication_test;
 #[cfg(test)]
 mod authentication_test;
-#[cfg(test)]
-#[cfg(feature = "tls-rustls")]
+#[cfg(all(test, feature = "tls-rustls"))]
 mod decoder_gate_test;
 #[cfg(test)]
 mod drive_test;

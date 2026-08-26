@@ -69,6 +69,10 @@ fn rustls_attempt_replays_a_fresh_transport_in_one_set() {
         .lane
         .live_connection()
         .unwrap_or_else(|error| panic!("read first rustls generation: {error}"));
+    assert_eq!(first.identity().endpoint().get(), 1);
+    assert_eq!(first.identity().lane().get(), 1);
+    assert_eq!(first.identity().connection().get(), 1);
+    assert_eq!(owner.lane.connection_owner.timer().get(), 1);
 
     let report = owner
         .connections

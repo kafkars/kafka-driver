@@ -9,12 +9,14 @@ use std::{io, net::SocketAddr};
 use bornera::{
     ConnectError, ConnectionConfig, ConnectionIdentity, ConnectionToken, RegisteredTransport,
 };
-use bornera_core::{ConnectionEpoch, ConnectionId, EndpointId, LaneId};
-use calandria::{Deadline, TimerOwnerId};
+use bornera_core::ConnectionEpoch;
+use calandria::Deadline;
 use kafka_driver_core::Moment;
 
 use super::owner::{DirectSet, calandria_moment};
 use crate::reactor::broker::BrokerLimits;
+
+pub(super) use crate::reactor::bornera::BorneraLaneOwner;
 
 pub(super) use plaintext::PlaintextAttempt;
 #[cfg(feature = "tls-rustls")]
@@ -27,40 +29,11 @@ pub(super) trait DirectConnectionAttempt<T: RegisteredTransport> {
     fn connect(
         &self,
         set: &mut DirectSet<T>,
-        owner: DirectConnectionOwner,
+        owner: BorneraLaneOwner,
         address: SocketAddr,
         epoch: ConnectionEpoch,
         now: Moment,
     ) -> Result<ConnectionToken, DirectConnectError>;
-}
-
-/// Stable Bornera identity domains owned by one connection-local lane.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct DirectConnectionOwner {
-    endpoint: EndpointId,
-    lane: LaneId,
-    connection: ConnectionId,
-    timer: TimerOwnerId,
-}
-
-impl DirectConnectionOwner {
-    pub(super) const fn new(
-        endpoint: EndpointId,
-        lane: LaneId,
-        connection: ConnectionId,
-        timer: TimerOwnerId,
-    ) -> Self {
-        Self {
-            endpoint,
-            lane,
-            connection,
-            timer,
-        }
-    }
-
-    pub(super) const fn refresh_owner(self) -> super::endpoint_refresh::DirectRefreshOwner {
-        super::endpoint_refresh::DirectRefreshOwner::new(self.endpoint, self.lane)
-    }
 }
 
 #[derive(Debug)]
@@ -103,7 +76,7 @@ fn plaintext_connect_error<E: std::fmt::Display>(error: ConnectError<E>) -> Dire
 }
 
 fn connection_config(
-    owner: DirectConnectionOwner,
+    owner: BorneraLaneOwner,
     address: SocketAddr,
     epoch: ConnectionEpoch,
     now: Moment,
@@ -113,9 +86,9 @@ fn connection_config(
         .checked_add(broker.connect_timeout())
         .ok_or_else(|| io::Error::other("direct connect deadline overflowed"))?;
     Ok(ConnectionConfig::new(
-        ConnectionIdentity::new(owner.endpoint, owner.lane, owner.connection, epoch),
+        ConnectionIdentity::new(owner.endpoint(), owner.lane(), owner.connection(), epoch),
         address,
         Deadline::at(calandria_moment(connect_deadline)),
-        owner.timer,
+        owner.timer(),
     ))
 }

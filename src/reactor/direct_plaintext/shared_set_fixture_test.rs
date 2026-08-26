@@ -27,13 +27,11 @@ use crate::{
 };
 
 use super::{
-    attempt::{
-        DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner, PlaintextAttempt,
-    },
+    attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt, PlaintextAttempt},
     lane_construction::start_lane,
+    lane_plan::{BorneraLanePlan, KafkaSessionPlan},
     limits::DirectSetBounds,
     owner::{DirectLane, DirectSet},
-    session_plan::DirectSessionPlan,
     set_owner::DirectSetOwner,
 };
 
@@ -140,12 +138,14 @@ fn test_lane(
     start_lane(
         set,
         driver,
-        broker,
-        crate::config::BrokerAddresses::Direct(address),
-        None,
-        DirectSessionPlan::new(None, broker),
-        attempt,
-        DirectConnectionOwner::new(
+        BorneraLanePlan::new(
+            crate::config::BrokerAddresses::Direct(address),
+            broker,
+            None,
+            KafkaSessionPlan::new(None, broker),
+            attempt,
+        ),
+        BorneraLaneOwner::new(
             EndpointId::new(id),
             LaneId::new(
                 u32::try_from(id).unwrap_or_else(|error| panic!("bound shared lane id: {error}")),
@@ -208,7 +208,7 @@ impl DirectConnectionAttempt<TcpTransport> for ImmediateEndpointFailure {
     fn connect(
         &self,
         _set: &mut DirectSet<TcpTransport>,
-        _owner: DirectConnectionOwner,
+        _owner: BorneraLaneOwner,
         _address: SocketAddr,
         _epoch: ConnectionEpoch,
         _now: Moment,

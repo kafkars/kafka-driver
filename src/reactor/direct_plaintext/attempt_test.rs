@@ -32,6 +32,10 @@ fn clean_retirement_replays_transport_and_fresh_plain_session_in_one_set() {
         .live_connection()
         .unwrap_or_else(|error| panic!("read first replay generation: {error}"));
     assert_eq!(first.epoch(), ConnectionEpoch::new(1));
+    assert_eq!(first.identity().endpoint().get(), 1);
+    assert_eq!(first.identity().lane().get(), 1);
+    assert_eq!(first.identity().connection().get(), 1);
+    assert_eq!(owner.lane.connection_owner.timer().get(), 1);
     assert_eq!(owner.connections.snapshot().connections.active(), 1);
     assert_eq!(owner.connections.snapshot().poller.registrations(), 1);
 

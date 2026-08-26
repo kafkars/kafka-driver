@@ -10,7 +10,7 @@ use kafka_driver_core::{
 use kafka_wire_core::DecodeLimits;
 
 use crate::{
-    config::{BrokerAddresses, ClientId, DriverLimits},
+    config::{ClientId, DriverLimits},
     reactor::{
         address_rotation::AddressRotation, bornera::OperationContexts, broker::BrokerLimits,
         entropy::JitterEntropy,
@@ -18,32 +18,31 @@ use crate::{
 };
 
 use super::{
-    attempt::{DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner},
-    endpoint_refresh::{DirectEndpointRefresh, failed_endpoint},
+    attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt},
+    endpoint_refresh::{DirectEndpointRefresh, DirectRefreshOwner, failed_endpoint},
     failure_translation::synchronous_open_failure,
+    lane_plan::{BorneraLanePlan, KafkaSessionOwnership, KafkaSessionPlan},
     lifecycle::DirectLifecycle,
     operation_owner::DirectOperationContext,
-    owner::{DirectLane, ID, message},
+    owner::{DirectLane, INITIAL_EPOCH, message},
     pending::PendingRequests,
-    session_plan::{DirectSessionOwnership, DirectSessionPlan},
     set_owner::DirectSetOwner,
 };
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "lane construction keeps every owner explicit"
-)]
 pub(super) fn start_lane<T: RegisteredTransport>(
     set: &mut DirectSetOwner<T>,
     driver: &DriverLimits,
-    broker: BrokerLimits,
-    addresses: BrokerAddresses,
-    client_id: Option<ClientId>,
-    session_plan: DirectSessionPlan,
-    connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
-    connection_owner: DirectConnectionOwner,
+    plan: BorneraLanePlan<T>,
+    connection_owner: BorneraLaneOwner,
     now: Moment,
 ) -> io::Result<DirectLane<T>> {
+    let BorneraLanePlan {
+        addresses,
+        broker,
+        client_id,
+        session: session_plan,
+        connection: connection_attempt,
+    } = plan;
     let mut session = session_plan.start()?;
     let mut addresses = AddressRotation::new(addresses);
     let primary = addresses
@@ -58,7 +57,7 @@ pub(super) fn start_lane<T: RegisteredTransport>(
         connection_attempt.as_ref(),
         connection_owner,
         address,
-        bornera_core::ConnectionEpoch::new(ID),
+        bornera_core::ConnectionEpoch::new(INITIAL_EPOCH),
         now,
     );
     let (connection, last_close_reason, endpoint_refresh) = match attempt {
@@ -67,11 +66,11 @@ pub(super) fn start_lane<T: RegisteredTransport>(
             let reason = synchronous_open_failure(&source);
             drop(session.machine.apply(KafkaSessionInput::Closed));
             session.authentication = None;
-            let epoch = ConnectionEpoch::from_raw(ID);
+            let epoch = ConnectionEpoch::from_raw(INITIAL_EPOCH);
             let endpoint = failed_endpoint(&mut addresses, reason);
             let effects = lifecycle.generation_ended(epoch, reason, now, endpoint.is_some())?;
             let endpoint_refresh = DirectEndpointRefresh::after_failure(
-                connection_owner.refresh_owner(),
+                DirectRefreshOwner::new(connection_owner.endpoint(), connection_owner.lane()),
                 endpoint,
                 lifecycle.state(),
                 epoch,
@@ -117,10 +116,10 @@ pub(super) fn start_lane<T: RegisteredTransport>(
 }
 
 struct InitialDirect<T: RegisteredTransport> {
-    session_plan: DirectSessionPlan,
-    session: DirectSessionOwnership,
+    session_plan: KafkaSessionPlan,
+    session: KafkaSessionOwnership,
     connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
-    connection_owner: DirectConnectionOwner,
+    connection_owner: BorneraLaneOwner,
     connection: Option<ConnectionToken>,
     addresses: AddressRotation,
     endpoint_refresh: Option<DirectEndpointRefresh>,

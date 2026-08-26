@@ -7,7 +7,7 @@ use kafka_driver_core::{BrokerEffect, BrokerPhase, CloseReason, ConnectionEpoch,
 
 use super::{
     attempt::DirectConnectError,
-    endpoint_refresh::{DirectEndpointRefresh, failed_endpoint},
+    endpoint_refresh::{DirectEndpointRefresh, DirectRefreshOwner, failed_endpoint},
     failure_translation::synchronous_open_failure,
     owner::DirectLaneAccess,
     reconnect::bornera_epoch,
@@ -47,7 +47,10 @@ impl<T: RegisteredTransport> DirectLaneAccess<'_, T> {
             .lifecycle
             .generation_ended(epoch, reason, now, endpoint.is_some())?;
         let refresh = DirectEndpointRefresh::after_failure(
-            self.connection_owner.refresh_owner(),
+            DirectRefreshOwner::new(
+                self.connection_owner.endpoint(),
+                self.connection_owner.lane(),
+            ),
             endpoint,
             self.lifecycle.state(),
             epoch,

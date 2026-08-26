@@ -18,9 +18,7 @@ use kafka_wire::{ApiVersionsRequest, ApiVersionsResponse};
 use crate::{DriverLimits, RequestError, SaslConfig, request::erased_request};
 
 use super::{
-    attempt::{
-        DirectConnectError, DirectConnectionAttempt, DirectConnectionOwner, PlaintextAttempt,
-    },
+    attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt, PlaintextAttempt},
     owner::{DirectPlaintextOwner, DirectSet, calandria_moment},
     reconnect::terminal_failure,
 };
@@ -221,7 +219,7 @@ impl DirectConnectionAttempt<TcpTransport> for FailThroughEpoch {
     fn connect(
         &self,
         set: &mut DirectSet<TcpTransport>,
-        owner: DirectConnectionOwner,
+        owner: BorneraLaneOwner,
         address: SocketAddr,
         epoch: BorneraEpoch,
         now: Moment,

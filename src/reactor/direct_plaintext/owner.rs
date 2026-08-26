@@ -22,28 +22,29 @@ use super::{operation_owner::DirectOperationContext, pending::PendingRequests};
 use crate::reactor::bornera::{KafkaFrame, KafkaReplyClassifier, OperationContexts};
 
 use super::{
-    attempt::{DirectConnectionAttempt, DirectConnectionOwner},
+    attempt::{BorneraLaneOwner, DirectConnectionAttempt},
     decoder_gate::DirectFrameDecoder,
+    lane_plan::KafkaSessionPlan,
     lifecycle::DirectLifecycle,
-    session_plan::DirectSessionPlan,
 };
 
 use super::endpoint_refresh::DirectEndpointRefresh;
 
 pub(super) type DirectSet<T> = ConnectionSet<DirectFrameDecoder, KafkaReplyClassifier, T>;
 
-pub(super) const ID: u64 = 1;
+pub(super) const INITIAL_EPOCH: u64 = 1;
+pub(super) const SET_OWNER_ID: u64 = 1;
 
 pub(in crate::reactor) struct DirectLane<T: RegisteredTransport> {
     #[allow(dead_code, reason = "replayed by the direct reconnect lifecycle")]
     pub(super) connection_attempt: Box<dyn DirectConnectionAttempt<T>>,
-    pub(super) connection_owner: DirectConnectionOwner,
+    pub(super) connection_owner: BorneraLaneOwner,
     pub(super) connection: Option<ConnectionToken>,
     pub(super) addresses: crate::reactor::address_rotation::AddressRotation,
     pub(super) endpoint_refresh: Option<DirectEndpointRefresh>,
     pub(super) lifecycle: DirectLifecycle,
     #[allow(dead_code, reason = "replayed by the direct reconnect lifecycle")]
-    pub(super) session_plan: DirectSessionPlan,
+    pub(super) session_plan: KafkaSessionPlan,
     pub(super) session: KafkaSessionMachine,
     pub(super) authentication_session: Option<AuthenticationSession>,
     pub(super) scram_proof_sender: Option<ScramProofSender>,
