@@ -17,7 +17,6 @@ use crate::{DriverLimits, TrafficClass};
 
 use super::{
     endpoint_refresh::DirectRefreshOwner,
-    lane_construction::start_lane,
     lane_plan::BorneraLanePlan,
     limits::DirectSetBounds,
     owner::{DirectLane, DirectLaneAccess, DirectLaneView},
@@ -43,19 +42,18 @@ mod route_state;
 mod route_test_support;
 mod route_turn;
 mod rpc_access;
+mod scram_proof;
 pub(super) mod seed;
 mod seed_rotation;
 #[cfg(test)]
 pub(super) mod seed_rotation_host_test_bridge;
 mod seed_waiting;
 mod seed_waiting_settlement;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct SeedSlot {
     owner: DirectRefreshOwner,
     generation: ConnectionEpoch,
 }
-
 pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     driver: DriverLimits,
     connections: DirectSetOwner<T>,
@@ -76,6 +74,7 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     seed_bootstrap: seed_rotation::SeedBootstrapState,
     seed_waiting: PendingRequests,
     seed_waiting_state: seed_waiting_settlement::SeedWaitingState,
+    scram_proof_sender: Option<crate::reactor::scram_proof::ScramProofSender>,
     lane_turn_budget: NonZeroUsize,
     drive_cursor: usize,
 }
@@ -106,6 +105,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
                 driver.metadata().waiting_bytes(),
             ),
             seed_waiting_state: seed_waiting_settlement::SeedWaitingState::open(),
+            scram_proof_sender: None,
             lane_turn_budget: driver.metadata().lane_turn_budget(),
             drive_cursor: 0,
         })
@@ -135,7 +135,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         if self.slots.contains_key(&key) {
             return Err(io::Error::other("Bornera cluster lane owner was reused"));
         }
-        let lane = start_lane(&mut self.connections, &self.driver, plan, owner, now)?;
+        let lane = self.start_cluster_lane(plan, owner, now)?;
         let index = self.lanes.len();
         self.lanes.push(lane);
         self.slots.insert(key, index);

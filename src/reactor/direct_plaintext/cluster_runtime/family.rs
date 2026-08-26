@@ -10,7 +10,6 @@ use crate::{TrafficClass, reactor::bornera::BorneraLaneOwner};
 use super::{ClusterRuntime, refresh_owner};
 use crate::reactor::direct_plaintext::{
     endpoint_refresh::DirectRefreshOwner,
-    lane_construction::start_lane,
     lane_plan::{BorneraLanePlan, factory::BorneraLanePlanFactory},
 };
 
@@ -172,16 +171,15 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
     ) -> io::Result<DirectRefreshOwner> {
         match activation {
             Activation::Dormant(owner) => {
-                let family = self
-                    .families
-                    .get_mut(&broker_id)
-                    .ok_or_else(|| io::Error::other("Bornera broker family is stale"))?;
                 let key = refresh_owner(owner);
-                let lane = start_lane(&mut self.connections, &self.driver, plan, owner, now)?;
+                let lane = self.start_cluster_lane(plan, owner, now)?;
                 let index = self.lanes.len();
                 self.lanes.push(lane);
                 self.slots.insert(key, index);
-                family.mark_active(traffic);
+                self.families
+                    .get_mut(&broker_id)
+                    .unwrap_or_else(|| unreachable!("preflight retained broker family"))
+                    .mark_active(traffic);
                 Ok(key)
             }
             Activation::New => {
@@ -196,7 +194,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
                 let mut family = BrokerFamily::new(endpoint, owners);
                 let owner = family.owner(traffic);
                 let key = refresh_owner(owner);
-                let lane = start_lane(&mut self.connections, &self.driver, plan, owner, now)?;
+                let lane = self.start_cluster_lane(plan, owner, now)?;
                 let index = self.lanes.len();
                 self.lanes.push(lane);
                 self.slots.insert(key, index);

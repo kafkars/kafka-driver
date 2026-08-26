@@ -13,7 +13,6 @@ use super::{
     route_state::{BrokerRouteState, PendingInstall},
 };
 use crate::reactor::direct_plaintext::{
-    lane_construction::start_lane,
     lane_plan::{BorneraLanePlan, factory::BorneraLanePlanFactory},
     owner::DirectLane,
 };
@@ -183,7 +182,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         let mut lanes = Vec::with_capacity(owned.len());
         for (demand, plan) in owned.iter().zip(plans) {
             let owner = owners[demand.lane.traffic_class().stable_order() as usize];
-            match start_lane(&mut self.connections, &self.driver, plan, owner, now) {
+            match self.start_cluster_lane(plan, owner, now) {
                 Ok(lane) => lanes.push(lane),
                 Err(error) => return Err(self.rollback_unpublished_lanes(lanes, error)),
             }

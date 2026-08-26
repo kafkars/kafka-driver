@@ -10,7 +10,6 @@ use crate::reactor::{
     bootstrap::ResolvedSeed,
     direct_plaintext::{
         endpoint_refresh::DirectRefreshOwner,
-        lane_construction::start_lane,
         lane_plan::{BorneraLanePlan, factory::BorneraLanePlanFactory},
     },
 };
@@ -208,7 +207,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
     ) -> io::Result<()> {
         let (_, [owner]) = self.reserve_endpoint_lanes::<1>()?;
         let key = refresh_owner(owner);
-        let lane = start_lane(&mut self.connections, &self.driver, plan, owner, now)?;
+        let lane = self.start_cluster_lane(plan, owner, now)?;
         let _retired = std::mem::replace(&mut self.lanes[index], lane);
         self.slots.remove(&current.owner);
         self.slots.insert(key, index);
