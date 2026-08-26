@@ -74,6 +74,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
     }
 
     fn route_terminal_failure(&self, lane: BrokerLane) -> io::Result<Option<RequestError>> {
+        if self.cluster_draining && self.routes.contains_key(&lane) {
+            return Ok(Some(draining()));
+        }
         let Some(advertised) = self
             .routes
             .get(&lane)
@@ -96,6 +99,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
     }
 
     pub(super) fn route_waiting_has_local_work(&self) -> bool {
+        if self.cluster_draining {
+            return self.routes.values().any(|state| !state.waiting.is_empty());
+        }
         self.routes.iter().any(|(lane, state)| {
             if state.waiting.is_empty() {
                 return false;
@@ -121,6 +127,13 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
 fn closed() -> RequestError {
     RequestError::Rejected {
         failure: kafka_driver_core::CallFailure::Closed,
+        delivery: kafka_driver_core::Delivery::NotSent,
+    }
+}
+
+fn draining() -> RequestError {
+    RequestError::Rejected {
+        failure: kafka_driver_core::CallFailure::Draining,
         delivery: kafka_driver_core::Delivery::NotSent,
     }
 }

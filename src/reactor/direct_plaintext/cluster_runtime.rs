@@ -6,7 +6,6 @@ use std::{collections::BTreeMap, io, num::NonZeroUsize};
 
 use bornera::RegisteredTransport;
 use bornera_core::EndpointId;
-use calandria::RetainedBytes;
 use kafka_driver_core::{BrokerDirectory, BrokerId, ConnectionEpoch, Moment};
 
 use crate::reactor::{
@@ -23,12 +22,13 @@ use super::{
     pending::PendingRequests,
     set_owner::DirectSetOwner,
 };
-
 pub(super) mod backend;
 mod endpoint_refresh;
 pub(super) mod family;
 mod family_removal;
 mod family_state;
+mod lifecycle;
+pub(super) use lifecycle::reclaimable;
 mod route_admission;
 mod route_directory;
 mod route_failure;
@@ -75,6 +75,7 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     seed_waiting: PendingRequests,
     seed_waiting_state: seed_waiting_settlement::SeedWaitingState,
     scram_proof_sender: Option<crate::reactor::scram_proof::ScramProofSender>,
+    cluster_draining: bool,
     lane_turn_budget: NonZeroUsize,
     drive_cursor: usize,
 }
@@ -106,6 +107,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             ),
             seed_waiting_state: seed_waiting_settlement::SeedWaitingState::open(),
             scram_proof_sender: None,
+            cluster_draining: false,
             lane_turn_budget: driver.metadata().lane_turn_budget(),
             drive_cursor: 0,
         })
@@ -207,24 +209,6 @@ fn cluster_bounds(driver: &DriverLimits) -> io::Result<DirectSetBounds> {
     let ready = NonZeroUsize::new(ready)
         .ok_or_else(|| io::Error::other("Bornera ready-lane budget must be nonzero"))?;
     Ok(DirectSetBounds::new(max_connections, ready))
-}
-
-fn reclaimable<T: RegisteredTransport>(lane: &DirectLane<T>) -> bool {
-    let contexts = lane.contexts.snapshot();
-    lane.is_terminal()
-        && lane.connection.is_none()
-        && lane.endpoint_refresh.is_none()
-        && lane.pending_recovery.is_none()
-        && lane.pending_scram_proof.is_none()
-        && lane.authentication_session.is_none()
-        && lane.session_deadline.is_none()
-        && lane.pending.is_empty()
-        && !lane.admission_open
-        && !lane.runnable
-        && contexts.reserved() == 0
-        && contexts.published() == 0
-        && contexts.retained_bytes() == RetainedBytes::ZERO
-        && !contexts.is_poisoned()
 }
 
 const fn refresh_owner(owner: BorneraLaneOwner) -> DirectRefreshOwner {

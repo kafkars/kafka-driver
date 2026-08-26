@@ -40,6 +40,10 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         now: Moment,
         causality: &mut CausalSequence,
     ) -> io::Result<Option<(BrokerLane, DnsRequest)>> {
+        if self.cluster_draining {
+            request.fail(draining());
+            return Ok(None);
+        }
         let Some(endpoint) = self.resolve_route(route) else {
             Self::fail_stale_route(request);
             return Ok(None);
@@ -151,6 +155,13 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
 fn not_ready() -> RequestError {
     RequestError::Rejected {
         failure: CallFailure::NotReady,
+        delivery: Delivery::NotSent,
+    }
+}
+
+fn draining() -> RequestError {
+    RequestError::Rejected {
+        failure: CallFailure::Draining,
         delivery: Delivery::NotSent,
     }
 }

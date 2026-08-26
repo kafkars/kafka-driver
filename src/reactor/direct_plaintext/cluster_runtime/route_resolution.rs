@@ -41,6 +41,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         route: BrokerRoute,
         traffic: TrafficClass,
     ) -> io::Result<Option<BrokerLane>> {
+        if self.cluster_draining {
+            return Ok(None);
+        }
         let Some(endpoint) = self.resolve_route(route) else {
             return Ok(None);
         };
@@ -90,6 +93,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         factory: &dyn BorneraLanePlanFactory<T>,
         now: Moment,
     ) -> io::Result<RouteResolutionProgress> {
+        if self.cluster_draining {
+            return Ok(RouteResolutionProgress::Ignored);
+        }
         let Some(state) = self.routes.get_mut(&lane) else {
             return Ok(RouteResolutionProgress::Ignored);
         };
