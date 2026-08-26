@@ -54,7 +54,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             let plan = factory.at_resolved(endpoint, addresses)?;
             self.install_seed(generation, plan, now)
         })();
-        self.finish_seed_host_result(result)
+        self.finish_host_result(result)
     }
 
     pub(super) fn replace_resolved_seed(
@@ -85,7 +85,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             self.replace_reclaimable_seed(current, index, generation, plan, now)?;
             Ok(ResolvedSeedReplacement::Replaced)
         })();
-        self.finish_seed_host_result(result)
+        self.finish_host_result(result)
     }
 
     pub(super) fn install_seed(
@@ -108,7 +108,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             });
             Ok(key)
         })();
-        self.finish_seed_host_result(result)
+        self.finish_host_result(result)
     }
 
     pub(super) fn replace_terminal_seed(
@@ -137,7 +137,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             self.replace_reclaimable_seed(current, index, generation, plan, now)?;
             Ok(SeedReplacement::Replaced)
         })();
-        self.finish_seed_host_result(result)
+        self.finish_host_result(result)
     }
 
     fn replace_reclaimable_seed(

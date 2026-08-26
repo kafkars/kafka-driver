@@ -1,18 +1,18 @@
 //! Unreachable cluster-wide Bornera set and stable lane ownership.
 
-#![allow(
-    dead_code,
-    reason = "activated atomically by the pending Bornera cluster cutover"
-)]
+#![allow(dead_code, reason = "pending atomic Bornera cluster cutover")]
 
 use std::{collections::BTreeMap, io, num::NonZeroUsize};
 
 use bornera::RegisteredTransport;
 use bornera_core::EndpointId;
 use calandria::RetainedBytes;
-use kafka_driver_core::{BrokerId, ConnectionEpoch, Moment};
+use kafka_driver_core::{BrokerDirectory, BrokerId, ConnectionEpoch, Moment};
 
-use crate::reactor::bornera::{BorneraIdentityAllocator, BorneraIdentityError, BorneraLaneOwner};
+use crate::reactor::{
+    BrokerLane,
+    bornera::{BorneraIdentityAllocator, BorneraIdentityError, BorneraLaneOwner},
+};
 use crate::{DriverLimits, TrafficClass};
 
 use super::{
@@ -28,6 +28,14 @@ use super::{
 pub(super) mod backend;
 pub(super) mod family;
 mod family_removal;
+mod route_admission;
+mod route_directory;
+mod route_failure;
+mod route_resolution;
+mod route_state;
+#[cfg(test)]
+mod route_test_support;
+mod route_turn;
 pub(super) mod seed;
 mod seed_rotation;
 #[cfg(test)]
@@ -48,6 +56,11 @@ pub(super) struct ClusterRuntime<T: RegisteredTransport> {
     lanes: Vec<DirectLane<T>>,
     slots: BTreeMap<DirectRefreshOwner, usize>,
     families: BTreeMap<BrokerId, family::BrokerFamily>,
+    directory: Option<BrokerDirectory>,
+    routes: BTreeMap<BrokerLane, route_state::BrokerRouteState>,
+    route_cursor: usize,
+    route_turn: Vec<BrokerLane>,
+    routes_first: bool,
     seed: Option<SeedSlot>,
     seed_bootstrap: seed_rotation::SeedBootstrapState,
     seed_waiting: PendingRequests,
@@ -66,6 +79,11 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             lanes: Vec::new(),
             slots: BTreeMap::new(),
             families: BTreeMap::new(),
+            directory: None,
+            routes: BTreeMap::new(),
+            route_cursor: 0,
+            route_turn: Vec::new(),
+            routes_first: false,
             seed: None,
             seed_bootstrap: seed_rotation::SeedBootstrapState::Inactive,
             seed_waiting: PendingRequests::new(

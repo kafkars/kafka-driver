@@ -10,6 +10,7 @@ mod bootstrap;
 )]
 mod bornera;
 mod broker;
+mod broker_lane;
 mod broker_rpc;
 mod broker_set;
 mod causality;
@@ -27,6 +28,7 @@ mod plaintext;
 mod poller;
 mod resolver;
 mod resource;
+mod route_waiting;
 mod scram_proof;
 mod tcp;
 mod timer;
@@ -57,6 +59,7 @@ mod mailbox_test;
 mod wait_queue_test;
 
 pub(in crate::reactor) use backend::{LegacyBackend, ReactorBackend};
+pub(in crate::reactor) use broker_lane::BrokerLane;
 pub(in crate::reactor) use broker_rpc::{BrokerRpc, BrokerRpcError, LegacyBrokerRpc};
 pub(crate) use clock::ReactorClock;
 pub(crate) use command::Command;

@@ -9,10 +9,11 @@ use crate::{
     reactor::{
         PollEvent, Poller,
         broker::{DeadlineProgress, SingleBroker},
+        route_waiting::terminal,
     },
 };
 
-use super::{BrokerSetError, child::BrokerChild, waiting::terminal};
+use super::{BrokerSetError, child::BrokerChild};
 
 impl BrokerChild {
     pub(super) fn observe(

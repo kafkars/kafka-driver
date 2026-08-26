@@ -7,7 +7,6 @@ mod child_resolution;
 mod deadline_index;
 mod error;
 mod io;
-mod lane;
 mod lane_queue;
 mod observation;
 mod owner;
@@ -18,7 +17,6 @@ mod runnable;
 mod scheduling;
 mod seed;
 mod slots;
-mod waiting;
 
 #[cfg(test)]
 mod address_refresh_test;
@@ -53,6 +51,6 @@ mod terminal_test;
 #[cfg(test)]
 mod waiting_test;
 
+pub(in crate::reactor) use super::broker_lane::BrokerLane;
 pub(in crate::reactor) use error::BrokerSetError;
-pub(in crate::reactor) use lane::BrokerLane;
 pub(in crate::reactor) use owner::BrokerSet;

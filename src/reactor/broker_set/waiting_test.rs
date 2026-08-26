@@ -7,13 +7,13 @@ use kafka_wire::ApiVersionsRequest;
 
 use crate::{RequestError, request::erased_request};
 
-use super::waiting::{WaitingCallOutcome, WaitingCalls};
+use crate::reactor::route_waiting::{RouteWaiting, RouteWaitingOutcome};
 
 #[test]
 fn exact_count_capacity_is_admitted_and_one_more_call_is_rejected() {
     let (first_call, first) = request(1, Duration::from_secs(1));
     let bytes = first.retained_bytes();
-    let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes * 2), nonzero(1));
+    let mut waiting = RouteWaiting::new(nonzero(1), nonzero(bytes * 2), nonzero(1));
     assert!(waiting.admit(first, Moment::ORIGIN));
     let (overflow_call, overflow) = request(2, Duration::from_secs(1));
 
@@ -33,7 +33,7 @@ fn exact_count_capacity_is_admitted_and_one_more_call_is_rejected() {
 fn exact_byte_capacity_is_admitted_and_one_more_byte_is_rejected() {
     let (first_call, first) = request(1, Duration::from_secs(1));
     let bytes = first.retained_bytes();
-    let mut waiting = WaitingCalls::new(nonzero(2), nonzero(bytes), nonzero(1));
+    let mut waiting = RouteWaiting::new(nonzero(2), nonzero(bytes), nonzero(1));
     assert!(waiting.admit(first, Moment::ORIGIN));
     let (overflow_call, overflow) = request(2, Duration::from_secs(1));
 
@@ -50,10 +50,10 @@ fn exact_byte_capacity_is_admitted_and_one_more_byte_is_rejected() {
 fn absolute_deadline_survives_time_spent_in_the_wait_queue() {
     let (call, request) = request(1, Duration::from_nanos(10));
     let bytes = request.retained_bytes();
-    let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes), nonzero(1));
+    let mut waiting = RouteWaiting::new(nonzero(1), nonzero(bytes), nonzero(1));
     assert!(waiting.admit(request, Moment::from_nanos(100)));
 
-    let WaitingCallOutcome::Ready(mut request) = waiting.pop(Moment::from_nanos(104), None) else {
+    let RouteWaitingOutcome::Ready(mut request) = waiting.pop(Moment::from_nanos(104), None) else {
         panic!("unexpired call must leave the queue");
     };
 
@@ -68,12 +68,12 @@ fn absolute_deadline_survives_time_spent_in_the_wait_queue() {
 fn a_call_expiring_in_the_wait_queue_is_never_submitted() {
     let (call, request) = request(1, Duration::from_nanos(10));
     let bytes = request.retained_bytes();
-    let mut waiting = WaitingCalls::new(nonzero(1), nonzero(bytes), nonzero(1));
+    let mut waiting = RouteWaiting::new(nonzero(1), nonzero(bytes), nonzero(1));
     assert!(waiting.admit(request, Moment::from_nanos(100)));
 
     assert!(matches!(
         waiting.pop(Moment::from_nanos(110), None),
-        WaitingCallOutcome::Settled
+        RouteWaitingOutcome::Settled
     ));
 
     assert_eq!(
@@ -89,7 +89,7 @@ fn a_call_expiring_in_the_wait_queue_is_never_submitted() {
 fn earliest_deadline_is_reported_even_when_it_is_not_at_the_fifo_front() {
     let (later_call, later) = request(1, Duration::from_nanos(20));
     let bytes = later.retained_bytes();
-    let mut waiting = WaitingCalls::new(nonzero(2), nonzero(bytes * 2), nonzero(1));
+    let mut waiting = RouteWaiting::new(nonzero(2), nonzero(bytes * 2), nonzero(1));
     assert!(waiting.admit(later, Moment::ORIGIN));
     let (earlier_call, earlier) = request(2, Duration::from_nanos(10));
     assert!(waiting.admit(earlier, Moment::ORIGIN));
@@ -114,7 +114,7 @@ fn earliest_deadline_is_reported_even_when_it_is_not_at_the_fifo_front() {
 fn expiration_settlement_is_bounded_and_reports_remaining_due_work() {
     let (first_call, first) = request(1, Duration::from_nanos(10));
     let bytes = first.retained_bytes();
-    let mut waiting = WaitingCalls::new(nonzero(2), nonzero(bytes * 2), nonzero(1));
+    let mut waiting = RouteWaiting::new(nonzero(2), nonzero(bytes * 2), nonzero(1));
     assert!(waiting.admit(first, Moment::ORIGIN));
     let (second_call, second) = request(2, Duration::from_nanos(10));
     assert!(waiting.admit(second, Moment::ORIGIN));

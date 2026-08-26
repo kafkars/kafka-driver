@@ -11,13 +11,11 @@ use crate::{
         Poller,
         broker::{BrokerLimits, SingleBroker},
         resource::ResourceNamespace,
+        route_waiting::{RouteWaiting, RouteWaitingOutcome},
     },
 };
 
-use super::{
-    BrokerLane, BrokerSetError, replacement::PendingBroker, waiting::WaitingCallOutcome,
-    waiting::WaitingCalls,
-};
+use super::{BrokerLane, BrokerSetError, replacement::PendingBroker};
 
 pub(super) struct BrokerChild {
     pub(super) lane: BrokerLane,
@@ -25,7 +23,7 @@ pub(super) struct BrokerChild {
     pub(super) connection: Option<SingleBroker>,
     pub(super) route: Option<BrokerRoute>,
     pub(super) endpoint: Option<BrokerEndpoint>,
-    pub(super) waiting: WaitingCalls,
+    pub(super) waiting: RouteWaiting,
     pub(super) namespace: ResourceNamespace,
     pub(super) limits: BrokerLimits,
     pub(super) next_epoch: Option<u64>,
@@ -52,7 +50,7 @@ impl BrokerChild {
             connection: None,
             route: None,
             endpoint: None,
-            waiting: WaitingCalls::new(waiting_calls, waiting_bytes, waiting_budget),
+            waiting: RouteWaiting::new(waiting_calls, waiting_bytes, waiting_budget),
             namespace,
             limits,
             next_epoch: Some(1),
@@ -120,15 +118,15 @@ impl BrokerChild {
             return Ok(false);
         }
         match self.waiting.pop(now, self.route_failure_at) {
-            WaitingCallOutcome::Empty => {
+            RouteWaitingOutcome::Empty => {
                 self.route_failure_at = None;
                 Ok(false)
             }
-            WaitingCallOutcome::Settled => {
+            RouteWaitingOutcome::Settled => {
                 self.route_failure_at = None;
                 Ok(true)
             }
-            WaitingCallOutcome::Ready(request) => {
+            RouteWaitingOutcome::Ready(request) => {
                 connection
                     .submit(poller, request, now)
                     .map_err(BrokerSetError::Broker)?;

@@ -9,19 +9,20 @@ use crate::{
     config::BrokerTemplate,
     reactor::broker::{BrokerLimits, SingleBroker},
     reactor::resource::ResourceToken,
+    reactor::route_waiting::RouteWaiting,
     reactor::scram_proof::ScramProofSender,
 };
 
 use super::{
     BrokerSetError, capacity::BrokerSetCapacity, child::BrokerChild, deadline_index::DeadlineIndex,
-    lane_queue::LaneQueue, waiting::WaitingCalls,
+    lane_queue::LaneQueue,
 };
 
 /// Shard-local owner of a seed connection and disjoint broker token namespaces.
 pub(in crate::reactor) struct BrokerSet {
     pub(super) seed: Option<SingleBroker>,
     pub(super) seed_generation: Option<ConnectionEpoch>,
-    pub(super) seed_waiting: WaitingCalls,
+    pub(super) seed_waiting: RouteWaiting,
     pub(super) directory: Option<BrokerDirectory>,
     pub(super) broker_limits: BrokerLimits,
     pub(super) broker_capacity: NonZeroUsize,
@@ -74,7 +75,7 @@ impl BrokerSet {
         Ok(Self {
             seed: None,
             seed_generation: None,
-            seed_waiting: WaitingCalls::new(
+            seed_waiting: RouteWaiting::new(
                 metadata_limits.waiting_calls(),
                 metadata_limits.waiting_bytes(),
                 metadata_limits.admission_budget(),

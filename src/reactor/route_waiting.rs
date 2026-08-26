@@ -1,4 +1,4 @@
-//! FIFO ownership for calls waiting on one lazily opened broker connection.
+//! FIFO ownership for calls waiting on one semantic broker route.
 
 use std::num::NonZeroUsize;
 
@@ -8,7 +8,7 @@ use kafka_driver_core::{
 
 use crate::{RequestError, reactor::wait_queue::WaitQueue, request::ErasedRequest};
 
-pub(super) struct WaitingCalls {
+pub(in crate::reactor) struct RouteWaiting {
     calls: WaitQueue<WaitingCall>,
     retained_bytes: usize,
     call_limit: NonZeroUsize,
@@ -16,8 +16,8 @@ pub(super) struct WaitingCalls {
     turn_budget: NonZeroUsize,
 }
 
-impl WaitingCalls {
-    pub(super) fn new(
+impl RouteWaiting {
+    pub(in crate::reactor) fn new(
         call_limit: NonZeroUsize,
         byte_limit: NonZeroUsize,
         turn_budget: NonZeroUsize,
@@ -31,7 +31,11 @@ impl WaitingCalls {
         }
     }
 
-    pub(super) fn admit(&mut self, mut request: Box<dyn ErasedRequest>, now: Moment) -> bool {
+    pub(in crate::reactor) fn admit(
+        &mut self,
+        mut request: Box<dyn ErasedRequest>,
+        now: Moment,
+    ) -> bool {
         let deadline = match request.establish_deadline(now) {
             Ok(deadline) => deadline,
             Err(failure) => {
@@ -61,33 +65,43 @@ impl WaitingCalls {
         true
     }
 
-    pub(super) fn pop(
+    pub(in crate::reactor) fn pop(
         &mut self,
         now: Moment,
         observed_at: Option<OutcomeStamp>,
-    ) -> WaitingCallOutcome {
+    ) -> RouteWaitingOutcome {
         let Some((waiting, deadline)) = self.calls.pop_front() else {
-            return WaitingCallOutcome::Empty;
+            return RouteWaitingOutcome::Empty;
         };
         self.retained_bytes -= waiting.bytes;
         let Some(remaining) = deadline.duration_since(now) else {
             fail(waiting.request, deadline_exceeded(), observed_at);
-            return WaitingCallOutcome::Settled;
+            return RouteWaitingOutcome::Settled;
         };
         if remaining.is_zero() {
             fail(waiting.request, deadline_exceeded(), observed_at);
-            return WaitingCallOutcome::Settled;
+            return RouteWaitingOutcome::Settled;
         }
-        WaitingCallOutcome::Ready(waiting.request)
+        RouteWaitingOutcome::Ready(waiting.request)
     }
 
-    pub(super) fn expire_due(
+    pub(in crate::reactor) fn expire_due(
         &mut self,
         now: Moment,
         observed_at: Option<OutcomeStamp>,
-    ) -> WaitingExpiration {
+    ) -> RouteWaitingExpiration {
+        self.expire_due_bounded(now, observed_at, self.turn_budget.get())
+    }
+
+    pub(in crate::reactor) fn expire_due_bounded(
+        &mut self,
+        now: Moment,
+        observed_at: Option<OutcomeStamp>,
+        budget: usize,
+    ) -> RouteWaitingExpiration {
         let mut settled = 0;
-        while settled < self.turn_budget.get() {
+        let budget = budget.min(self.turn_budget.get());
+        while settled < budget {
             let Some((waiting, _)) = self.calls.take_due(now) else {
                 break;
             };
@@ -99,29 +113,48 @@ impl WaitingCalls {
             .calls
             .next_deadline()
             .is_some_and(|deadline| deadline <= now);
-        WaitingExpiration { settled, more_due }
+        RouteWaitingExpiration { settled, more_due }
     }
 
-    pub(super) fn next_deadline(&self) -> Option<Moment> {
+    pub(in crate::reactor) fn next_deadline(&self) -> Option<Moment> {
         self.calls.next_deadline()
     }
 
-    pub(super) fn fail_all(&mut self, failure: &RequestError, observed_at: Option<OutcomeStamp>) {
-        for waiting in self.calls.drain() {
-            fail(waiting.request, failure.clone(), observed_at);
-        }
-        self.retained_bytes = 0;
+    pub(in crate::reactor) fn fail_all(
+        &mut self,
+        failure: &RequestError,
+        observed_at: Option<OutcomeStamp>,
+    ) {
+        let _ = self.fail_bounded(failure, observed_at, usize::MAX);
     }
 
-    pub(super) fn is_empty(&self) -> bool {
+    pub(in crate::reactor) fn fail_bounded(
+        &mut self,
+        failure: &RequestError,
+        observed_at: Option<OutcomeStamp>,
+        budget: usize,
+    ) -> usize {
+        let mut settled = 0;
+        while settled < budget {
+            let Some((waiting, _)) = self.calls.pop_front() else {
+                break;
+            };
+            self.retained_bytes -= waiting.bytes;
+            fail(waiting.request, failure.clone(), observed_at);
+            settled += 1;
+        }
+        settled
+    }
+
+    pub(in crate::reactor) fn is_empty(&self) -> bool {
         self.calls.is_empty()
     }
 
-    pub(super) fn len(&self) -> usize {
+    pub(in crate::reactor) fn len(&self) -> usize {
         self.calls.len()
     }
 
-    pub(super) const fn retained_bytes(&self) -> usize {
+    pub(in crate::reactor) const fn retained_bytes(&self) -> usize {
         self.retained_bytes
     }
 
@@ -133,23 +166,23 @@ impl WaitingCalls {
     }
 }
 
-pub(super) enum WaitingCallOutcome {
+pub(in crate::reactor) enum RouteWaitingOutcome {
     Empty,
     Settled,
     Ready(Box<dyn ErasedRequest>),
 }
 
-pub(super) struct WaitingExpiration {
+pub(in crate::reactor) struct RouteWaitingExpiration {
     settled: usize,
     more_due: bool,
 }
 
-impl WaitingExpiration {
-    pub(super) const fn settled(&self) -> usize {
+impl RouteWaitingExpiration {
+    pub(in crate::reactor) const fn settled(&self) -> usize {
         self.settled
     }
 
-    pub(super) const fn more_due(&self) -> bool {
+    pub(in crate::reactor) const fn more_due(&self) -> bool {
         self.more_due
     }
 }
@@ -166,7 +199,7 @@ fn deadline_exceeded() -> RequestError {
     }
 }
 
-pub(super) fn terminal(reason: BrokerCloseReason) -> RequestError {
+pub(in crate::reactor) fn terminal(reason: BrokerCloseReason) -> RequestError {
     if let BrokerCloseReason::EndpointResolutionFailed(failure) = reason {
         return RequestError::NameResolutionFailed { failure };
     }

@@ -106,12 +106,13 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         self.seed_waiting.fail_bounded(&failure, usize::MAX);
     }
 
-    pub(super) fn finish_seed_host_result<R>(&mut self, result: io::Result<R>) -> io::Result<R> {
+    pub(super) fn finish_host_result<R>(&mut self, result: io::Result<R>) -> io::Result<R> {
         match result {
             Ok(value) => Ok(value),
             Err(error) => {
                 let _ = self.capture_seed_terminal_failure();
                 self.totalize_seed_waiting_after_host_failure();
+                self.totalize_route_waiting_after_host_failure();
                 Err(error)
             }
         }

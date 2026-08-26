@@ -10,10 +10,8 @@ use crate::{
     request::ErasedRequest,
 };
 
-use super::{
-    BrokerSet, BrokerSetError,
-    waiting::{WaitingCallOutcome, terminal},
-};
+use super::{BrokerSet, BrokerSetError};
+use crate::reactor::route_waiting::{RouteWaitingOutcome, terminal};
 
 impl BrokerSet {
     pub(in crate::reactor) fn install_seed(
@@ -171,9 +169,9 @@ impl BrokerSet {
         let mut progress = false;
         for _admission in 0..self.admission_budget.get() {
             match self.seed_waiting.pop(now, None) {
-                WaitingCallOutcome::Empty => break,
-                WaitingCallOutcome::Settled => progress = true,
-                WaitingCallOutcome::Ready(request) => {
+                RouteWaitingOutcome::Empty => break,
+                RouteWaitingOutcome::Settled => progress = true,
+                RouteWaitingOutcome::Ready(request) => {
                     let Some(seed) = &mut self.seed else {
                         return Err(BrokerSetError::SeedMissing);
                     };

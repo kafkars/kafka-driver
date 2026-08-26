@@ -37,6 +37,10 @@ impl BrokerFamily {
         self.owners[position(traffic)]
     }
 
+    pub(super) const fn endpoint(&self) -> &BrokerEndpoint {
+        &self.endpoint
+    }
+
     fn is_active(&self, traffic: TrafficClass) -> bool {
         self.active[position(traffic)]
     }

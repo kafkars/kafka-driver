@@ -82,7 +82,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
             self.seed_bootstrap = SeedBootstrapState::RestartPending(seed);
             Ok(true)
         })();
-        self.finish_seed_host_result(result)
+        self.finish_host_result(result)
     }
 
     pub(super) fn seed_bootstrap_restart_pending(&mut self) -> io::Result<bool> {
@@ -99,7 +99,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
                         Err(io::Error::other("Bornera seed bootstrap slot became stale"))
                     }
                 });
-        self.finish_seed_host_result(result)
+        self.finish_host_result(result)
     }
 
     pub(super) fn mark_seed_bootstrap_resolution_owned(&mut self) -> io::Result<()> {
@@ -117,7 +117,7 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
                         Err(io::Error::other("Bornera seed bootstrap slot became stale"))
                     }
                 });
-        self.finish_seed_host_result(result)
+        self.finish_host_result(result)
     }
 
     pub(super) fn seed_bootstrap_blocks_replacement(&self, current: SeedSlot) -> io::Result<bool> {
@@ -181,9 +181,9 @@ impl ClusterBackend {
         result: io::Result<R>,
     ) -> io::Result<R> {
         match self {
-            Self::Plaintext { runtime, .. } => runtime.finish_seed_host_result(result),
+            Self::Plaintext { runtime, .. } => runtime.finish_host_result(result),
             #[cfg(feature = "tls-rustls")]
-            Self::Rustls { runtime, .. } => runtime.finish_seed_host_result(result),
+            Self::Rustls { runtime, .. } => runtime.finish_host_result(result),
         }
     }
 }
