@@ -27,11 +27,12 @@ pub enum RouteKind {
     PartitionLeader,
 }
 
-/// Single-use authority to report one routed response as stale.
+/// Single-use authority to invalidate one route or fence a later topic refresh.
 ///
 /// Route provenance, causal position, and issuing-driver authority are private.
-/// The token can be consumed only by [`super::Driver::invalidate`].
-#[must_use = "a route failure token must be consumed or deliberately discarded"]
+/// The token can be consumed only by [`super::Driver::invalidate`] or
+/// [`super::Driver::topic_view_after_failure`].
+#[must_use = "a routed outcome token must be consumed or deliberately discarded"]
 pub struct RouteFailureToken {
     driver: DriverIdentity,
     route: RouteFact,

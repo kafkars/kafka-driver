@@ -1,8 +1,8 @@
 //! Exact-topic view admission into the existing metadata refresh owner.
 
 use kafka_driver_core::{
-    EvidenceStamp, MetadataDisposition, MetadataGeneration, MetadataInput, MetadataQuery, Moment,
-    TopicName,
+    EvidenceStamp, MetadataDisposition, MetadataGeneration, MetadataInput, MetadataQuery,
+    MetadataSnapshot, Moment, OutcomeStamp, TopicName,
 };
 
 use crate::{
@@ -21,13 +21,13 @@ impl MetadataOwner {
         evidence: EvidenceStamp,
     ) -> Result<(), MetadataOwnerError> {
         let exact_topic = waiting.topic.clone();
-        let requires_newer_generation = waiting.newer_than.is_some();
+        let requires_refresh = waiting.requirement.requires_refresh();
         let query = MetadataQuery::Topic(exact_topic.clone());
         let operation_id = self.reserve_operation()?;
         if !self.topic_views.admit(waiting) {
             return Ok(());
         }
-        let transition = self.machine.apply(if requires_newer_generation {
+        let transition = self.machine.apply(if requires_refresh {
             MetadataInput::Refresh {
                 query: query.clone(),
                 operation_id,
@@ -66,7 +66,7 @@ impl MetadataOwner {
 
 pub(in crate::reactor) struct TopicViewWait {
     pub(super) topic: TopicName,
-    pub(super) newer_than: Option<MetadataGeneration>,
+    pub(super) requirement: TopicViewRequirement,
     pub(super) deadline: Moment,
     pub(super) result_capacity_bytes: usize,
     pub(super) completion: CompletionSender<Result<TopicView, TopicViewError>>,
@@ -82,7 +82,26 @@ impl TopicViewWait {
     ) -> Self {
         Self {
             topic,
-            newer_than,
+            requirement: match newer_than {
+                Some(generation) => TopicViewRequirement::NewerThan(generation),
+                None => TopicViewRequirement::Current,
+            },
+            deadline,
+            result_capacity_bytes,
+            completion,
+        }
+    }
+
+    pub(in crate::reactor) const fn after_outcome(
+        topic: TopicName,
+        outcome: OutcomeStamp,
+        deadline: Moment,
+        result_capacity_bytes: usize,
+        completion: CompletionSender<Result<TopicView, TopicViewError>>,
+    ) -> Self {
+        Self {
+            topic,
+            requirement: TopicViewRequirement::AfterOutcome(outcome),
             deadline,
             result_capacity_bytes,
             completion,
@@ -96,5 +115,36 @@ impl TopicViewWait {
             .saturating_add(
                 CompletionSender::<Result<TopicView, TopicViewError>>::retained_state_bytes(),
             )
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum TopicViewRequirement {
+    Current,
+    NewerThan(MetadataGeneration),
+    AfterOutcome(OutcomeStamp),
+}
+
+impl TopicViewRequirement {
+    const fn requires_refresh(self) -> bool {
+        !matches!(self, Self::Current)
+    }
+
+    pub(super) fn satisfied_by(self, snapshot: &MetadataSnapshot, topic: &TopicName) -> bool {
+        match self {
+            Self::Current => true,
+            Self::NewerThan(floor) => snapshot.generation() > floor,
+            Self::AfterOutcome(outcome) => snapshot
+                .topic_partition_counts()
+                .find(topic)
+                .is_some_and(|count| count.evidence_stamp().is_after(outcome)),
+        }
+    }
+
+    pub(super) const fn accepts_terminal_from(self, evidence: EvidenceStamp) -> bool {
+        match self {
+            Self::Current | Self::NewerThan(_) => true,
+            Self::AfterOutcome(outcome) => evidence.is_after(outcome),
+        }
     }
 }

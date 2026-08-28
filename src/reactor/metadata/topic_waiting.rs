@@ -2,7 +2,7 @@
 
 use std::num::NonZeroUsize;
 
-use kafka_driver_core::{MetadataGeneration, MetadataMachine, MetadataQuery, Moment, TopicName};
+use kafka_driver_core::{EvidenceStamp, MetadataMachine, MetadataQuery, Moment, TopicName};
 
 use crate::{
     TopicView, TopicViewError, completion::CompletionSender, reactor::wait_queue::WaitQueue,
@@ -44,7 +44,7 @@ impl TopicViewWaiters {
         let deadline = waiting.deadline;
         let waiting = WaitingTopicView {
             topic: waiting.topic,
-            newer_than: waiting.newer_than,
+            requirement: waiting.requirement,
             completion: waiting.completion,
             bytes,
             terminal: None,
@@ -66,12 +66,15 @@ impl TopicViewWaiters {
         Some(waiting)
     }
 
-    pub(super) fn mark_terminal(&mut self, topic: &TopicName, terminal: TopicViewError) {
-        for waiting in self
-            .calls
-            .iter_mut()
-            .filter(|waiting| &waiting.topic == topic)
-        {
+    pub(super) fn mark_terminal(
+        &mut self,
+        topic: &TopicName,
+        evidence: EvidenceStamp,
+        terminal: TopicViewError,
+    ) {
+        for waiting in self.calls.iter_mut().filter(|waiting| {
+            &waiting.topic == topic && waiting.requirement.accepts_terminal_from(evidence)
+        }) {
             waiting.terminal.get_or_insert(terminal);
         }
     }
@@ -117,11 +120,10 @@ impl TopicViewWaiters {
                 progress.settled += 1;
                 continue;
             }
-            if let Some(snapshot) = machine.current().filter(|snapshot| {
-                waiting
-                    .newer_than
-                    .is_none_or(|floor| snapshot.generation() > floor)
-            }) {
+            if let Some(snapshot) = machine
+                .current()
+                .filter(|snapshot| waiting.requirement.satisfied_by(snapshot, &waiting.topic))
+            {
                 match TopicView::from_snapshot(snapshot, &waiting.topic) {
                     Ok(Some(view)) => {
                         Self::complete(waiting, Ok(view));
@@ -211,7 +213,7 @@ impl TopicViewWaitProgress {
 
 pub(super) struct WaitingTopicView {
     pub(super) topic: TopicName,
-    pub(super) newer_than: Option<MetadataGeneration>,
+    pub(super) requirement: super::topic_routing::TopicViewRequirement,
     pub(super) completion: CompletionSender<Result<TopicView, TopicViewError>>,
     pub(super) bytes: usize,
     pub(super) terminal: Option<TopicViewError>,

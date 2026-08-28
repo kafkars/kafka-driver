@@ -13,6 +13,8 @@ mod request_options;
 mod route;
 mod submission;
 mod topic_view;
+mod topic_view_after_failure;
+mod topic_view_after_failure_submission;
 mod tracked;
 mod traffic;
 
@@ -24,6 +26,8 @@ mod invalidation_test;
 mod request_options_test;
 #[cfg(test)]
 mod route_test;
+#[cfg(test)]
+mod topic_view_after_failure_test;
 #[cfg(test)]
 mod topic_view_test;
 #[cfg(test)]
@@ -48,6 +52,7 @@ pub use request_options::RequestOptions;
 pub use route::Route;
 pub use submission::SubmitError;
 pub use topic_view::{AvailableTopicPartition, TopicView, TopicViewError};
+pub use topic_view_after_failure_submission::TopicViewAfterFailureSubmitError;
 pub use tracked::{RouteFailureToken, RouteKind, RoutedCall, RoutedOutcome};
 pub use traffic::TrafficClass;
 

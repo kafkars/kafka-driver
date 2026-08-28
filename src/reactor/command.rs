@@ -31,6 +31,13 @@ pub(crate) enum Command {
         result_capacity_bytes: usize,
         completion: TopicViewCompletion,
     },
+    TopicViewAfterFailure {
+        token: RouteFailureToken,
+        topic: TopicName,
+        deadline: Instant,
+        result_capacity_bytes: usize,
+        completion: TopicViewCompletion,
+    },
     Shutdown,
 }
 
@@ -52,6 +59,15 @@ impl Command {
                 .saturating_add(topic.heap_bytes())
                 .saturating_add(*result_capacity_bytes)
                 .saturating_add(TopicViewCompletion::retained_state_bytes()),
+            Self::TopicViewAfterFailure {
+                token,
+                topic,
+                result_capacity_bytes,
+                completion: _,
+                ..
+            } => {
+                Self::topic_view_after_failure_retained_bytes(token, topic, *result_capacity_bytes)
+            }
             Self::Shutdown => size_of::<Self>(),
         }
     }
@@ -62,5 +78,17 @@ impl Command {
                 CompletionSender::<InvalidationDisposition>::retained_state_bytes(),
             ),
         )
+    }
+
+    pub(crate) fn topic_view_after_failure_retained_bytes(
+        token: &RouteFailureToken,
+        topic: &TopicName,
+        result_capacity_bytes: usize,
+    ) -> usize {
+        size_of::<Self>()
+            .saturating_add(token.heap_bytes())
+            .saturating_add(topic.heap_bytes())
+            .saturating_add(result_capacity_bytes)
+            .saturating_add(TopicViewCompletion::retained_state_bytes())
     }
 }

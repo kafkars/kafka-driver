@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use crate::{
-    MetadataGeneration, TopicName, TopicView, TopicViewError,
+    MetadataGeneration, RouteFailureToken, TopicName, TopicView, TopicViewError,
     completion::CompletionSender,
     reactor::{BackendRpcAccessError, metadata::TopicViewWait},
 };
@@ -55,6 +55,48 @@ impl Reactor {
                     TopicViewWait::new(
                         topic,
                         newer_than,
+                        deadline,
+                        result_capacity_bytes,
+                        completion,
+                    ),
+                    seed,
+                    now,
+                    &self.call_ids,
+                    evidence,
+                )
+            })
+            .map_err(metadata_rpc_error)
+    }
+
+    pub(super) fn process_topic_view_after_failure(
+        &mut self,
+        token: RouteFailureToken,
+        topic: TopicName,
+        deadline: Instant,
+        result_capacity_bytes: usize,
+        completion: CompletionSender<Result<TopicView, TopicViewError>>,
+    ) -> Result<(), ReactorError> {
+        let (_, observed_at) = token.into_parts();
+        let deadline = self
+            .clock
+            .moment_at(deadline)
+            .map_err(ReactorError::clock)?;
+        let now = self.clock.now().map_err(ReactorError::clock)?;
+        if deadline <= now {
+            let _ = completion.complete(Err(TopicViewError::DeadlineExceeded));
+            return Ok(());
+        }
+        let Some(metadata) = &mut self.metadata else {
+            let _ = completion.complete(Err(TopicViewError::Unavailable));
+            return Ok(());
+        };
+        let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
+        self.backend
+            .with_seed_rpc(&mut self.causality, |seed| {
+                metadata.wait_for_topic_view(
+                    TopicViewWait::after_outcome(
+                        topic,
+                        observed_at,
                         deadline,
                         result_capacity_bytes,
                         completion,

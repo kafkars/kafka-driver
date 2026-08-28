@@ -5,7 +5,7 @@ use std::{
     num::{NonZeroU32, NonZeroUsize},
 };
 
-use crate::TopicName;
+use crate::{EvidenceStamp, TopicName};
 
 /// Nonzero sixteen-byte Kafka topic identity published by Metadata.
 #[repr(transparent)]
@@ -34,6 +34,7 @@ pub struct TopicPartitionCount {
     topic: TopicName,
     topic_id: Option<KafkaTopicId>,
     count: NonZeroU32,
+    evidence: EvidenceStamp,
 }
 
 impl TopicPartitionCount {
@@ -43,6 +44,7 @@ impl TopicPartitionCount {
             topic,
             topic_id: None,
             count,
+            evidence: EvidenceStamp::ORIGIN,
         }
     }
 
@@ -52,7 +54,15 @@ impl TopicPartitionCount {
             topic,
             topic_id: Some(topic_id),
             count,
+            evidence: EvidenceStamp::ORIGIN,
         }
+    }
+
+    /// Retains when the exact-topic query that observed this count began.
+    #[must_use]
+    pub const fn with_evidence(mut self, evidence: EvidenceStamp) -> Self {
+        self.evidence = evidence;
+        self
     }
 
     /// Borrows the topic whose complete logical range was observed.
@@ -68,6 +78,11 @@ impl TopicPartitionCount {
     /// Returns the total logical count, including partitions without known leaders.
     pub const fn count(&self) -> NonZeroU32 {
         self.count
+    }
+
+    /// Returns when the exact-topic query that observed this count began.
+    pub const fn evidence_stamp(&self) -> EvidenceStamp {
+        self.evidence
     }
 }
 

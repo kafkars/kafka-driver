@@ -4,9 +4,10 @@ use std::num::{NonZeroU16, NonZeroU32, NonZeroUsize};
 
 use kafka_driver_core::{
     BrokerDirectory, BrokerDirectoryEntry, BrokerDirectoryLimits, BrokerEndpoint, BrokerId,
-    HostName, MetadataGeneration, MetadataInput, MetadataMachine, MetadataQuery, MetadataRevision,
-    MetadataSnapshot, Moment, OperationId, PartitionId, PartitionLeader, PartitionLeaderLimits,
-    PartitionLeaderSet, TopicName, TopicPartitionCount, TopicPartitionCountSet,
+    EvidenceStamp, HostName, MetadataGeneration, MetadataInput, MetadataMachine, MetadataQuery,
+    MetadataRevision, MetadataSnapshot, Moment, OperationId, OutcomeStamp, PartitionId,
+    PartitionLeader, PartitionLeaderLimits, PartitionLeaderSet, TopicName, TopicPartitionCount,
+    TopicPartitionCountSet,
 };
 
 use crate::{
@@ -74,7 +75,11 @@ fn exact_broker_terminal_wins_over_generic_unavailability() {
         0,
         completion,
     )));
-    waiters.mark_terminal(&topic, TopicViewError::Broker { error_code: 3 });
+    waiters.mark_terminal(
+        &topic,
+        EvidenceStamp::ORIGIN,
+        TopicViewError::Broker { error_code: 3 },
+    );
     waiters.begin_scan();
     let machine = MetadataMachine::new(MetadataGeneration::from_raw(1));
 
@@ -127,6 +132,91 @@ fn generation_floor_waits_for_strictly_newer_installed_topic_facts() {
     ));
 }
 
+#[test]
+fn post_outcome_view_ignores_a_newer_generation_with_retained_topic_evidence() {
+    let topic = topic();
+    let mut machine = MetadataMachine::new(generation(9));
+    let _ = machine.apply(resolve(topic.clone(), 1));
+    let _ = machine.apply(MetadataInput::RefreshSucceeded {
+        operation_id: operation(1),
+        snapshot: snapshot_with_evidence(9, 2),
+        followup_operation_id: operation(2),
+    });
+    let _ = machine.apply(refresh(topic.clone(), 2));
+    let (receiver, completion) = completion_pair();
+    let mut waiters = TopicViewWaiters::new(nonzero(1), nonzero(16_384));
+    assert!(waiters.admit(TopicViewWait::after_outcome(
+        topic,
+        OutcomeStamp::from_raw(5),
+        moment(20),
+        0,
+        completion,
+    )));
+
+    waiters.begin_scan();
+    let pending = waiters.scan(&machine, moment(1), nonzero(1));
+
+    assert!(pending.made_progress());
+    assert!(receiver.try_result().is_none());
+    let _ = machine.apply(MetadataInput::RefreshSucceeded {
+        operation_id: operation(2),
+        snapshot: snapshot_with_evidence(10, 6),
+        followup_operation_id: operation(3),
+    });
+    waiters.begin_scan();
+    let settled = waiters.scan(&machine, moment(2), nonzero(1));
+    assert!(settled.made_progress());
+    assert!(matches!(
+        receiver.try_result(),
+        Some(Ok(Ok(view))) if view.generation() == generation(10)
+    ));
+}
+
+#[test]
+fn pre_outcome_same_topic_query_cannot_satisfy_the_causal_view() {
+    let topic = topic();
+    let mut machine = MetadataMachine::new(generation(1));
+    let _ = machine.apply(resolve(topic.clone(), 1));
+    let (receiver, completion) = completion_pair();
+    let mut waiters = TopicViewWaiters::new(nonzero(1), nonzero(16_384));
+    assert!(waiters.admit(TopicViewWait::after_outcome(
+        topic.clone(),
+        OutcomeStamp::from_raw(5),
+        moment(20),
+        0,
+        completion,
+    )));
+    let _ = machine.apply(refresh(topic.clone(), 2));
+    let _ = machine.apply(MetadataInput::RefreshSucceeded {
+        operation_id: operation(1),
+        snapshot: snapshot_with_evidence(1, 4),
+        followup_operation_id: operation(2),
+    });
+    waiters.mark_terminal(
+        &topic,
+        EvidenceStamp::from_raw(4),
+        TopicViewError::RefreshFailed,
+    );
+
+    waiters.begin_scan();
+    let pending = waiters.scan(&machine, moment(1), nonzero(1));
+
+    assert!(pending.made_progress());
+    assert!(receiver.try_result().is_none());
+    let _ = machine.apply(MetadataInput::RefreshSucceeded {
+        operation_id: operation(2),
+        snapshot: snapshot_with_evidence(2, 6),
+        followup_operation_id: operation(3),
+    });
+    waiters.begin_scan();
+    let settled = waiters.scan(&machine, moment(2), nonzero(1));
+    assert!(settled.made_progress());
+    assert!(matches!(
+        receiver.try_result(),
+        Some(Ok(Ok(view))) if view.generation() == generation(2)
+    ));
+}
+
 fn topic() -> TopicName {
     TopicName::new("orders").unwrap_or_else(|error| panic!("valid topic: {error}"))
 }
@@ -136,6 +226,10 @@ const fn moment(raw: u64) -> Moment {
 }
 
 fn snapshot(raw_generation: u64) -> MetadataSnapshot {
+    snapshot_with_evidence(raw_generation, 0)
+}
+
+fn snapshot_with_evidence(raw_generation: u64, raw_evidence: u64) -> MetadataSnapshot {
     let broker_id = BrokerId::new(1).unwrap_or_else(|error| panic!("valid broker: {error}"));
     let endpoint = BrokerEndpoint::new(
         HostName::new("broker.test").unwrap_or_else(|error| panic!("valid host: {error}")),
@@ -150,12 +244,13 @@ fn snapshot(raw_generation: u64) -> MetadataSnapshot {
     let partition =
         PartitionId::new(0).unwrap_or_else(|error| panic!("valid partition rejected: {error}"));
     let leaders = PartitionLeaderSet::try_from_iter(
-        [PartitionLeader::new(
+        [PartitionLeader::new_with_evidence(
             topic(),
             partition,
             broker_id,
             None,
             MetadataRevision::from_raw(raw_generation),
+            EvidenceStamp::from_raw(raw_evidence),
         )],
         PartitionLeaderLimits::default(),
     )
@@ -164,7 +259,8 @@ fn snapshot(raw_generation: u64) -> MetadataSnapshot {
         [TopicPartitionCount::new(
             topic(),
             NonZeroU32::new(1).unwrap_or_else(|| panic!("test count must be nonzero")),
-        )],
+        )
+        .with_evidence(EvidenceStamp::from_raw(raw_evidence))],
         PartitionLeaderLimits::default().max_topics(),
     )
     .unwrap_or_else(|error| panic!("valid topic count: {error}"));

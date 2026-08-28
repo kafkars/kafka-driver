@@ -2,6 +2,7 @@
 
 mod invalidation_admission;
 mod observation;
+mod topic_view_after_failure_admission;
 
 use std::{convert::identity, fmt, num::NonZeroUsize};
 
