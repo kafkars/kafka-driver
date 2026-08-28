@@ -57,7 +57,23 @@ impl Reactor {
                             completion,
                         )?;
                     }
-                    Command::TopicView { completion, .. } => {
+                    Command::TopicViewAfterFailure {
+                        token,
+                        topic,
+                        deadline,
+                        result_capacity_bytes,
+                        completion,
+                    } if self.state == HostState::Running => {
+                        self.process_topic_view_after_failure(
+                            token,
+                            topic,
+                            deadline,
+                            result_capacity_bytes,
+                            completion,
+                        )?;
+                    }
+                    Command::TopicView { completion, .. }
+                    | Command::TopicViewAfterFailure { completion, .. } => {
                         let _ = completion.complete(Err(crate::TopicViewError::Draining));
                     }
                     Command::Shutdown => {
@@ -136,7 +152,8 @@ impl Reactor {
                 Command::Snapshot { completion } => {
                     let _ = completion.complete(Err(SnapshotError::Draining));
                 }
-                Command::TopicView { completion, .. } => {
+                Command::TopicView { completion, .. }
+                | Command::TopicViewAfterFailure { completion, .. } => {
                     let _ = completion.complete(Err(crate::TopicViewError::Draining));
                 }
                 Command::Shutdown => {}

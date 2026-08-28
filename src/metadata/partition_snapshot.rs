@@ -50,7 +50,8 @@ pub(super) fn partition_facts_for_topic(
         let count = match topic_id {
             Some(topic_id) => TopicPartitionCount::new_with_id(name, topic_id, count),
             None => TopicPartitionCount::new(name, count),
-        };
+        }
+        .with_evidence(evidence);
         (
             topic_leaders(topic, count.topic(), revision, evidence)?,
             Some(count),
