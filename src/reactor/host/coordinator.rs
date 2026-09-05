@@ -37,12 +37,11 @@ impl Reactor {
             let Ok(request) = bind_route(routed.into_request(), fact) else {
                 continue;
             };
-            match route {
-                Some(route) => self.submit_broker_route(route, request, now)?,
-                None => {
-                    request.fail(RequestError::RouteUnavailable);
-                    self.refresh_coordinator_directory(now)?;
-                }
+            if let Some(route) = route {
+                self.submit_broker_route(route, request, now)?;
+            } else {
+                request.fail(RequestError::RouteUnavailable);
+                self.refresh_coordinator_directory(now)?;
             }
         }
         Ok(progress || waiting_progress || waiting_more)
