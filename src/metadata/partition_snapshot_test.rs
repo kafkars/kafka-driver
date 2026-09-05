@@ -42,6 +42,14 @@ fn successful_partitions_become_canonical_generation_fenced_routes() {
         snapshot
             .topic_partition_counts()
             .find(&topic_name("orders"))
+            .map(kafka_driver_core::TopicPartitionCount::evidence_stamp)
+            .map(kafka_driver_core::EvidenceStamp::get),
+        Some(3)
+    );
+    assert_eq!(
+        snapshot
+            .topic_partition_counts()
+            .find(&topic_name("orders"))
             .and_then(kafka_driver_core::TopicPartitionCount::topic_id)
             .map(kafka_driver_core::KafkaTopicId::to_bytes),
         Some([5; 16])
@@ -180,6 +188,8 @@ fn topic_refresh_replaces_only_its_topic_and_cluster_refresh_clears_routes() {
             .map(|route| route.evidence_stamp().get()),
         Some(4)
     );
+    assert_topic_evidence(&merged, "orders", 3);
+    assert_topic_evidence(&merged, "payments", 4);
     assert!(cluster.partition_leaders().is_empty());
     assert_eq!(
         cluster
@@ -194,6 +204,21 @@ fn topic_refresh_replaces_only_its_topic_and_cluster_refresh_clears_routes() {
             .find(&topic_name("payments"))
             .map(|count| count.count().get()),
         Some(1)
+    );
+}
+
+fn assert_topic_evidence(
+    snapshot: &kafka_driver_core::MetadataSnapshot,
+    raw_topic: &str,
+    expected: u64,
+) {
+    assert_eq!(
+        snapshot
+            .topic_partition_counts()
+            .find(&topic_name(raw_topic))
+            .map(kafka_driver_core::TopicPartitionCount::evidence_stamp)
+            .map(kafka_driver_core::EvidenceStamp::get),
+        Some(expected)
     );
 }
 

@@ -38,7 +38,8 @@ impl MetadataOwner {
             ),
         };
         if let Some((topic, terminal)) = topic_terminal {
-            self.topic_views.mark_terminal(&topic, terminal);
+            self.topic_views
+                .mark_terminal(&topic, pending.evidence, terminal);
         }
         let transition = self.machine.apply(input);
         self.interpret(transition, Some(broker), now, call_ids, evidence)?;

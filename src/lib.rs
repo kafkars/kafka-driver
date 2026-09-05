@@ -22,8 +22,8 @@ pub use api::{
     DriverBuildError, DriverBuilder, DriverSnapshot, FailureCounters, InvalidationDisposition,
     InvalidationSubmitError, LatencyMetric, MailboxSnapshot, RequestError, RequestOptions,
     RequestResponsePair, ResponseCloseReason, Route, RouteFailureToken, RouteKind, RoutedCall,
-    RoutedOutcome, SeedSnapshot, SnapshotError, SubmitError, TopicView, TopicViewError,
-    TrafficClass, WriteQueueSnapshot,
+    RoutedOutcome, SeedSnapshot, SnapshotError, SubmitError, TopicView,
+    TopicViewAfterFailureSubmitError, TopicViewError, TrafficClass, WriteQueueSnapshot,
 };
 pub use config::{
     ControllerWaitingLimits, CoordinatorLimits, DriverLimits, MetadataLimits, ResolverLimits,
