@@ -70,5 +70,13 @@ jobs:
       - name: Qualify latest-compatible public dependency graph
         run: scripts/qualify-latest-compatible
 
+      - name: Retain qualified crate archives
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qualified-crates-${{ github.sha }}-${{ github.run_attempt }}
+          path: kafka-driver/target/package/*.crate
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Run managed real-broker qualification
         run: npm run qualify:real-kafka

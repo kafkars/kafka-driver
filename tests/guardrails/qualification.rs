@@ -143,6 +143,12 @@ fn release_qualification_builds_normalized_public_archives() {
     assert!(script.contains("readme = \"README.md\""));
     assert!(script.contains("cmp README.md"));
     assert!(script.contains("cmp kafka-driver-logo.svg"));
+    assert!(
+        workflow.contains("name: qualified-crates-${{ github.sha }}-${{ github.run_attempt }}")
+    );
+    assert!(workflow.contains("path: kafka-driver/target/package/*.crate"));
+    assert!(workflow.contains("if-no-files-found: error"));
+    assert!(workflow.contains("retention-days: 90"));
 }
 
 #[test]
