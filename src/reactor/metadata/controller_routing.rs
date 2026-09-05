@@ -1,4 +1,4 @@
-//! Controller-route wait admission into bounded cluster metadata ownership.
+//! Controller-route waits and coordinator directory repair use bounded cluster metadata ownership.
 
 use kafka_driver_core::{
     BrokerId, CallId, EvidenceStamp, MetadataDisposition, MetadataInput, MetadataQuery, Moment,
@@ -9,6 +9,24 @@ use crate::{RequestError, api::CallIds, reactor::BrokerRpc, request::ErasedReque
 use super::{ControllerWaitProgress, MetadataOwner, MetadataOwnerError};
 
 impl MetadataOwner {
+    pub(in crate::reactor) fn resolve_coordinator_directory(
+        &mut self,
+        broker: Option<&mut dyn BrokerRpc>,
+        now: Moment,
+        call_ids: &CallIds,
+        evidence: EvidenceStamp,
+    ) -> Result<(), MetadataOwnerError> {
+        let operation_id = self.reserve_operation()?;
+        let transition = self.machine.apply(MetadataInput::Resolve {
+            query: MetadataQuery::Cluster,
+            operation_id,
+        });
+        // Existing query limits and coalescing bound repair demand. A rejected
+        // query promises no route; the original call still reports unavailable.
+        self.interpret(transition, broker, now, call_ids, evidence)?;
+        Ok(())
+    }
+
     pub(in crate::reactor) fn wait_for_controller(
         &mut self,
         waiting: ControllerWait,
