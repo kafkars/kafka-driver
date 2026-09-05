@@ -46,6 +46,8 @@ mod invalidation_test;
 #[cfg(test)]
 mod mailbox_test;
 #[cfg(test)]
+mod route_waiting_test;
+#[cfg(test)]
 mod wait_queue_test;
 
 pub(in crate::reactor) use backend::{BackendRpcAccessError, ReactorBackend};

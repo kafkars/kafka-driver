@@ -1,12 +1,13 @@
 //! Bounded admission order, explicit tail rotation, and exact deadline lookup.
 
-use std::{collections::BTreeMap, num::NonZeroUsize};
+use std::{collections::BTreeMap, num::NonZeroUsize, ops::Bound};
 
 use kafka_driver_core::Moment;
 
 pub(in crate::reactor) struct WaitQueue<T> {
     capacity: usize,
     next_sequence: u64,
+    scan_cursor: Option<u64>,
     entries: BTreeMap<u64, WaitEntry<T>>,
     deadlines: BTreeMap<DeadlineKey, u64>,
 }
@@ -16,6 +17,7 @@ impl<T> WaitQueue<T> {
         Self {
             capacity: capacity.get(),
             next_sequence: 0,
+            scan_cursor: None,
             entries: BTreeMap::new(),
             deadlines: BTreeMap::new(),
         }
@@ -54,6 +56,27 @@ impl<T> WaitQueue<T> {
         Some((entry.value, entry.deadline))
     }
 
+    /// Examines at most one entry without rotating FIFO survivors.
+    /// Repeated scans wrap around and eventually visit every retained entry.
+    pub(in crate::reactor) fn scan_one(
+        &mut self,
+        matches: impl FnOnce(&T) -> bool,
+    ) -> Option<(T, Moment)> {
+        let start = self.scan_cursor.map_or(Bound::Unbounded, Bound::Excluded);
+        let (&sequence, entry) = self
+            .entries
+            .range((start, Bound::Unbounded))
+            .next()
+            .or_else(|| self.entries.first_key_value())?;
+        self.scan_cursor = Some(sequence);
+        if !matches(&entry.value) {
+            return None;
+        }
+        let entry = self.entries.remove(&sequence)?;
+        self.remove_deadline(sequence, entry.deadline);
+        Some((entry.value, entry.deadline))
+    }
+
     pub(in crate::reactor) fn back(&self) -> Option<&T> {
         self.entries.last_key_value().map(|(_, entry)| &entry.value)
     }
@@ -78,6 +101,7 @@ impl<T> WaitQueue<T> {
     pub(in crate::reactor) fn drain(&mut self) -> impl Iterator<Item = T> {
         self.deadlines.clear();
         self.next_sequence = 0;
+        self.scan_cursor = None;
         std::mem::take(&mut self.entries)
             .into_values()
             .map(|entry| entry.value)
@@ -120,6 +144,7 @@ impl<T> WaitQueue<T> {
 
     fn resequence(&mut self) {
         let entries = std::mem::take(&mut self.entries);
+        self.scan_cursor = None;
         self.deadlines.clear();
         self.next_sequence = 0;
         for (sequence, (_, entry)) in (0_u64..).zip(entries) {

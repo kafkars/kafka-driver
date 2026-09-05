@@ -1,4 +1,4 @@
-//! FIFO ownership for calls waiting on one semantic broker route.
+//! FIFO, byte, deadline, and opt-in failure ownership before physical admission.
 
 use std::num::NonZeroUsize;
 
@@ -9,6 +9,7 @@ use crate::{RequestError, reactor::wait_queue::WaitQueue, request::ErasedRequest
 pub(in crate::reactor) struct RouteWaiting {
     calls: WaitQueue<WaitingCall>,
     retained_bytes: usize,
+    rejecting_calls: usize,
     call_limit: NonZeroUsize,
     byte_limit: NonZeroUsize,
     turn_budget: NonZeroUsize,
@@ -23,6 +24,7 @@ impl RouteWaiting {
         Self {
             calls: WaitQueue::new(call_limit),
             retained_bytes: 0,
+            rejecting_calls: 0,
             call_limit,
             byte_limit,
             turn_budget,
@@ -54,12 +56,14 @@ impl RouteWaiting {
             self.reject_capacity(request);
             return false;
         }
+        let rejecting = usize::from(request.rejects_after_route_failure());
         let waiting = WaitingCall { request, bytes };
         if let Err(waiting) = self.calls.push(waiting, deadline) {
             self.reject_capacity(waiting.request);
             return false;
         }
         self.retained_bytes = retained_bytes;
+        self.rejecting_calls += rejecting;
         true
     }
 
@@ -71,16 +75,16 @@ impl RouteWaiting {
         let Some((waiting, deadline)) = self.calls.pop_front() else {
             return RouteWaitingOutcome::Empty;
         };
-        self.retained_bytes -= waiting.bytes;
+        let request = self.release(waiting);
         let Some(remaining) = deadline.duration_since(now) else {
-            fail(waiting.request, deadline_exceeded(), observed_at);
+            fail(request, deadline_exceeded(), observed_at);
             return RouteWaitingOutcome::Settled;
         };
         if remaining.is_zero() {
-            fail(waiting.request, deadline_exceeded(), observed_at);
+            fail(request, deadline_exceeded(), observed_at);
             return RouteWaitingOutcome::Settled;
         }
-        RouteWaitingOutcome::Ready(waiting.request)
+        RouteWaitingOutcome::Ready(request)
     }
 
     pub(in crate::reactor) fn expire_due_bounded(
@@ -95,8 +99,7 @@ impl RouteWaiting {
             let Some((waiting, _)) = self.calls.take_due(now) else {
                 break;
             };
-            self.retained_bytes -= waiting.bytes;
-            fail(waiting.request, deadline_exceeded(), observed_at);
+            fail(self.release(waiting), deadline_exceeded(), observed_at);
             settled += 1;
         }
         RouteWaitingExpiration { settled }
@@ -125,11 +128,40 @@ impl RouteWaiting {
             let Some((waiting, _)) = self.calls.pop_front() else {
                 break;
             };
-            self.retained_bytes -= waiting.bytes;
-            fail(waiting.request, failure.clone(), observed_at);
+            fail(self.release(waiting), failure.clone(), observed_at);
             settled += 1;
         }
         settled
+    }
+
+    pub(in crate::reactor) const fn has_failure_rejections(&self) -> bool {
+        self.rejecting_calls != 0
+    }
+
+    /// Charges one examination even when a default-policy survivor is skipped.
+    pub(in crate::reactor) fn reject_failed_route_one(
+        &mut self,
+        now: Moment,
+        observed_at: OutcomeStamp,
+    ) -> bool {
+        if !self.has_failure_rejections() {
+            return false;
+        }
+        if let Some((waiting, deadline)) = self
+            .calls
+            .scan_one(|waiting| waiting.request.rejects_after_route_failure())
+        {
+            let failure = if deadline <= now {
+                deadline_exceeded()
+            } else {
+                RequestError::Rejected {
+                    failure: CallFailure::NotReady,
+                    delivery: Delivery::NotSent,
+                }
+            };
+            fail(self.release(waiting), failure, Some(observed_at));
+        }
+        true
     }
 
     pub(in crate::reactor) fn is_empty(&self) -> bool {
@@ -146,6 +178,12 @@ impl RouteWaiting {
 
     pub(in crate::reactor) const fn retained_bytes(&self) -> usize {
         self.retained_bytes
+    }
+
+    fn release(&mut self, waiting: WaitingCall) -> Box<dyn ErasedRequest> {
+        self.retained_bytes -= waiting.bytes;
+        self.rejecting_calls -= usize::from(waiting.request.rejects_after_route_failure());
+        waiting.request
     }
 
     fn reject_capacity(&self, request: Box<dyn ErasedRequest>) {

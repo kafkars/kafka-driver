@@ -5,7 +5,7 @@ use std::io;
 use bornera::RegisteredTransport;
 #[cfg(test)]
 use kafka_driver_core::OutcomeStamp;
-use kafka_driver_core::{BrokerRoute, BrokerState, ConnectionEpoch, DnsFailure};
+use kafka_driver_core::{BrokerRoute, BrokerState, ConnectionEpoch, DnsFailure, Moment};
 
 use crate::{RequestError, reactor::BrokerLane};
 
@@ -89,33 +89,40 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         }
     }
 
-    pub(super) fn settle_terminal_route_waiting(&mut self, budget: usize) -> io::Result<usize> {
-        let mut settled = 0;
+    pub(super) fn service_failed_route_waiting(
+        &mut self,
+        now: Moment,
+        budget: usize,
+    ) -> io::Result<usize> {
+        let mut serviced = 0;
         let mut cursor = 0;
         let mut idle = 0;
-        while settled < budget && idle < self.route_turn.len() {
+        while serviced < budget && idle < self.route_turn.len() {
             let lane = self.route_turn[cursor];
             cursor = (cursor + 1) % self.route_turn.len();
-            let Some(failure) = self.route_terminal_failure(lane)? else {
-                idle += 1;
-                continue;
-            };
+            let terminal = self.route_terminal_failure(lane)?;
             let Some(state) = self.routes.get_mut(&lane) else {
                 idle += 1;
                 continue;
             };
-            if state
-                .waiting
-                .fail_bounded(&failure, state.route_failure_at, 1)
-                == 0
-            {
-                idle += 1;
+            let worked = if let Some(failure) = terminal {
+                state
+                    .waiting
+                    .fail_bounded(&failure, state.route_failure_at, 1)
+                    != 0
             } else {
-                settled += 1;
+                state.route_failure_at.is_some_and(|observed_at| {
+                    state.waiting.reject_failed_route_one(now, observed_at)
+                })
+            };
+            if worked {
+                serviced += 1;
                 idle = 0;
+            } else {
+                idle += 1;
             }
         }
-        Ok(settled)
+        Ok(serviced)
     }
 
     fn route_terminal_failure(&self, lane: BrokerLane) -> io::Result<Option<RequestError>> {
@@ -150,6 +157,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         self.routes.iter().any(|(lane, state)| {
             if state.waiting.is_empty() {
                 return false;
+            }
+            if state.route_failure_at.is_some() && state.waiting.has_failure_rejections() {
+                return true;
             }
             let Some(advertised) = state.advertised.as_ref() else {
                 return false;

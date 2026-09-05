@@ -152,9 +152,9 @@ impl<T: RegisteredTransport> ClusterRuntime<T> {
         causality: &mut CausalSequence,
         budget: usize,
     ) -> io::Result<usize> {
-        let terminal = self.settle_terminal_route_waiting(budget)?;
-        let admitted = self.admit_route_waiting(now, causality, budget.saturating_sub(terminal))?;
-        Ok(terminal.saturating_add(admitted))
+        let failed = self.service_failed_route_waiting(now, budget)?;
+        let admitted = self.admit_route_waiting(now, causality, budget.saturating_sub(failed))?;
+        Ok(failed.saturating_add(admitted))
     }
 
     fn admit_one_route(

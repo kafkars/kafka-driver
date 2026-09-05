@@ -58,10 +58,12 @@ impl RequestOptions {
         self
     }
 
-    /// Rejects work submitted behind an observed failure of the same route.
+    /// Rejects unsent work waiting behind an observed failure of the same route.
     ///
     /// A rejected tracked call settles as definitely unsent and retains the
-    /// causal route token. The default waits behind connection recovery.
+    /// causal route token, including work queued before the failure was observed.
+    /// Expired work keeps its original deadline outcome. The default waits
+    /// behind connection recovery.
     #[must_use]
     pub const fn with_route_failure_rejection(mut self) -> Self {
         self.reject_after_route_failure = true;
@@ -88,7 +90,7 @@ impl RequestOptions {
         self.maximum_version
     }
 
-    /// Returns whether an observed route failure rejects later work.
+    /// Returns whether an observed route failure rejects queued unsent work.
     pub const fn rejects_after_route_failure(self) -> bool {
         self.reject_after_route_failure
     }
