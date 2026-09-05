@@ -1,4 +1,4 @@
-//! Coordinator-key request routing through cached semantic identity.
+//! Coordinator-key routing repairs broker metadata separately from coordinator identity.
 
 use kafka_driver_core::{BrokerRoute, CoordinatorKey, CoordinatorRoute, Moment};
 
@@ -33,6 +33,9 @@ impl Reactor {
             };
             return self.submit_broker_route(route, request, now);
         }
+        if current.is_some() {
+            self.refresh_coordinator_directory(now)?;
+        }
         let Some(owner) = &mut self.coordinator else {
             request.fail(RequestError::RouteUnavailable);
             return Ok(());
@@ -63,6 +66,24 @@ impl Reactor {
                 )
             })
             .map_err(coordinator_rpc_error)
+    }
+
+    pub(super) fn refresh_coordinator_directory(
+        &mut self,
+        now: Moment,
+    ) -> Result<(), ReactorError> {
+        let Some(metadata) = &mut self.metadata else {
+            return Ok(());
+        };
+        let evidence = self.causality.evidence().map_err(ReactorError::causality)?;
+        self.backend
+            .with_seed_rpc(&mut self.causality, |seed| {
+                metadata.resolve_coordinator_directory(seed, now, &self.call_ids, evidence)
+            })
+            .map_err(|error| match error {
+                BackendRpcAccessError::Host(error) => ReactorError::host(error),
+                BackendRpcAccessError::Owner(error) => ReactorError::metadata(error),
+            })
     }
 
     pub(super) fn coordinator_broker_route(

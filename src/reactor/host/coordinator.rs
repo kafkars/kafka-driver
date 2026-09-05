@@ -39,7 +39,10 @@ impl Reactor {
             };
             match route {
                 Some(route) => self.submit_broker_route(route, request, now)?,
-                None => request.fail(RequestError::RouteUnavailable),
+                None => {
+                    request.fail(RequestError::RouteUnavailable);
+                    self.refresh_coordinator_directory(now)?;
+                }
             }
         }
         Ok(progress || waiting_progress || waiting_more)
