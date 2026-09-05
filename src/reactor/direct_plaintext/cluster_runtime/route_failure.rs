@@ -11,6 +11,10 @@ use crate::{RequestError, reactor::BrokerLane};
 
 use super::{ClusterRuntime, route_resolution::RouteResolutionProgress};
 
+#[cfg(test)]
+#[path = "route_failure_test.rs"]
+mod test;
+
 impl<T: RegisteredTransport> ClusterRuntime<T> {
     pub(super) fn sync_route_failures(
         &mut self,
