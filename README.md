@@ -141,7 +141,7 @@ scripts/check
 
 ## Status
 
-`kafka-driver` 0.1.0-rc.5 is the fifth release candidate. This source consumes
+`kafka-driver` 0.1.0-rc.6 is the sixth release candidate. This source consumes
 `kafka-wire` 0.1.0-rc.3 and the Bornera 0.0.1-rc.3 family from the public
 registry. Public APIs may still change before 0.1.0.
 
@@ -153,6 +153,10 @@ Coordinator discovery also repairs missing broker-directory metadata through
 the existing bounded refresh owner. A locally unavailable route still settles
 without fabricating observed-response evidence; retries keep their original
 deadline.
+
+Exact-topic recovery can consume one broker route-failure token and returns
+only metadata whose request began after that observed outcome. The causal
+refresh remains bounded and preserves the caller's original deadline.
 
 ## License
 
