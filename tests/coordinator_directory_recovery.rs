@@ -46,6 +46,8 @@ fn discovered_coordinator_missing_from_metadata_requests_directory_repair() {
         .unwrap_or_else(|error| panic!("first coordinator request: {error}"));
     wait_for_frame(&seed, &mut reactor);
     let discovery = read_find_coordinator_request(&mut seed);
+    assert_eq!(discovery.request.key.as_str(), "directory-recovery");
+    assert_eq!(discovery.request.key_type, 0);
     seed.write_all(&find_coordinator_response(
         discovery.correlation_id,
         coordinator_port,
