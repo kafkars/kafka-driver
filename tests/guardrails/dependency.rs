@@ -65,7 +65,7 @@ fn local_and_registry_dependencies_carry_the_release_version() {
     ] {
         assert_eq!(
             manifest["workspace"]["dependencies"][package]["version"].as_str(),
-            Some("0.1.0-rc.4"),
+            Some("0.1.0-rc.5"),
             "{package} must carry its path-compatible release version"
         );
     }
