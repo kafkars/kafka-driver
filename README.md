@@ -141,13 +141,18 @@ scripts/check
 
 ## Status
 
-`kafka-driver` 0.1.0-rc.4 is the fourth release candidate. This source consumes
+`kafka-driver` 0.1.0-rc.5 is the fifth release candidate. This source consumes
 `kafka-wire` 0.1.0-rc.3 and the Bornera 0.0.1-rc.3 family from the public
 registry. Public APIs may still change before 0.1.0.
 
 Opt-in route-failure rejection also covers unsent requests queued before a
 connection failure was observed. Default requests continue waiting for recovery;
 neither policy restarts the caller's deadline.
+
+Coordinator discovery also repairs missing broker-directory metadata through
+the existing bounded refresh owner. A locally unavailable route still settles
+without fabricating observed-response evidence; retries keep their original
+deadline.
 
 ## License
 
