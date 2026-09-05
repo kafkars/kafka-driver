@@ -64,12 +64,10 @@ fn discovered_coordinator_missing_from_metadata_requests_directory_repair() {
         .unwrap_or_else(|| panic!("unavailable call must settle before directory repair"))
         .unwrap_or_else(|error| panic!("first completion: {error}"));
     assert_eq!(unavailable.result(), &Err(RequestError::RouteUnavailable));
-    assert_eq!(
-        unavailable
-            .route_failure_token()
-            .map(kafka_driver::RouteFailureToken::kind),
-        Some(RouteKind::Coordinator)
-    );
+    // The call never reached a broker: local route rejection must not invent
+    // an observed-response token or a selected protocol version.
+    assert!(unavailable.route_failure_token().is_none());
+    assert_eq!(unavailable.selected_version(), None);
     seed.write_all(&metadata_response(
         repair.correlation_id,
         seed_port,
