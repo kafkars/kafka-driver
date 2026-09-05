@@ -139,6 +139,9 @@ fn seed_cluster() -> (Driver, Reactor, TcpStream, u16) {
 
 fn wait_for_repaired_directory(driver: &Driver, reactor: &mut Reactor, deadline: Instant) {
     loop {
+        // Snapshot commands are local progress. Leave a turn without one so
+        // the embedded reactor can poll the broker's readable socket.
+        drive(reactor, Duration::from_millis(10), "poll repaired metadata");
         let ready = driver
             .snapshot()
             .unwrap_or_else(|error| panic!("snapshot admission: {error}"));
