@@ -67,7 +67,7 @@ fn calls_queued_before_first_transport_failure_honor_the_selected_reconnect_poli
         snapshot
             .lanes()
             .iter()
-            .any(|lane| lane.broker_id().value() == 7 && lane.waiting_calls() == 2)
+            .any(|lane| lane.broker_id().get() == 7 && lane.waiting_calls() == 2)
     );
     assert!(waiting.try_result().is_none());
     assert!(rejected.try_result().is_none());
