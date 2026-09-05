@@ -15,7 +15,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0-rc.3"
+version = "0.1.0-rc.4"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -30,10 +30,10 @@ calandria = "=0.0.1-rc.2"
 calandria-mio = "=0.0.1-rc.2"
 calandria-sim = "=0.0.1-rc.2"
 criticality = "=0.0.1-rc.2"
-kafka-driver = { version = "0.1.0-rc.3", path = "." }
-kafka-driver-core = { version = "0.1.0-rc.3", path = "crates/kafka-driver-core" }
+kafka-driver = { version = "0.1.0-rc.4", path = "." }
+kafka-driver-core = { version = "0.1.0-rc.4", path = "crates/kafka-driver-core" }
 kafka-driver-sim = { path = "crates/kafka-driver-sim" }
-kafka-driver-transport = { version = "0.1.0-rc.3", path = "crates/kafka-driver-transport" }
+kafka-driver-transport = { version = "0.1.0-rc.4", path = "crates/kafka-driver-transport" }
 kafka-wire = "=0.1.0-rc.3"
 kafka-wire-core = "=0.1.0-rc.3"
 mio = { version = "1.2", default-features = false, features = ["net", "os-poll"] }
