@@ -8,9 +8,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use syn::{ExprMethodCall, ExprPath, File, ItemImpl, ItemUse, Path, Type, UseTree, visit::Visit};
 
 use super::support::{display_path, is_test, read, rust_files, workspace_root};
+use expected::{expected_associated_calls, expected_selector_methods, expected_transport_impls};
+
+mod expected;
 
 const SET_OWNER: &str = "src/reactor/direct_plaintext/set_owner.rs";
-const RUSTLS_ADAPTER: &str = "src/reactor/direct_plaintext/rustls_transport.rs";
 const ASSOCIATED_CALLS: [&str; 13] = [
     "ConnectionSet::new",
     "ConnectionSet::turn_component",
@@ -198,7 +200,11 @@ impl<'ast> Visit<'ast> for AuthorityVisitor<'_> {
             && (matches!(
                 trait_name.ident.to_string().as_str(),
                 "RegisteredTransport" | "SlotTransport"
-            ) || (trait_name.ident == "Source" && type_name == "DirectRustlsTransport"))
+            ) || (trait_name.ident == "Source"
+                && matches!(
+                    type_name.as_str(),
+                    "DirectPlaintextTransport" | "DirectRustlsTransport"
+                )))
         {
             self.inventory
                 .transport_impls
@@ -269,49 +275,4 @@ fn counts(entries: &[(&str, usize)]) -> BTreeMap<String, usize> {
         .iter()
         .map(|&(key, value)| (key.into(), value))
         .collect()
-}
-
-fn expected_associated_calls() -> BTreeMap<String, usize> {
-    counts(&[
-        (&format!("{SET_OWNER}:ConnectionSet::new"), 1),
-        (&format!("{SET_OWNER}:ConnectionSet::turn_component"), 1),
-        (&format!("{SET_OWNER}:ConnectionSet::poll_io"), 1),
-        (&format!("{SET_OWNER}:ConnectionSet::wake_handle"), 1),
-        (&format!("{SET_OWNER}:ConnectionSet::pulse_handle"), 1),
-        (&format!("{RUSTLS_ADAPTER}:Source::register"), 1),
-        (&format!("{RUSTLS_ADAPTER}:Source::reregister"), 1),
-        (&format!("{RUSTLS_ADAPTER}:Source::deregister"), 1),
-    ])
-}
-
-fn expected_selector_methods() -> BTreeMap<String, usize> {
-    counts(&[
-        ("src/reactor/backend.rs:wake_handle", 2),
-        ("src/reactor/backend.rs:pulse_handle", 2),
-        ("src/reactor/host.rs:wake_handle", 1),
-        ("src/reactor/host/construction.rs:wake_handle", 1),
-        ("src/reactor/host/construction.rs:pulse_handle", 2),
-        ("src/reactor/direct_plaintext/backend.rs:wake_handle", 3),
-        ("src/reactor/direct_plaintext/backend.rs:pulse_handle", 3),
-        ("src/reactor/direct_plaintext/runtime.rs:wake_handle", 1),
-        ("src/reactor/direct_plaintext/runtime.rs:pulse_handle", 1),
-        (
-            "src/reactor/direct_plaintext/cluster_runtime/backend.rs:wake_handle",
-            2,
-        ),
-        (
-            "src/reactor/direct_plaintext/cluster_runtime/backend.rs:pulse_handle",
-            2,
-        ),
-    ])
-}
-
-fn expected_transport_impls() -> BTreeSet<String> {
-    [
-        format!("{RUSTLS_ADAPTER}:DirectRustlsTransport:RegisteredTransport"),
-        format!("{RUSTLS_ADAPTER}:DirectRustlsTransport:SlotTransport"),
-        format!("{RUSTLS_ADAPTER}:DirectRustlsTransport:Source"),
-    ]
-    .into_iter()
-    .collect()
 }

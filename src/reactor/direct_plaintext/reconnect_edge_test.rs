@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use bornera::{ConnectionEvent, ConnectionToken, TcpTransport, TransportState};
+use bornera::{ConnectionEvent, ConnectionToken, TransportState};
 use bornera_core::ConnectionEpoch as BorneraEpoch;
 use calandria::Span;
 use kafka_driver_core::{
@@ -20,6 +20,7 @@ use crate::{DriverLimits, RequestError, SaslConfig, request::erased_request};
 use super::{
     attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt, PlaintextAttempt},
     owner::{DirectPlaintextOwner, DirectSet, calandria_moment},
+    plaintext_transport::DirectPlaintextTransport,
     reconnect::terminal_failure,
 };
 use crate::reactor::causality::CausalSequence;
@@ -215,10 +216,10 @@ impl FailThroughEpoch {
     }
 }
 
-impl DirectConnectionAttempt<TcpTransport> for FailThroughEpoch {
+impl DirectConnectionAttempt<DirectPlaintextTransport> for FailThroughEpoch {
     fn connect(
         &self,
-        set: &mut DirectSet<TcpTransport>,
+        set: &mut DirectSet<DirectPlaintextTransport>,
         owner: BorneraLaneOwner,
         address: SocketAddr,
         epoch: BorneraEpoch,

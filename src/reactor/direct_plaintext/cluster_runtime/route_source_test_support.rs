@@ -108,7 +108,7 @@ pub(super) fn ready_seed(public_error_code: i16) -> ReadySeed {
     let server = spawn_lane(listener, None, public_error_code);
     let driver = support::driver(1, 1);
     let mut runtime = ClusterRuntime::<TcpTransport>::new(&driver).unwrap_or_else(fail);
-    let plan = BorneraLanePlan::plaintext(
+    let plan = BorneraLanePlan::<TcpTransport>::plaintext(
         &driver,
         BrokerLimits::default(),
         crate::config::BrokerAddresses::Direct(address),

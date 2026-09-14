@@ -2,7 +2,9 @@
 
 use std::io;
 
-use bornera::{RegisteredTransport, TcpTransport};
+use bornera::RegisteredTransport;
+#[cfg(test)]
+use bornera::TcpTransport;
 use kafka_driver_core::{AuthenticationPolicy, KafkaSessionLimits, KafkaSessionMachine};
 use kafka_wire::{KafkaRequest, SaslAuthenticateRequest, SaslHandshakeRequest};
 
@@ -13,6 +15,7 @@ use crate::{
 };
 
 use super::attempt::{DirectConnectionAttempt, PlaintextAttempt};
+use super::plaintext_transport::DirectPlaintextTransport;
 #[cfg(feature = "tls-rustls")]
 use super::{attempt::RustlsAttempt, rustls_transport::DirectRustlsTransport};
 
@@ -45,6 +48,25 @@ impl<T: RegisteredTransport> BorneraLanePlan<T> {
     }
 }
 
+impl BorneraLanePlan<DirectPlaintextTransport> {
+    pub(in crate::reactor) fn plaintext(
+        driver: &DriverLimits,
+        broker: BrokerLimits,
+        addresses: BrokerAddresses,
+        sasl: Option<SaslConfig>,
+        client_id: Option<ClientId>,
+    ) -> Self {
+        Self::new(
+            addresses,
+            broker,
+            client_id,
+            KafkaSessionPlan::new(sasl, broker),
+            Box::new(PlaintextAttempt::new(driver, broker)),
+        )
+    }
+}
+
+#[cfg(test)]
 impl BorneraLanePlan<TcpTransport> {
     pub(in crate::reactor) fn plaintext(
         driver: &DriverLimits,

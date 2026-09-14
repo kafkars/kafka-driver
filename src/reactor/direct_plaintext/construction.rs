@@ -2,7 +2,7 @@
 
 use std::{io, net::SocketAddr};
 
-use bornera::{RegisteredTransport, TcpTransport};
+use bornera::RegisteredTransport;
 use kafka_driver_core::Moment;
 
 use crate::config::{BrokerAddresses, ClientId, DriverLimits, SaslConfig};
@@ -19,11 +19,12 @@ use super::{
 };
 use super::{
     lane_construction::start_lane, lane_plan::BorneraLanePlan, limits::DirectSetBounds,
-    runtime::DirectRuntime, set_owner::DirectSetOwner,
+    plaintext_transport::DirectPlaintextTransport, runtime::DirectRuntime,
+    set_owner::DirectSetOwner,
 };
 use crate::reactor::bornera::BorneraIdentityAllocator;
 
-impl DirectRuntime<TcpTransport> {
+impl DirectRuntime<DirectPlaintextTransport> {
     pub(in crate::reactor) fn new(
         driver: &DriverLimits,
         address: SocketAddr,
@@ -32,7 +33,7 @@ impl DirectRuntime<TcpTransport> {
         now: Moment,
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();
-        let plan = BorneraLanePlan::plaintext(
+        let plan = BorneraLanePlan::<DirectPlaintextTransport>::plaintext(
             driver,
             broker,
             BrokerAddresses::Direct(address),
@@ -41,13 +42,12 @@ impl DirectRuntime<TcpTransport> {
         );
         start(driver, plan, now)
     }
-
     #[cfg(test)]
     pub(super) fn new_with_attempt(
         driver: &DriverLimits,
         address: SocketAddr,
         sasl: Option<SaslConfig>,
-        attempt: Box<dyn DirectConnectionAttempt<TcpTransport>>,
+        attempt: Box<dyn DirectConnectionAttempt<DirectPlaintextTransport>>,
         now: Moment,
     ) -> io::Result<Self> {
         let broker = BrokerLimits::default();

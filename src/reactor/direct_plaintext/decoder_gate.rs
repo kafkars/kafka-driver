@@ -1,4 +1,4 @@
-//! Shared fixed-state visibility between Kafka decoding and TLS terminal progression.
+//! Shared fixed-state visibility between Kafka decoding and transport progression.
 
 use std::{cell::Cell, mem::size_of, rc::Rc};
 
@@ -19,12 +19,10 @@ const GATE_RETAINED_BYTES: RetainedBytes = RetainedBytes::new(GATE_ALLOCATION_BY
 pub(super) struct DecoderGate(Rc<Cell<bool>>);
 
 impl DecoderGate {
-    #[cfg(feature = "tls-rustls")]
     pub(super) fn new() -> Self {
         Self(Rc::new(Cell::new(false)))
     }
 
-    #[cfg(feature = "tls-rustls")]
     pub(super) fn has_pending_decode(&self) -> bool {
         self.0.get()
     }

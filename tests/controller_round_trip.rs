@@ -2,6 +2,8 @@
 
 #[path = "controller_round_trip/broker.rs"]
 mod broker;
+#[path = "controller_round_trip/stopped_follower.rs"]
+mod stopped_follower;
 mod support;
 
 use std::{

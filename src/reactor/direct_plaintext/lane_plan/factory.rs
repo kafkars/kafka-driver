@@ -2,7 +2,9 @@
 
 use std::io;
 
-use bornera::{RegisteredTransport, TcpTransport};
+use bornera::RegisteredTransport;
+#[cfg(test)]
+use bornera::TcpTransport;
 use kafka_driver_core::{BrokerEndpoint, ResolvedAddressSet};
 
 #[cfg(feature = "tls-rustls")]
@@ -14,6 +16,7 @@ use crate::{
     reactor::broker::BrokerLimits,
 };
 
+use super::super::plaintext_transport::DirectPlaintextTransport;
 #[cfg(feature = "tls-rustls")]
 use super::super::rustls_transport::DirectRustlsTransport;
 use super::BorneraLanePlan;
@@ -67,13 +70,33 @@ pub(in crate::reactor) struct PlaintextLanePlanFactory {
     policy: LanePolicy,
 }
 
+impl BorneraLanePlanFactory<DirectPlaintextTransport> for PlaintextLanePlanFactory {
+    fn at_resolved(
+        &self,
+        endpoint: BrokerEndpoint,
+        addresses: ResolvedAddressSet,
+    ) -> io::Result<BorneraLanePlan<DirectPlaintextTransport>> {
+        Ok(BorneraLanePlan::<DirectPlaintextTransport>::plaintext(
+            &self.policy.driver,
+            self.policy.broker,
+            BrokerAddresses::Resolved {
+                endpoint,
+                addresses,
+            },
+            self.policy.sasl.clone(),
+            self.policy.client_id.clone(),
+        ))
+    }
+}
+
+#[cfg(test)]
 impl BorneraLanePlanFactory<TcpTransport> for PlaintextLanePlanFactory {
     fn at_resolved(
         &self,
         endpoint: BrokerEndpoint,
         addresses: ResolvedAddressSet,
     ) -> io::Result<BorneraLanePlan<TcpTransport>> {
-        Ok(BorneraLanePlan::plaintext(
+        Ok(BorneraLanePlan::<TcpTransport>::plaintext(
             &self.policy.driver,
             self.policy.broker,
             BrokerAddresses::Resolved {

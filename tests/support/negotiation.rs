@@ -10,7 +10,8 @@ use bytes::BytesMut;
 use kafka_driver::Reactor;
 use kafka_wire::{
     API_VERSIONS_API_DESCRIPTOR, ApiVersionsResponse, FIND_COORDINATOR_API_DESCRIPTOR,
-    METADATA_API_DESCRIPTOR, ResponseHeader, api_versions_response::ApiVersion as AdvertisedApi,
+    METADATA_API_DESCRIPTOR, ResponseHeader, UNREGISTER_BROKER_API_DESCRIPTOR,
+    api_versions_response::ApiVersion as AdvertisedApi,
 };
 use kafka_wire_core::{ApiVersion, KafkaEncode};
 
@@ -46,6 +47,10 @@ fn negotiation_response(correlation: i32) -> Vec<u8> {
     response.api_keys.push(advertisement(
         FIND_COORDINATOR_API_DESCRIPTOR.api_key.value(),
         3,
+    ));
+    response.api_keys.push(advertisement(
+        UNREGISTER_BROKER_API_DESCRIPTOR.api_key.value(),
+        0,
     ));
 
     let mut body = BytesMut::new();

@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bornera::{ConnectionToken, OwnerFailure, TcpTransport};
+use bornera::{ConnectionToken, OwnerFailure};
 use bornera_core::{ConnectionEpoch as BorneraEpoch, ConnectionId, EndpointId, LaneId};
 use calandria::TimerOwnerId;
 use kafka_driver_core::{
@@ -22,6 +22,7 @@ use super::{
     lane_plan::{BorneraLanePlan, KafkaSessionPlan},
     limits::DirectSetBounds,
     owner::{DirectLane, DirectPlaintextOwner, DirectSet},
+    plaintext_transport::DirectPlaintextTransport,
     set_owner::DirectSetOwner,
 };
 use crate::reactor::{broker::BrokerLimits, causality::CausalSequence};
@@ -157,8 +158,11 @@ fn live_retry(ready: bool) -> (SocketAddr, SocketAddr, Vec<SocketAddr>) {
 
 pub(super) fn resolved_lane(
     addresses: [SocketAddr; 2],
-    attempt: Box<dyn DirectConnectionAttempt<TcpTransport>>,
-) -> (DirectSetOwner<TcpTransport>, DirectLane<TcpTransport>) {
+    attempt: Box<dyn DirectConnectionAttempt<DirectPlaintextTransport>>,
+) -> (
+    DirectSetOwner<DirectPlaintextTransport>,
+    DirectLane<DirectPlaintextTransport>,
+) {
     let driver = DriverLimits::default();
     let broker = BrokerLimits::default();
     let mut set = DirectSetOwner::new(&driver, DirectSetBounds::direct())
@@ -183,7 +187,10 @@ pub(super) fn resolved_lane(
     (set, lane)
 }
 
-fn detach(set: &mut DirectSetOwner<TcpTransport>, lane: &mut DirectLane<TcpTransport>) {
+fn detach(
+    set: &mut DirectSetOwner<DirectPlaintextTransport>,
+    lane: &mut DirectLane<DirectPlaintextTransport>,
+) {
     let connection = lane.connection_for_test();
     drop(
         set.set
@@ -193,7 +200,7 @@ fn detach(set: &mut DirectSetOwner<TcpTransport>, lane: &mut DirectLane<TcpTrans
     lane.connection = None;
 }
 
-fn backoff_deadline(lane: &DirectLane<TcpTransport>) -> Moment {
+fn backoff_deadline(lane: &DirectLane<DirectPlaintextTransport>) -> Moment {
     let BrokerState::Backoff { deadline, .. } = lane.lifecycle.state() else {
         panic!("failed candidate must enter backoff");
     };
@@ -210,10 +217,10 @@ impl RecordingFailure {
     }
 }
 
-impl DirectConnectionAttempt<TcpTransport> for RecordingFailure {
+impl DirectConnectionAttempt<DirectPlaintextTransport> for RecordingFailure {
     fn connect(
         &self,
-        _set: &mut DirectSet<TcpTransport>,
+        _set: &mut DirectSet<DirectPlaintextTransport>,
         _owner: BorneraLaneOwner,
         address: SocketAddr,
         _epoch: BorneraEpoch,
@@ -231,10 +238,10 @@ pub(super) struct RecordingPlaintext {
     pub(super) delegate: PlaintextAttempt,
 }
 
-impl DirectConnectionAttempt<TcpTransport> for RecordingPlaintext {
+impl DirectConnectionAttempt<DirectPlaintextTransport> for RecordingPlaintext {
     fn connect(
         &self,
-        set: &mut DirectSet<TcpTransport>,
+        set: &mut DirectSet<DirectPlaintextTransport>,
         owner: BorneraLaneOwner,
         address: SocketAddr,
         epoch: BorneraEpoch,

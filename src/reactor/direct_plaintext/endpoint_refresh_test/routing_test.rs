@@ -181,7 +181,10 @@ fn plaintext_backend_delegates_matching_failure_once() {
     }
 }
 
-fn runtime(endpoint: u64, lane: u32) -> DirectRuntime<bornera::TcpTransport> {
+fn runtime(
+    endpoint: u64,
+    lane: u32,
+) -> DirectRuntime<super::super::plaintext_transport::DirectPlaintextTransport> {
     let fixture = RefreshFixture::pending(endpoint, lane);
     DirectRuntime {
         connections: fixture.set,

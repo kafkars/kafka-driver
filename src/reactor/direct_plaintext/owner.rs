@@ -167,7 +167,7 @@ impl<T: RegisteredTransport> DirectLane<T> {
 
 #[cfg(test)]
 pub(in crate::reactor) type DirectPlaintextOwner =
-    super::runtime::DirectRuntime<bornera::TcpTransport>;
+    super::runtime::DirectRuntime<super::plaintext_transport::DirectPlaintextTransport>;
 
 pub(super) const fn calandria_moment(moment: Moment) -> calandria::Moment {
     calandria::Moment::from_nanos(moment.as_nanos())

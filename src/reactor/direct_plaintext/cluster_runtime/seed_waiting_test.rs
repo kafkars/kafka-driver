@@ -258,7 +258,7 @@ fn failed_plan() -> BorneraLanePlan<TcpTransport> {
 }
 
 fn live_plan(driver: &DriverLimits, address: SocketAddr) -> BorneraLanePlan<TcpTransport> {
-    BorneraLanePlan::plaintext(
+    BorneraLanePlan::<TcpTransport>::plaintext(
         driver,
         BrokerLimits::default(),
         crate::config::BrokerAddresses::Direct(address),

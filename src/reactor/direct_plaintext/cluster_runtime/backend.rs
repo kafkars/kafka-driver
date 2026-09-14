@@ -2,7 +2,6 @@
 
 use std::io;
 
-use bornera::TcpTransport;
 use calandria::{Span, WaitOutcome};
 use kafka_driver_core::Moment;
 
@@ -19,6 +18,7 @@ use crate::reactor::direct_plaintext::lane_plan::factory::RustlsLanePlanFactory;
 use crate::reactor::direct_plaintext::lane_plan::factory::{
     BorneraEndpointFamily, PlaintextLanePlanFactory,
 };
+use crate::reactor::direct_plaintext::plaintext_transport::DirectPlaintextTransport;
 #[cfg(feature = "tls-rustls")]
 use crate::reactor::direct_plaintext::rustls_transport::DirectRustlsTransport;
 
@@ -27,7 +27,7 @@ use super::{ClusterRuntime, rpc_access::ClusterRpcAccessError, seed::ResolvedSee
 /// One transport family chosen before its sole Bornera selector is constructed.
 pub(in crate::reactor) enum ClusterBackend {
     Plaintext {
-        runtime: Box<ClusterRuntime<TcpTransport>>,
+        runtime: Box<ClusterRuntime<DirectPlaintextTransport>>,
         factory: PlaintextLanePlanFactory,
     },
     #[cfg(feature = "tls-rustls")]

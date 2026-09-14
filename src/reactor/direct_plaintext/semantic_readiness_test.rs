@@ -8,7 +8,7 @@ use std::{
     },
 };
 
-use bornera::{ConnectionToken, OwnerFailure, TcpTransport};
+use bornera::{ConnectionToken, OwnerFailure};
 use bornera_core::ConnectionEpoch as BorneraEpoch;
 use kafka_driver_core::{BrokerState, CloseReason, ConnectionEpoch, Moment, TransportFailure};
 
@@ -18,6 +18,7 @@ use super::{
     attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt, PlaintextAttempt},
     endpoint_selection_test::{recorded, resolved_lane},
     owner::DirectSet,
+    plaintext_transport::DirectPlaintextTransport,
 };
 use crate::reactor::{broker::BrokerLimits, causality::CausalSequence};
 
@@ -81,10 +82,10 @@ struct FailFirstThenPlaintext {
     delegate: PlaintextAttempt,
 }
 
-impl DirectConnectionAttempt<TcpTransport> for FailFirstThenPlaintext {
+impl DirectConnectionAttempt<DirectPlaintextTransport> for FailFirstThenPlaintext {
     fn connect(
         &self,
-        set: &mut DirectSet<TcpTransport>,
+        set: &mut DirectSet<DirectPlaintextTransport>,
         owner: BorneraLaneOwner,
         address: SocketAddr,
         epoch: BorneraEpoch,
@@ -103,7 +104,10 @@ impl DirectConnectionAttempt<TcpTransport> for FailFirstThenPlaintext {
     }
 }
 
-fn detach(set: &mut DirectSet<TcpTransport>, lane: &mut super::owner::DirectLane<TcpTransport>) {
+fn detach(
+    set: &mut DirectSet<DirectPlaintextTransport>,
+    lane: &mut super::owner::DirectLane<DirectPlaintextTransport>,
+) {
     let connection = lane.connection_for_test();
     drop(
         set.abandon(connection, OwnerFailure::OwnerInvariant)
@@ -112,7 +116,7 @@ fn detach(set: &mut DirectSet<TcpTransport>, lane: &mut super::owner::DirectLane
     lane.connection = None;
 }
 
-fn backoff_deadline(lane: &super::owner::DirectLane<TcpTransport>) -> Moment {
+fn backoff_deadline(lane: &super::owner::DirectLane<DirectPlaintextTransport>) -> Moment {
     let BrokerState::Backoff { deadline, .. } = lane.lifecycle.state() else {
         panic!("failed candidate must enter backoff");
     };

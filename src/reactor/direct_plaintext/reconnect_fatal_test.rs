@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use bornera::{ConnectionToken, TcpTransport};
+use bornera::ConnectionToken;
 use bornera_core::ConnectionEpoch as BorneraEpoch;
 use kafka_driver_core::{
     BrokerCloseReason, BrokerState, CallFailure, CallId, CloseReason, ConnectionEpoch, Delivery,
@@ -19,6 +19,7 @@ use crate::{DriverLimits, RequestError, request::erased_request};
 use super::{
     attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt},
     owner::{DirectPlaintextOwner, DirectSet},
+    plaintext_transport::DirectPlaintextTransport,
 };
 use crate::reactor::causality::CausalSequence;
 
@@ -120,10 +121,10 @@ fn timer_identity_exhaustion_is_repeatable_host_fatal_without_policy_close() {
 
 struct ImmediateEndpointFailure;
 
-impl DirectConnectionAttempt<TcpTransport> for ImmediateEndpointFailure {
+impl DirectConnectionAttempt<DirectPlaintextTransport> for ImmediateEndpointFailure {
     fn connect(
         &self,
-        _set: &mut DirectSet<TcpTransport>,
+        _set: &mut DirectSet<DirectPlaintextTransport>,
         _owner: BorneraLaneOwner,
         _address: SocketAddr,
         _epoch: BorneraEpoch,

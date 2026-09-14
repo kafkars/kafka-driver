@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use bornera::{ConnectionToken, TcpTransport};
+use bornera::ConnectionToken;
 use bornera_core::ConnectionEpoch as BorneraEpoch;
 use kafka_driver_core::{
     BrokerEndpoint, CallId, ConnectionEpoch, HostName, IpAddress, Moment, ResolutionLimits,
@@ -22,6 +22,7 @@ use crate::reactor::{
         attempt::{BorneraLaneOwner, DirectConnectError, DirectConnectionAttempt},
         lane_plan::{BorneraLanePlan, KafkaSessionPlan},
         owner::DirectSet,
+        plaintext_transport::DirectPlaintextTransport,
     },
 };
 use crate::{DriverLimits, RequestError, config::BrokerTemplate, request::erased_request};
@@ -93,7 +94,7 @@ impl ClusterSeedFatalFixture {
     }
 }
 
-fn failed_resolved_plan() -> BorneraLanePlan<TcpTransport> {
+fn failed_resolved_plan() -> BorneraLanePlan<DirectPlaintextTransport> {
     let broker = BrokerLimits::default();
     BorneraLanePlan::new(
         crate::config::BrokerAddresses::Resolved {
@@ -127,10 +128,10 @@ fn addresses() -> ResolvedAddressSet {
 
 struct RecoverableFailure;
 
-impl DirectConnectionAttempt<TcpTransport> for RecoverableFailure {
+impl DirectConnectionAttempt<DirectPlaintextTransport> for RecoverableFailure {
     fn connect(
         &self,
-        _set: &mut DirectSet<TcpTransport>,
+        _set: &mut DirectSet<DirectPlaintextTransport>,
         _owner: BorneraLaneOwner,
         _address: SocketAddr,
         _epoch: BorneraEpoch,

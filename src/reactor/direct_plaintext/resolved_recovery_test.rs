@@ -17,6 +17,7 @@ use super::{
     attempt::PlaintextAttempt,
     endpoint_selection_test::{RecordingPlaintext, recorded, resolved_lane},
     owner::{DirectLane, calandria_moment},
+    plaintext_transport::DirectPlaintextTransport,
     set_owner::DirectSetOwner,
 };
 use crate::reactor::{broker::BrokerLimits, causality::CausalSequence};
@@ -83,8 +84,8 @@ fn recovered_admission_and_close_retry_the_admitted_resolved_candidate() {
 }
 
 fn drive_transport_open(
-    set: &mut DirectSetOwner<bornera::TcpTransport>,
-    lane: &DirectLane<bornera::TcpTransport>,
+    set: &mut DirectSetOwner<DirectPlaintextTransport>,
+    lane: &DirectLane<DirectPlaintextTransport>,
 ) {
     for _ in 0..32 {
         let connection = lane.connection_for_test();

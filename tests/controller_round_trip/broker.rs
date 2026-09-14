@@ -13,7 +13,8 @@ use kafka_driver::{
 };
 use kafka_wire::{
     ApiVersionsRequest, ApiVersionsResponse, MetadataRequest, MetadataResponse, ResponseHeader,
-    metadata_response::MetadataResponseBroker, response_header_version_for,
+    UnregisterBrokerRequest, UnregisterBrokerResponse, metadata_response::MetadataResponseBroker,
+    response_header_version_for,
 };
 use kafka_wire_core::{KafkaEncode, StrBytes};
 
@@ -108,11 +109,34 @@ pub(super) fn metadata_response(correlation_id: i32, controller_port: u16) -> Ve
     encoded_response::<MetadataRequest, _>(correlation_id, &response, ApiVersion::new(1))
 }
 
+#[allow(dead_code)]
+pub(super) fn three_broker_metadata_response(correlation_id: i32, ports: [u16; 3]) -> Vec<u8> {
+    let mut response = MetadataResponse::default();
+    for (offset, port) in ports.into_iter().enumerate() {
+        let mut broker = MetadataResponseBroker::default();
+        broker.node_id =
+            i32::try_from(offset + 1).unwrap_or_else(|error| panic!("broker ID: {error}"));
+        broker.host = StrBytes::from("localhost");
+        broker.port = i32::from(port);
+        response.brokers.push(broker);
+    }
+    response.controller_id = 2;
+    encoded_response::<MetadataRequest, _>(correlation_id, &response, ApiVersion::new(1))
+}
+
 pub(super) fn api_versions_response(
     correlation_id: i32,
     response: &ApiVersionsResponse,
 ) -> Vec<u8> {
     encoded_response::<ApiVersionsRequest, _>(correlation_id, response, ApiVersion::new(0))
+}
+
+#[allow(dead_code)]
+pub(super) fn unregister_broker_response(
+    correlation_id: i32,
+    response: &UnregisterBrokerResponse,
+) -> Vec<u8> {
+    encoded_response::<UnregisterBrokerRequest, _>(correlation_id, response, ApiVersion::new(0))
 }
 
 pub(super) fn drive(reactor: &mut kafka_driver::Reactor, wait: Duration, phase: &str) {

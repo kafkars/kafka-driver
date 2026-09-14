@@ -2,7 +2,6 @@
 
 use std::io;
 
-use bornera::TcpTransport;
 use calandria::{Span, WaitOutcome};
 use kafka_driver_core::Moment;
 
@@ -14,6 +13,7 @@ use crate::{
 
 #[cfg(test)]
 use super::backend_simulation_test::SimulatedBackend;
+use super::plaintext_transport::DirectPlaintextTransport;
 use super::runtime::DirectRuntime;
 #[cfg(feature = "tls-rustls")]
 use super::rustls_transport::DirectRustlsTransport;
@@ -22,7 +22,7 @@ use crate::reactor::scram_proof::{ScramProofOutcome, ScramProofSender};
 
 /// Exclusive direct owner for exactly one configured transport family.
 pub(in crate::reactor) enum DirectBackend {
-    Plaintext(Box<DirectRuntime<TcpTransport>>),
+    Plaintext(Box<DirectRuntime<DirectPlaintextTransport>>),
     #[cfg(feature = "tls-rustls")]
     Rustls(Box<DirectRuntime<DirectRustlsTransport>>),
     #[cfg(test)]
@@ -40,9 +40,11 @@ impl DirectBackend {
                 address,
                 sasl,
                 client_id,
-            } => Ok(Self::Plaintext(Box::new(
-                DirectRuntime::<TcpTransport>::new(limits, address, sasl, client_id, now)?,
-            ))),
+            } => Ok(Self::Plaintext(Box::new(DirectRuntime::<
+                DirectPlaintextTransport,
+            >::new(
+                limits, address, sasl, client_id, now,
+            )?))),
             #[cfg(feature = "tls-rustls")]
             DirectBrokerConfig::Rustls {
                 address,

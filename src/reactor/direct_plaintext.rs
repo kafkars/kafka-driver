@@ -55,6 +55,7 @@ mod owner_test;
 mod pending;
 #[cfg(test)]
 mod pending_test;
+mod plaintext_transport;
 mod public_settlement;
 #[cfg(test)]
 mod public_settlement_test;

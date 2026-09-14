@@ -103,7 +103,7 @@ fn insert(
     let (_, [owner]) = runtime
         .reserve_endpoint_lanes::<1>()
         .unwrap_or_else(|error| panic!("reserve live cluster lane: {error}"));
-    let plan = BorneraLanePlan::plaintext(
+    let plan = BorneraLanePlan::<TcpTransport>::plaintext(
         driver,
         BrokerLimits::default(),
         BrokerAddresses::Direct(address),

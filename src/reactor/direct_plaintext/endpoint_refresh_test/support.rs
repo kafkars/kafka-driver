@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bornera::{ConnectionToken, TcpTransport};
+use bornera::ConnectionToken;
 use bornera_core::{ConnectionEpoch as BorneraEpoch, ConnectionId, EndpointId, LaneId};
 use calandria::TimerOwnerId;
 use kafka_driver_core::{
@@ -24,6 +24,7 @@ use super::super::{
     lane_plan::{BorneraLanePlan, KafkaSessionPlan},
     limits::DirectSetBounds,
     owner::{DirectLane, DirectSet},
+    plaintext_transport::DirectPlaintextTransport,
     runtime::DirectRuntime,
     set_owner::DirectSetOwner,
 };
@@ -32,8 +33,8 @@ use crate::reactor::{broker::BrokerLimits, causality::CausalSequence};
 pub(super) const START: Moment = Moment::from_nanos(1_000);
 
 pub(super) struct RefreshFixture {
-    pub(super) set: DirectSetOwner<TcpTransport>,
-    pub(super) lane: DirectLane<TcpTransport>,
+    pub(super) set: DirectSetOwner<DirectPlaintextTransport>,
+    pub(super) lane: DirectLane<DirectPlaintextTransport>,
     pub(super) seen: Arc<Mutex<Vec<SocketAddr>>>,
 }
 
@@ -129,7 +130,7 @@ pub(super) fn endpoint() -> BrokerEndpoint {
     )
 }
 
-pub(super) fn reconnect_deadline(lane: &DirectLane<TcpTransport>) -> Moment {
+pub(super) fn reconnect_deadline(lane: &DirectLane<DirectPlaintextTransport>) -> Moment {
     match lane.lifecycle.state() {
         BrokerState::Backoff { deadline, .. } | BrokerState::Refreshing { deadline, .. } => {
             deadline
@@ -173,10 +174,10 @@ struct RecordingFailure {
     seen: Arc<Mutex<Vec<SocketAddr>>>,
 }
 
-impl DirectConnectionAttempt<TcpTransport> for RecordingFailure {
+impl DirectConnectionAttempt<DirectPlaintextTransport> for RecordingFailure {
     fn connect(
         &self,
-        _set: &mut DirectSet<TcpTransport>,
+        _set: &mut DirectSet<DirectPlaintextTransport>,
         _owner: BorneraLaneOwner,
         address: SocketAddr,
         _epoch: BorneraEpoch,

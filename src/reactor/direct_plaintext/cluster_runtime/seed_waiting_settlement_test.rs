@@ -104,7 +104,7 @@ fn permanent_seed_failure_preserves_exact_not_sent_reason_and_lane_isolation() {
     let address = listener
         .local_addr()
         .unwrap_or_else(|error| panic!("terminal seed address: {error}"));
-    let plan = BorneraLanePlan::plaintext(
+    let plan = BorneraLanePlan::<TcpTransport>::plaintext(
         &runtime.driver,
         BrokerLimits::default(),
         crate::config::BrokerAddresses::Direct(address),
