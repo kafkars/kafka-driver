@@ -141,9 +141,12 @@ scripts/check
 
 ## Status
 
-`kafka-driver` 0.1.0-rc.6 is the sixth release candidate. This source consumes
+`kafka-driver` 0.1.0-rc.7 is the seventh release candidate. This source consumes
 `kafka-wire` 0.1.0-rc.3 and the Bornera 0.0.1-rc.3 family from the public
 registry. Public APIs may still change before 0.1.0.
+
+Complete plaintext replies are decoded before a following peer EOF settles
+outstanding work, including multiple replies received in one read.
 
 Opt-in route-failure rejection also covers unsent requests queued before a
 connection failure was observed. Default requests continue waiting for recovery;
