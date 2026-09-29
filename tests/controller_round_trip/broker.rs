@@ -4,7 +4,7 @@ use std::{
     io::Read,
     net::{TcpListener, TcpStream},
     num::NonZeroU16,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use bytes::BytesMut;
@@ -29,8 +29,15 @@ pub(super) fn accept_after_driving(
     listener
         .set_nonblocking(true)
         .unwrap_or_else(|error| panic!("make broker listener nonblocking: {error}"));
-    for _ in 0..16 {
-        drive(reactor, Duration::from_millis(100), "open broker lane");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        drive(
+            reactor,
+            deadline
+                .saturating_duration_since(Instant::now())
+                .min(Duration::from_millis(100)),
+            "open broker lane",
+        );
         match listener.accept() {
             Ok((peer, _)) => {
                 peer.set_nonblocking(false)
@@ -116,7 +123,7 @@ pub(super) fn three_broker_metadata_response(correlation_id: i32, ports: [u16; 3
         let mut broker = MetadataResponseBroker::default();
         broker.node_id =
             i32::try_from(offset + 1).unwrap_or_else(|error| panic!("broker ID: {error}"));
-        broker.host = StrBytes::from("localhost");
+        broker.host = StrBytes::from("127.0.0.1");
         broker.port = i32::from(port);
         response.brokers.push(broker);
     }

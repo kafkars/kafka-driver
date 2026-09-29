@@ -12,7 +12,7 @@ use std::{
     net::TcpListener,
     pin::Pin,
     task::{Context, Poll, Waker},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use kafka_driver::{BrokerId, Driver, Reactor, Route, RouteKind, TrafficClass};
@@ -226,11 +226,16 @@ where
     F: Future + Unpin,
 {
     let mut context = Context::from_waker(Waker::noop());
-    for _ in 0..16 {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
         if let Poll::Ready(outcome) = Pin::new(&mut call).poll(&mut context) {
             return outcome;
         }
-        drive(reactor, Duration::from_millis(100), phase);
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        assert!(
+            !remaining.is_zero(),
+            "{phase} did not complete: {reactor:?}"
+        );
+        drive(reactor, remaining.min(Duration::from_millis(100)), phase);
     }
-    panic!("{phase} did not complete: {reactor:?}");
 }

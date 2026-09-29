@@ -2,6 +2,7 @@
 
 use std::{
     io::Write,
+    net::Shutdown,
     time::{Duration, Instant},
 };
 
@@ -59,6 +60,14 @@ fn unregister_broker_retry_progresses_when_broker_3_follower_is_stopped() {
         .request_tracked_with(Route::Controller, unregister_broker_request(), options)
         .unwrap_or_else(|error| panic!("admit stopped-follower controller request: {error}"));
     assert_progress(&reactor.turn(Duration::ZERO), 1);
+    // Inject a definite connection failure before negotiation can admit the
+    // public request. Address ordering for localhost must not supply the fault.
+    let failed_controller = accept_after_driving(&controller_listener, &mut reactor);
+    assert!(first.try_result().is_none());
+    failed_controller
+        .shutdown(Shutdown::Both)
+        .unwrap_or_else(|error| panic!("disconnect controller before negotiation: {error}"));
+    drop(failed_controller);
     let first = await_call(
         first,
         &mut reactor,
