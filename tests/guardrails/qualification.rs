@@ -120,11 +120,11 @@ fn release_qualification_builds_normalized_public_archives() {
     assert!(workflow.contains("run: scripts/qualify-packages"));
     assert!(workflow.contains("run: cargo fetch --locked"));
     assert!(workflow.contains("CARGO_NET_OFFLINE: \"true\""));
-    assert!(prefetch.contains("kafka-wire = \"=0.1.0-rc.3\""));
-    assert!(prefetch.contains("kafka-wire-core = \"=0.1.0-rc.3\""));
-    assert!(prefetch.contains("bornera = \"=0.0.1-rc.3\""));
-    assert!(prefetch.contains("bornera-core = \"=0.0.1-rc.3\""));
-    assert!(prefetch.contains("bornera-rustls = \"=0.0.1-rc.3\""));
+    assert!(prefetch.contains("kafka-wire = \"=0.1.0\""));
+    assert!(prefetch.contains("kafka-wire-core = \"=0.1.0\""));
+    assert!(prefetch.contains("bornera = \"=0.0.1-rc.4\""));
+    assert!(prefetch.contains("bornera-core = \"=0.0.1-rc.4\""));
+    assert!(prefetch.contains("bornera-rustls = \"=0.0.1-rc.4\""));
     assert!(prefetch.contains("cargo fetch --locked"));
     assert!(script.contains("cargo package"));
     assert!(script.contains("--no-verify"));

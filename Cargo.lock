@@ -20,9 +20,9 @@ dependencies = [
 
 [[package]]
 name = "bornera"
-version = "0.0.1-rc.3"
+version = "0.0.1-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cb9b37b34c2be2c5131277760464022d46be96dfb96f53b5baf184eca08960f"
+checksum = "2c7dc0de9db8ded552873ba0677e97f0de6f7c2e2fe792bfc3152883c57a08b6"
 dependencies = [
  "bornera-core",
  "bytes",
@@ -34,18 +34,19 @@ dependencies = [
 
 [[package]]
 name = "bornera-core"
-version = "0.0.1-rc.3"
+version = "0.0.1-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31b50b618633b9cdc95fc3b37461b6c303218baefe14d7958c1cddf3c71c87a1"
+checksum = "eaa2f93c5613d47c5966a3ad981882491f09cec0a346c961321299c8d3a15017"
 dependencies = [
+ "bytebudget",
  "calandria",
 ]
 
 [[package]]
 name = "bornera-rustls"
-version = "0.0.1-rc.3"
+version = "0.0.1-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d5c22e456b51a2f135f7050c7415aa1dd8359e0e2749db3263541f613a07a9"
+checksum = "282d47be6e2d8bafeb236746a74678965f7c12c1f40282225f88f8b8c956469a"
 dependencies = [
  "bornera",
  "calandria",
@@ -53,6 +54,12 @@ dependencies = [
  "rustls",
  "socket2",
 ]
+
+[[package]]
+name = "bytebudget"
+version = "0.0.1-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a333b10952faa5bba198eae85398341c643ed4bce31ae9efb3d8feb22979d25"
 
 [[package]]
 name = "bytes"
@@ -211,7 +218,7 @@ dependencies = [
 
 [[package]]
 name = "kafka-driver"
-version = "0.1.0-rc.7"
+version = "0.1.0-rc.8"
 dependencies = [
  "base64",
  "bornera",
@@ -238,14 +245,14 @@ dependencies = [
 
 [[package]]
 name = "kafka-driver-core"
-version = "0.1.0-rc.7"
+version = "0.1.0-rc.8"
 dependencies = [
  "kafka-wire-core",
 ]
 
 [[package]]
 name = "kafka-driver-probe"
-version = "0.1.0-rc.7"
+version = "0.1.0-rc.8"
 dependencies = [
  "kafka-driver",
  "kafka-wire",
@@ -255,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "kafka-driver-sim"
-version = "0.1.0-rc.7"
+version = "0.1.0-rc.8"
 dependencies = [
  "criticality",
  "kafka-driver-core",
@@ -263,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "kafka-driver-transport"
-version = "0.1.0-rc.7"
+version = "0.1.0-rc.8"
 dependencies = [
  "bytes",
  "kafka-driver-core",
@@ -272,9 +279,9 @@ dependencies = [
 
 [[package]]
 name = "kafka-wire"
-version = "0.1.0-rc.3"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef04e07a7f2f73a4d00e3341b60504e0f2baf91491ce55e023f2bdfa5ea60b32"
+checksum = "4a6bbde74286d49bf2f8531e64bb46132824a03bf6058583c0c79dd5ebd00e78"
 dependencies = [
  "bytes",
  "kafka-wire-core",
@@ -282,9 +289,9 @@ dependencies = [
 
 [[package]]
 name = "kafka-wire-core"
-version = "0.1.0-rc.3"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac4f6d455c6371e95044818fbbdc816d35fa0fff3f5bbc7669ce8c83ccf1c6a4"
+checksum = "85717dc7f7e3530cc197a92b5087bd7aa975904ed657edbc6ad5c4184e045203"
 dependencies = [
  "bytes",
  "thiserror",
@@ -363,9 +370,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.43"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "once_cell",
  "ring",
@@ -386,9 +393,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.13"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "ring",
  "rustls-pki-types",

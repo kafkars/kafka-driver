@@ -141,9 +141,12 @@ scripts/check
 
 ## Status
 
-`kafka-driver` 0.1.0-rc.7 is the seventh release candidate. This source consumes
-`kafka-wire` 0.1.0-rc.3 and the Bornera 0.0.1-rc.3 family from the public
+`kafka-driver` 0.1.0-rc.8 is the eighth release candidate. This source consumes
+`kafka-wire` 0.1.0 and the Bornera 0.0.1-rc.4 family from the public
 registry. Public APIs may still change before 0.1.0.
+
+The TLS graph pins rustls 0.23.45, preserving `ring`, `std`, and TLS 1.2 while
+rejecting TLS 1.3 handshake messages crossing an encryption-level boundary.
 
 Complete plaintext replies are decoded before a following peer EOF settles
 outstanding work, including multiple replies received in one read.

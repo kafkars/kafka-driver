@@ -65,17 +65,17 @@ fn local_and_registry_dependencies_carry_the_release_version() {
     ] {
         assert_eq!(
             manifest["workspace"]["dependencies"][package]["version"].as_str(),
-            Some("0.1.0-rc.7"),
+            Some("0.1.0-rc.8"),
             "{package} must carry its path-compatible release version"
         );
     }
     assert_eq!(
         manifest["workspace"]["dependencies"]["kafka-wire-core"].as_str(),
-        Some("=0.1.0-rc.3")
+        Some("=0.1.0")
     );
     assert_eq!(
         manifest["workspace"]["dependencies"]["kafka-wire"].as_str(),
-        Some("=0.1.0-rc.3")
+        Some("=0.1.0")
     );
     assert_eq!(
         manifest["workspace"]["dependencies"]["kafka-driver-sim"]

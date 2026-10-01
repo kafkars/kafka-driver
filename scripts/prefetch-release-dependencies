@@ -14,11 +14,11 @@ printf '%s\n' \
   'publish = false' \
   '' \
   '[dependencies]' \
-  'bornera = "=0.0.1-rc.3"' \
-  'bornera-core = "=0.0.1-rc.3"' \
-  'bornera-rustls = "=0.0.1-rc.3"' \
-  'kafka-wire = "=0.1.0-rc.3"' \
-  'kafka-wire-core = "=0.1.0-rc.3"' \
+  'bornera = "=0.0.1-rc.4"' \
+  'bornera-core = "=0.0.1-rc.4"' \
+  'bornera-rustls = "=0.0.1-rc.4"' \
+  'kafka-wire = "=0.1.0"' \
+  'kafka-wire-core = "=0.1.0"' \
   '' \
   '[workspace]' \
   >"$manifest"
