@@ -164,6 +164,20 @@ Exact-topic recovery can consume one broker route-failure token and returns
 only metadata whose request began after that observed outcome. The causal
 refresh remains bounded and preserves the caller's original deadline.
 
+## Supported-release boundary
+
+The current candidate does not make a stable-release promise. A future supported
+line must preserve its public source API, original-deadline, bounded-admission,
+completion, delivery-certainty, causal routing, shutdown, and Rust 1.88 MSRV
+contracts across patch releases. Breaking changes require an explicitly announced
+new compatibility line. Generated protocol vocabulary remains owned by
+`kafka-wire`; a driver promotion does not widen its negotiated version windows.
+
+Canonical and portable tests, package proof, and real-broker qualification are
+distinct evidence. Broker, topology, TLS, SASL, and recovery claims must match the
+exact qualified source and configuration; they do not imply application-level
+producer, consumer, or transaction guarantees supplied by Kafkars.
+
 ## License
 
 Apache-2.0. Apache Kafka is a trademark of the Apache Software Foundation. This
